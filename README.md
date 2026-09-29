@@ -93,9 +93,14 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **隐式曲面 `ImplicitSurface[f(x,y,z)=0, xmin, xmax, ymin, ymax, zmin, zmax, 分辨率?]`**：**marching tetrahedra** 抽取等值面（立方体按 Kuhn 分解成 6 个四面体，逐四面体插值三角化 + 法向朝 f 增大方向定向），输出三角网格可渲染/求面积/导出；示例：球面 `x^2+y^2+z^2-4=0`（面积误差 4.3%）、圆环 `(√(x²+y²)−2)²+z²−1=0`（误差 3.3%）；无等值面、取值非有限、范围退化都有明确错误
   - **STL 导入**：`📥 OBJ` 按钮现在同时支持 **OBJ / ASCII STL / 二进制 STL**（自动嗅探格式，二进制按 50 字节面记录解析），导入后同样是 `Mesh[网格id]` 元素并随 .ggk 持久化；实测导出→导入往返：立方体 STL 12 三角 → 网格 8/6/12、体积精确为 8
 - **第九批（2026-09-29）**：
-  - **3D 统计**：`Centroid[点列表]` 扩展为兼容多边形与点列表（三维点列表给出带 z 的质心，二维点列表给二维点，内联 `{(x,y,z),…}` 也可）；新增 **`FitSphere[点列表]`** 最小二乘球拟合（代数拟合，≥4 点；点云明显不共球时给出最大偏差并报错）
+  - **3D 统计**：`Centroid[点列表]` 扩展为兼容多边形与点列表（三维点列表给出带 z 的质心，二维点列表给二维点，内联 `{(x,y,z),…}` 也可）；新增 **`FitSphere[点列表]`** 最小二乘球拟合（代数拟合，≥4 点；点云明显不共球时给出最大偏差并报错）；**`BoundingBox`** 点云包围盒与 **`Covariance`** 协方差矩阵见第十批
   - **球面×立体 → 交线**：`Intersect[球, 凸立体]` 返回 `objtype=curve3d` 的交线折线（按立体各面与球的交圆采样、保留落在体内者并按序连段），3D 视图渲染为橙色曲线；实测球心 (1,1,1) 半径 1.2 与立方体 [0,2]³ → 1074 段，所有点 **|到球心距离−r| < 1e-12** 且都在立方体表面；球在体内/包住立体/相切（过 8 顶点）都明确报错
   - **glTF 2.0 导出**：新增 **GLTF** 按钮与 `/api/export/gltf`（单文件 `.gltf`，POSITION/indices 内嵌 base64 buffer，含 min/max 包围盒），可直接导入 Blender/Three.js 等；导出字段与源网格逐项对齐（顶点总数、三角索引数 = 3×Σ(n−2)）
+- **第十批（2026-09-29）**：
+  - **点云统计**：`BoundingBox[点列表]` 轴对齐包围盒（8 顶点/6 面/12 棱，直接可求 `Volume`/`Area`，如 2×3×1 的盒子 → V=6、A=22；点云退化为一点时明确报错）；`Covariance[点列表]` 总体协方差矩阵（三维点列表 → 3×3、二维 → 2×2，可与 numpy 结果逐元素对齐）
+  - **glTF / GLB 导入**：`📥 OBJ` 按钮现在支持 **OBJ / STL（ASCII·二进制）/ glTF / GLB** 自动嗅探——`.gltf` 读内嵌 data-URI buffer，`.glb` 按 12 字节头 + JSON 块 + BIN 块解析（含 componentType/byteStride 处理）；外部 buffer 的 `.gltf` 给出明确提示；**导出 → 导入往返逐项一致**（立方体+圆锥：57 顶点 / 106 三角完全吻合）
+  - **大网格渲染预算**：面数 > 2000 的网格只绘制面积最大的 2000 个面（LOD，缓存面表），边数 > 4000 时跳过边线，并且当 `面数×边数 > 150000` 时跳过 O(边×面) 的 hidden-line 遮挡测试；实测 28³ 等值面（9288 面）**3 次重绘仅 8ms**（此前会卡死），仍有正常渲染输出
+  - **修复：3D 模式下输入框创建对象后 3D 视图不刷新**（此前需切换视图或刷新页面才出现）——`submitInput` 以及撤销/重做/清空后现在都会同步刷新 3D 视图与对象列表
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
@@ -109,7 +114,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_3d_detection.sh       # 内核 390 + API 129 + 浏览器 93 项断言（需服务运行）
+bash devtools/run_3d_detection.sh       # 内核 407 + API 135 + 浏览器 102 项断言（需服务运行）
 ```
 
 - `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 显式/参数/隐式曲面 × FitPlane × OBJ·STL 导入 × 样式快照 × 序列化 × 3D 度量语义）
@@ -121,7 +126,7 @@ bash devtools/run_3d_detection.sh       # 内核 390 + API 129 + 浏览器 93 �
 - `AreParallel/ArePerpendicular/AreCollinear/AreConcyclic/AreCongruent/AreConcurrent` + `Prove`（Botana 坐标法 + SymPy 符号归约；区分「恒假（存在反例）」与「退化敏感」）
 - `SetCoords/SetValue/SetColor/SetVisible/SetLocked/SetWire/Rename/Delete` 等脚本命令
 - 自定义宏（Macro，GUI 点选输入/输出）、命令脚本面板（.ggs 批量执行）
-- **保存/加载**：自有 .ggk（JSON，含视口/样式/宏/导入网格），兼容 .ggb XML 导入导出、SVG/PNG 导出、**3D 网格 OBJ/STL/glTF 导出与 OBJ/STL 导入**（3D 视图工具条 📥OBJ / OBJ / STL / GLTF 按钮）
+- **保存/加载**：自有 .ggk（JSON，含视口/样式/宏/导入网格），兼容 .ggb XML 导入导出、SVG/PNG 导出、**3D 网格 OBJ/STL/glTF 导出与 OBJ/STL/glTF/GLB 导入**（3D 视图工具条 📥OBJ / OBJ / STL / GLTF 按钮）
 - **插入图片**：工具栏 🖼 选择图片 → 点击两个基点放置；拖动第二基点缩放，**保持原始长宽比**（图片随 .ggk 保存/加载）
 - 一键生成**试卷 HTML**（题目截图 + 题干/答案编辑，A4 打印即 PDF）；**短链接分享**
 

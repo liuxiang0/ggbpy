@@ -77,6 +77,11 @@ def jpost(path, body):
         return st, None
 
 
+def _num_or_none(v):
+    m = _re.search(r"-?\d+(?:\.\d+)?", str(v))
+    return float(m.group(0)) if m else None
+
+
 def clear():
     http("/api/clear", {}, method="POST")
 
@@ -606,6 +611,59 @@ if ok_json:
           len(g["nodes"]) >= 1 and len(g["meshes"]) >= 1
           and any(a["type"] == "VEC3" for a in g["accessors"]),
           "%d nodes / %d accessors" % (len(g["nodes"]), len(g["accessors"])))
+
+# ---------------------------------------------------------------------------
+section("M. 第十批：点云统计 / glTF 导入 / 大网格渲染预算")
+clear()
+for t in ["L={(0,0,0),(2,0,0),(0,3,0),(0,0,1),(2,3,1)}", "bb=BoundingBox[L]",
+          "V_bb=Volume[bb]", "cov=Covariance[L]"]:
+    put(t)
+els = state3d()
+bb = find(els, "bb")
+check("API BoundingBox → 8/6/12 网格",
+      bb is not None and (len((bb.get("data") or {}).get("verts", [])),
+                          len((bb.get("data") or {}).get("faces", [])),
+                          len((bb.get("data") or {}).get("edges", []))) == (8, 6, 12),
+      str([len((bb.get("data") or {}).get(k, [])) for k in ("verts", "faces", "edges")]) if bb else None)
+st, d = jget("/api/state")
+vals = {e.get("label"): e.get("value") for e in (d or {}).get("elements", [])}
+check("API 包围盒体积 = 6", "6" in str(vals.get("V_bb")), str(vals.get("V_bb")))
+cov_el = [e for e in (d or {}).get("elements", []) if e.get("label") == "cov"]
+check("API Covariance → 3×3 矩阵元素", bool(cov_el) and cov_el[0].get("kind") == "matrix",
+      cov_el[0].get("kind") if cov_el else None)
+# glTF 导入（服务端嗅探）
+gltf_out, _w = None, None
+from kernel.mesh_io import export_gltf as _exp_gltf  # noqa: E402
+req = urllib.request.Request(BASE + "/api/clear", data=b"{}",
+                             headers={"Content-Type": "application/json"}, method="POST")
+urllib.request.urlopen(req, timeout=10).read()
+for t in ["cu=Cube[(0,0,0),(2,0,0)]"]:
+    put(t)
+_local = Construction()
+_local.process("cu=Cube[(0,0,0),(2,0,0)]")
+gltf_text, _w = _exp_gltf(_local)
+req2 = urllib.request.Request(BASE + "/api/mesh", data=gltf_text.encode("utf-8"),
+                              headers={"Content-Type": "application/octet-stream"}, method="POST")
+try:
+    with urllib.request.urlopen(req2, timeout=15) as resp:
+        rst2 = resp.status
+        rm2 = json.loads(resp.read().decode("utf-8"))
+except Exception as e:
+    rst2, rm2 = 0, {"ok": False, "message": str(e)}
+check("POST /api/mesh 识别 glTF", rst2 == 200 and (rm2 or {}).get("format") == "gltf"
+      and rm2.get("verts") == 8 and rm2.get("faces") == 12,
+      json.dumps(rm2, ensure_ascii=False)[:110])
+if (rm2 or {}).get("id"):
+    put("mG=Mesh[" + rm2["id"] + "]")
+    put("V_mG=Volume[mG]")
+    els = state3d()
+    m = find(els, "mG")
+    check("glTF 导入 → Mesh 元素（12 三角面）", m is not None and len((m.get("data") or {}).get("faces", [])) == 12,
+          str(len((m.get("data") or {}).get("faces", []))) if m else None)
+    st3, d3 = jget("/api/state")
+    v3 = {e.get("label"): e.get("value") for e in (d3 or {}).get("elements", [])}
+    check("glTF 导入立方体体积 ≈ 8", _num_or_none(v3.get("V_mG")) is not None
+          and abs(_num_or_none(v3["V_mG"]) - 8.0) < 1e-4, str(v3.get("V_mG")))
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

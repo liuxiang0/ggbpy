@@ -1189,6 +1189,88 @@ check("glTF 首顶点数据可解析", all(abs(first[i] - [0.0, 0.0, 0.0][i]) < 
 check("glTF 无网格时给出警告", bool(export_gltf(Construction())[1]))
 
 # ---------------------------------------------------------------------------
+section("AE. 点云统计：BoundingBox / Covariance")
+import numpy as _np  # noqa: E402
+c42, e42 = build(["L={(0,0,0),(2,0,0),(0,3,0),(0,0,1),(2,3,1)}",
+                  "bb=BoundingBox[L]", "V=Volume[bb]", "A=Area[bb]", "cov=Covariance[L]",
+                  "L2={(1,2),(3,4),(5,9)}", "cov2=Covariance[L2]",
+                  "same={(1,1,1),(1,1,1)}"])
+check("统计用例构造", e42 is None, str(e42))
+if e42 is None:
+    bb = c42.elements["bb"]
+    d = bb.data
+    check("包围盒 8/6/12", (len(d["verts"]), len(d["faces"]), len(d["edges"])) == (8, 6, 12),
+          "%d/%d/%d" % (len(d["verts"]), len(d["faces"]), len(d["edges"])))
+    check("包围盒 lo/hi 正确", d["lo"] == [0.0, 0.0, 0.0] and d["hi"] == [2.0, 3.0, 1.0],
+          str(d["lo"]) + str(d["hi"]))
+    check("包围盒体积 = 6", close(c42.elements["V"].value, 6.0, 1e-9), "%.6f" % c42.elements["V"].value)
+    check("包围盒表面积 = 22", close(c42.elements["A"].value, 22.0, 1e-9), "%.6f" % c42.elements["A"].value)
+    check("包围盒数据可 JSON 序列化", isinstance(d["verts"][0][0], float))
+    cov = c42.elements["cov"].data
+    pts = _np.array([[0, 0, 0], [2, 0, 0], [0, 3, 0], [0, 0, 1], [2, 3, 1]], dtype=float)
+    q = pts - pts.mean(axis=0)
+    exp_cov = (q.T @ q) / len(pts)
+    check("协方差矩阵 = numpy 参考（3×3）", cov.shape == (3, 3) and float(_np.max(_np.abs(cov - exp_cov))) < 1e-12,
+          str(cov.shape))
+    cov2 = c42.elements["cov2"].data
+    p2 = _np.array([[1, 2], [3, 4], [5, 9]], dtype=float)
+    q2 = p2 - p2.mean(axis=0)
+    exp2 = (q2.T @ q2) / len(p2)
+    check("协方差矩阵 = numpy 参考（2×2）", cov2.shape == (2, 2) and float(_np.max(_np.abs(cov2 - exp2))) < 1e-12,
+          str(cov2.shape))
+    c42.process("bad=BoundingBox[same]")
+    check("点云退化为一点 → error", bool(c42.elements["bad"].error), str(c42.elements["bad"].error))
+    r_bad = c42.process("bad2=Covariance[{(1,1,1)}]")
+    check("单点协方差 → 明确报错", "至少" in r_bad or (c42.elements.get("bad2") is not None
+                                                  and c42.elements["bad2"].error),
+          r_bad[:50])
+
+# ---------------------------------------------------------------------------
+section("AF. glTF / GLB 导入")
+c43, _e43 = build(["cu=Cube[(0,0,0),(2,0,0)]", "cc=Circle[(0,0),2]", "co=Cone[cc,3]"])
+gltf_out, _w43 = export_gltf(c43)
+v43, f43, _w43b, fmt43 = parse_mesh(gltf_out.encode())
+exp_v43 = len(c43.elements["cu"].data["verts"]) + len(c43.elements["co"].data["verts"])
+exp_t43 = (sum(len(x) - 2 for x in c43.elements["cu"].data["faces"])
+           + sum(len(x) - 2 for x in c43.elements["co"].data["faces"]))
+check("glTF 导出→导入 顶点一致", fmt43 == "gltf" and len(v43) == exp_v43, "%s %d vs %d" % (fmt43, len(v43), exp_v43))
+check("glTF 导出→导入 三角一致", len(f43) == exp_t43, "%d vs %d" % (len(f43), exp_t43))
+_mid4 = _ms.put(v43, f43)
+c44, e44 = build(["m=Mesh[" + _mid4 + "]", "V_m=Volume[m]"])
+check("glTF 导入 → Mesh 元素可用", e44 is None, str(e44))
+if e44 is None:
+    # 导入网格没有解析元数据，体积按三角网格计算（≠ 圆锥解析体积 πr²h/3）
+    from kernel.commands import _mesh_volume as _mv  # noqa: E402
+    exp_mesh_v = _mv(c43.elements["cu"].data) + _mv(c43.elements["co"].data)
+    # glTF 顶点为 float32，往返后体积有 ~1e-7 相对误差
+    check("glTF 导入网格体积 = 源网格体积之和（float32 容差）",
+          abs(c44.elements["V_m"].value - exp_mesh_v) < 1e-5 * max(1.0, abs(exp_mesh_v)),
+          "%.6f vs %.6f" % (c44.elements["V_m"].value, exp_mesh_v))
+# GLB（二进制容器）
+_js = _json.dumps({"asset": {"version": "2.0"},
+                   "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+                   "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+                                 {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}],
+                   "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 36},
+                                   {"buffer": 0, "byteOffset": 36, "byteLength": 6}]}).encode()
+_bin = _st.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 1, 0) + _st.pack("<3H", 0, 1, 2)
+_jb = _js + b" " * ((4 - len(_js) % 4) % 4)
+_bb = _bin + b"\x00" * ((4 - len(_bin) % 4) % 4)
+_glb = (b"glTF" + _st.pack("<II", 2, 12 + 8 + len(_jb) + 8 + len(_bb))
+        + _st.pack("<II", len(_jb), 0x4E4F534A) + _jb
+        + _st.pack("<II", len(_bb), 0x004E4942) + _bb)
+vglb, fglb, _wglb, fmtglb = parse_mesh(_glb)
+check("GLB 解析（3 顶点/1 三角）", fmtglb == "glb" and len(vglb) == 3 and len(fglb) == 1,
+      "%s %d/%d" % (fmtglb, len(vglb), len(fglb)))
+check("GLB 顶点坐标正确", close(vglb[1][0], 1.0) and close(vglb[2][1], 1.0), str(vglb[1]) + str(vglb[2]))
+try:
+    parse_mesh(_json.dumps({"asset": {"version": "2.0"}, "buffers": [{"uri": "a.bin", "byteLength": 4}],
+                            "meshes": []}))
+    check("外部 buffer 的 .gltf → 报错", False, "未报错")
+except Exception as _ex:
+    check("外部 buffer 的 .gltf → 报错", "外部 buffer" in str(_ex), str(_ex)[:40])
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D 内核检测矩阵：%d 项断言，%d 失败" % (COUNT[0], len(FAILS)))
 if FAILS:

@@ -585,6 +585,71 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     }
   }
 
+  // 第十批：大网格渲染预算（计时）+ glTF 文件导入
+  await reset(['O=(0,0,0)']);
+  await page.fill('#cmd', 'big=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,28]');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(1500);
+  await open3d();
+  await page.waitForTimeout(700);
+  let els10 = await state3d();
+  const big10 = els10.filter(e => e.solid === 'surface')[0];
+  const bigFaces = big10 ? (big10.data.faces || []).length : 0;
+  check('大网格等值面已建成（面数 > 3000）', bigFaces > 3000, 'faces=' + bigFaces);
+  // 输入框在 3D 模式下创建对象后，客户端 3D 列表应立即刷新（回归：此前要切模式才出现）
+  const clientN = await page.evaluate(() => window.__ggbpyDebug.els3dCount());
+  check('3D 模式下输入后客户端 3D 列表已刷新', clientN >= 1, 'els3d=' + clientN);
+  const dbg = await page.evaluate(() => !!(window.__ggbpyDebug && window.__ggbpyDebug.render3d));
+  check('渲染调试钩子可用', dbg, dbg ? 'ok' : 'missing');
+  if (dbg) {
+    const budget = await page.evaluate(() => window.__ggbpyDebug.faceBudget());
+    check('面预算生效（2000）', budget === 2000, String(budget));
+    const ms = await page.evaluate(() => {
+      const t0 = performance.now();
+      for (let i = 0; i < 3; i++) window.__ggbpyDebug.render3d();
+      return performance.now() - t0;
+    });
+    check('大网格 3 次重绘 < 1500ms（预算 + 跳过遮挡测试）', ms < 1500, ms.toFixed(0) + 'ms');
+    const cacheN = await page.evaluate(() => window.__ggbpyDebug.cacheSize());
+    check('LOD 面表已缓存', cacheN >= 1, 'cache=' + cacheN);
+  }
+  const px10 = await nonBgPixels();
+  check('大网格仍渲染出内容（像素 > 500）', px10 > 500, 'non-bg pixels=' + px10);
+  // glTF 文件导入
+  const gltfPath = require('os').tmpdir() + '/ggbpy_ui_test.gltf';
+  const miniGltf = {
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0, name: 'tri' }],
+    meshes: [{ name: 'tri', primitives: [{ attributes: { POSITION: 0 }, indices: 1, mode: 4 }] }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 4, type: 'VEC3', min: [0, 0, 0], max: [2, 2, 0] },
+      { bufferView: 1, componentType: 5123, count: 6, type: 'SCALAR' }
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 48 },
+      { buffer: 0, byteOffset: 48, byteLength: 12 }
+    ],
+    buffers: [{ byteLength: 60, uri: 'data:application/octet-stream;base64,' +
+      Buffer.from(new Float32Array([0, 0, 0, 2, 0, 0, 2, 2, 0, 0, 2, 0]).buffer).toString('base64') +
+      Buffer.from(new Uint16Array([0, 1, 2, 0, 2, 3]).buffer).toString('base64') }]
+  };
+  fs.writeFileSync(gltfPath, JSON.stringify(miniGltf));
+  await page.setInputFiles('#objfile', gltfPath);
+  await page.waitForTimeout(1200);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+  await open3d();
+  await page.waitForTimeout(500);
+  els10 = await state3d();
+  const gmesh = els10.filter(e => e.solid === 'mesh')[0];
+  check('glTF 导入生成网格（4 顶点 / 2 三角）', !!gmesh && (gmesh.data.verts || []).length === 4
+    && (gmesh.data.faces || []).length === 2,
+    gmesh ? (gmesh.data.verts.length + '/' + gmesh.data.faces.length) : 'missing');
+  const pxG = await nonBgPixels();
+  check('glTF 导入网格已渲染（像素 > 500）', pxG > 500, 'non-bg pixels=' + pxG);
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));

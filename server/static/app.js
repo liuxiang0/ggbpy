@@ -1764,6 +1764,11 @@
     if (mode3d) render3d();
   }
 
+  // 3D 模式下任何构造变更后同步刷新 3D 视图与对象列表
+  function refresh3dIfNeeded() {
+    if (mode3d) load3d();
+  }
+
   function load3d() {
     fetch('/api/state3d').then(function (r) { return r.json(); }).then(function (d) {
       els3d = d.elements;
@@ -2028,6 +2033,44 @@
     ctx3.fillStyle = '#374151';
     ctx3.beginPath(); ctx3.arc(mx, my, 3, 0, Math.PI * 2); ctx3.fill();
   }
+  // 大网格渲染预算：面数超限时只画面积最大的面（LOD，保轮廓），
+  // 并跳过 O(边×面) 的 hidden-line 遮挡测试，避免等值面/参数曲面卡死。
+  var MESH_FACE_BUDGET = 2000;
+  var MESH_EDGE_BUDGET = 4000;
+  var OCCLUSION_BUDGET = 150000;
+  var meshFaceCache = {};
+  function selectMeshFaces(el, verts, cfaces) {
+    if (cfaces.length <= MESH_FACE_BUDGET) return cfaces;
+    var key = el.label + '|' + cfaces.length + '|' + verts.length;
+    if (meshFaceCache[key]) return meshFaceCache[key];
+    var scored = [];
+    for (var i = 0; i < cfaces.length; i++) {
+      var f = cfaces[i];
+      var a0 = verts[f[0]], A = 0;
+      for (var k = 1; k < f.length - 1; k++) {
+        var b = verts[f[k]], c2 = verts[f[k + 1]];
+        var ux = b[0] - a0[0], uy = b[1] - a0[1], uz = b[2] - a0[2];
+        var vx = c2[0] - a0[0], vy = c2[1] - a0[1], vz = c2[2] - a0[2];
+        var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        A += 0.5 * Math.sqrt(nx * nx + ny * ny + nz * nz);
+      }
+      scored.push([A, i]);
+    }
+    scored.sort(function (p, q) { return q[0] - p[0]; });
+    var sel = [];
+    for (var m = 0; m < MESH_FACE_BUDGET && m < scored.length; m++) sel.push(cfaces[scored[m][1]]);
+    meshFaceCache[key] = sel;
+    return sel;
+  }
+  // 供检测脚本计时/取内部状态（只读，不影响交互）
+  window.__ggbpyDebug = {
+    render3d: function () { render3d(); },
+    faceBudget: function () { return MESH_FACE_BUDGET; },
+    cacheSize: function () { return Object.keys(meshFaceCache).length; },
+    els3dCount: function () { return (typeof els3d !== 'undefined' && els3d) ? els3d.length : -1; },
+    mode3d: function () { return typeof mode3d !== 'undefined' ? !!mode3d : null; }
+  };
+
   function render3d() {
     ctx3.clearRect(0, 0, cssW, cssH);
     // 坐标轴（带箭头 + 标签 + 原点）
@@ -2070,6 +2113,7 @@
         var cfaces = dt.faces || [];
         var fillCol = e.objtype === 'cube' ? 'rgba(79,70,229,.16)' : 'rgba(217,70,239,.12)';
         var strokeCol = e.objtype === 'cube' ? '#4f46e5' : '#d946ef';
+        cfaces = selectMeshFaces(e, verts, cfaces);   // 大网格 LOD：只画最大的若干面
         for (var f = 0; f < cfaces.length; f++) {
           var idx = cfaces[f];
           var poly = [];
@@ -2081,9 +2125,11 @@
           }
           faces.push({ poly: poly, z: zsum / idx.length, color: fillCol, stroke: strokeCol, wire: e.wire });
         }
-        for (var ed = 0; ed < (dt.edges || []).length; ed++) {
-          var e2 = dt.edges[ed];
-          segs.push([verts[e2[0]], verts[e2[1]]]);
+        if ((dt.edges || []).length <= MESH_EDGE_BUDGET) {
+          for (var ed = 0; ed < (dt.edges || []).length; ed++) {
+            var e2 = dt.edges[ed];
+            segs.push([verts[e2[0]], verts[e2[1]]]);
+          }
         }
       } else if (e.objtype === 'plane') {
         var a3 = [dt.ax, dt.ay, dt.az], u3 = [dt.ux, dt.uy, dt.uz], v3 = [dt.vx, dt.vy, dt.vz];
@@ -2246,8 +2292,9 @@
       }
       return false;
     }
+    var doOcclusion = (faces.length * segs.length) <= OCCLUSION_BUDGET;
     for (var si = 0; si < segs.length; si++) {
-      var occ = edgeOccluded(segs[si][0], segs[si][1]);
+      var occ = doOcclusion && edgeOccluded(segs[si][0], segs[si][1]);
       if (occ) {
         var oa = proj3(segs[si][0]), ob = proj3(segs[si][1]);
         ctx3.strokeStyle = 'rgba(107,114,128,.55)';
@@ -3133,6 +3180,7 @@
     }, function (d) {
       setMsg(d.message, !d.ok);
       if (d.elements) { elements = d.elements; render(); }
+      refresh3dIfNeeded();          // 3D 模式下同步刷新 3D 视图与列表
       if (d.ok) cmdEl.value = '';
     });
   }
@@ -3328,14 +3376,14 @@
   }
 
   btn('btn-undo', function () {
-    api('POST', '/api/undo', null, function (d) { setMsg(d.message, !d.ok); if (d.elements) { elements = d.elements; render(); } });
+    api('POST', '/api/undo', null, function (d) { setMsg(d.message, !d.ok); if (d.elements) { elements = d.elements; render(); } refresh3dIfNeeded(); });
   });
   btn('btn-redo', function () {
-    api('POST', '/api/redo', null, function (d) { setMsg(d.message, !d.ok); if (d.elements) { elements = d.elements; render(); } });
+    api('POST', '/api/redo', null, function (d) { setMsg(d.message, !d.ok); if (d.elements) { elements = d.elements; render(); } refresh3dIfNeeded(); });
   });
   btn('btn-clear', function () {
     if (!confirm('确定清空所有对象？')) return;
-    api('POST', '/api/clear', null, function (d) { setMsg(d.message, !d.ok); if (d.elements) { elements = d.elements; render(); } });
+    api('POST', '/api/clear', null, function (d) { setMsg(d.message, !d.ok); if (d.elements) { elements = d.elements; render(); } refresh3dIfNeeded(); });
   });
   btn('btn-demo', function () {
     api('POST', '/api/demo', null, function (d) { setMsg(d.message, !d.ok); if (d.elements) { elements = d.elements; render(); } });

@@ -202,6 +202,10 @@ def parse_mesh(data) -> Tuple[List[List[float]], List[List[int]], List[str], str
 
     if isinstance(data, (bytes, bytearray)):
         raw = bytes(data)
+        if raw[:4] == b"glTF":
+            return parse_gltf(raw)
+        if raw.lstrip()[:1] == b"{" and b'"asset"' in raw[:2048]:
+            return parse_gltf(raw.decode("utf-8", errors="replace"))   # 单文件 .gltf（JSON）
         head = raw[:2048].lower()
         if head.lstrip().startswith(b"solid") and b"facet" in head:
             v, f, w = _parse_stl_ascii(raw.decode("utf-8", errors="replace"))
@@ -213,8 +217,10 @@ def parse_mesh(data) -> Tuple[List[List[float]], List[List[int]], List[str], str
             v, f, w = _parse_stl_binary(raw)
             return v, f, w, "stl-binary"
         except Exception:
-            raise GeoError("无法识别的网格文件（支持 OBJ / ASCII STL / 二进制 STL）")
+            raise GeoError("无法识别的网格文件（支持 OBJ / ASCII STL / 二进制 STL / glTF / GLB）")
     text = str(data)
+    if text.lstrip().startswith("{") and '"asset"' in text[:2048] and '"meshes"' in text:
+        return parse_gltf(text)
     if "facet" in text[:2048].lower() and text.lstrip().lower().startswith("solid"):
         v, f, w = _parse_stl_ascii(text)
         return v, f, w, "stl-ascii"
@@ -286,3 +292,106 @@ def export_gltf(cons) -> Tuple[str, List[str]]:
         "accessors": accessors,
     }
     return json.dumps(data, ensure_ascii=False), warnings
+
+
+def _read_gltf_accessor(gltf, bin_data: bytes, ai: int):
+    import struct
+    from .elements import GeoError
+
+    acc = gltf["accessors"][ai]
+    bv = gltf["bufferViews"][acc["bufferView"]]
+    off = int(bv.get("byteOffset", 0)) + int(acc.get("byteOffset", 0))
+    comp = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}.get(acc["type"], 1)
+    fmt = {5126: "f", 5125: "I", 5123: "H", 5122: "h", 5121: "B", 5120: "b"}.get(acc["componentType"])
+    if fmt is None:
+        raise GeoError("glTF accessor 分量类型不支持: " + str(acc.get("componentType")))
+    size = struct.calcsize("<" + fmt)
+    stride = int(bv.get("byteStride") or size * comp)
+    out = []
+    for i in range(int(acc["count"])):
+        out.append(struct.unpack_from("<" + fmt * comp, bin_data, off + i * stride))
+    return out
+
+
+def _gltf_to_mesh(gltf, bin_data: bytes):
+    from .elements import GeoError
+
+    verts: List[List[float]] = []
+    faces: List[List[int]] = []
+    for mesh in gltf.get("meshes", []) or []:
+        for prim in mesh.get("primitives", []) or []:
+            attrs = prim.get("attributes") or {}
+            if "POSITION" not in attrs:
+                continue
+            pos = _read_gltf_accessor(gltf, bin_data, attrs["POSITION"])
+            base = len(verts)
+            for p in pos:
+                verts.append([float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)])
+            if "indices" in prim:
+                idx = [int(v[0]) for v in _read_gltf_accessor(gltf, bin_data, prim["indices"])]
+                for i in range(0, len(idx) - 2, 3):
+                    faces.append([base + idx[i], base + idx[i + 1], base + idx[i + 2]])
+            else:
+                for i in range(0, len(pos) - 2, 3):
+                    faces.append([base + i, base + i + 1, base + i + 2])
+    if not verts or not faces:
+        raise GeoError("glTF 中没有可用的网格数据")
+    return verts, faces, []
+
+
+def _parse_glb(data: bytes):
+    import json as _json
+    import struct
+    from .elements import GeoError
+
+    if len(data) < 20:
+        raise GeoError("GLB 文件过短")
+    magic, _ver, total = struct.unpack_from("<III", data, 0)
+    if magic != 0x46546C67:
+        raise GeoError("不是 GLB（magic 不匹配）")
+    off = 12
+    js = None
+    binb = None
+    limit = min(int(total), len(data))
+    while off + 8 <= limit:
+        clen, ctype = struct.unpack_from("<II", data, off)
+        off += 8
+        chunk = data[off:off + clen]
+        off += clen + ((4 - clen % 4) % 4)
+        if ctype == 0x4E4F534A:
+            js = chunk
+        elif ctype == 0x004E4942:
+            binb = chunk
+    if js is None:
+        raise GeoError("GLB 缺少 JSON 块")
+    gltf = _json.loads(js.decode("utf-8", errors="replace"))
+    if binb is None:
+        binb = _gltf_buffer_bytes(gltf)
+    return _gltf_to_mesh(gltf, binb)
+
+
+def _gltf_buffer_bytes(gltf) -> bytes:
+    import base64
+    from .elements import GeoError
+
+    buffers = gltf.get("buffers") or []
+    if not buffers:
+        raise GeoError("glTF 没有 buffers")
+    uri = buffers[0].get("uri") or ""
+    if uri.startswith("data:"):
+        return base64.b64decode(uri.split(",", 1)[1])
+    raise GeoError("glTF 使用了外部 buffer（请导出单文件或 .glb）")
+
+
+def parse_gltf(data) -> Tuple[List[List[float]], List[List[int]], List[str], str]:
+    """解析单文件 .gltf 或 .glb → (verts, faces, warnings, 格式名)。"""
+    import json as _json
+
+    if isinstance(data, (bytes, bytearray)):
+        raw = bytes(data)
+        if raw[:4] == b"glTF":
+            v, f, w = _parse_glb(raw)
+            return v, f, w, "glb"
+        data = raw.decode("utf-8", errors="replace")
+    gltf = _json.loads(str(data))
+    return _gltf_to_mesh(gltf, _gltf_buffer_bytes(gltf)) + ("gltf",)

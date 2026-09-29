@@ -1002,6 +1002,59 @@ def _ix_circle3d_solid(cir, solid, idx=None):
     return dict(zip(("x", "y", "z"), pt(uniq[k - 1])))
 
 
+def _cmd_bbox(cons, defn, args):
+    """BoundingBox[点列表]：点云轴对齐包围盒（8 顶点/6 面/12 棱，可求体积/面积）。"""
+    if len(args) != 1:
+        raise GeoError("BoundingBox 需要三维点列表")
+    L = _list_arg(cons, args[0])
+    if L.itemkind not in ("point", "point3d"):
+        raise GeoError("BoundingBox 需要点列表")
+    return _mk(cons, Geo3D, "geo3d", defn, [L], lambda d: _bbox_state(d[0].items))
+
+
+def _bbox_state(items):
+    import numpy as np
+    if not items:
+        raise GeoError("点列表为空")
+    pts = np.array([[float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)] for p in items])
+    lo = pts.min(axis=0)
+    hi = pts.max(axis=0)
+    if bool(np.all(hi - lo < 1e-12)):
+        raise GeoError("点云退化为一点，无法构成包围盒")
+    corners = [[float(lo[0]) if i & 1 == 0 else float(hi[0]),
+                float(lo[1]) if i & 2 == 0 else float(hi[1]),
+                float(lo[2]) if i & 4 == 0 else float(hi[2])] for i in range(8)]
+    faces = [[0, 1, 3, 2], [4, 6, 7, 5], [0, 1, 5, 4], [1, 3, 7, 5], [3, 2, 6, 7], [2, 0, 4, 6]]
+    edges = [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4],
+             [0, 4], [1, 5], [3, 7], [2, 6]]
+    return {"objtype": "polyhedron", "solid": "box",
+            "data": {"verts": corners, "faces": _normalize_mesh(corners, faces), "edges": edges,
+                     "lo": [float(v) for v in lo], "hi": [float(v) for v in hi]}}
+
+
+def _cmd_covariance(cons, defn, args):
+    """Covariance[点列表]：总体协方差矩阵（二维列表 → 2×2，三维列表 → 3×3）。"""
+    if len(args) != 1:
+        raise GeoError("Covariance 需要点列表")
+    L = _list_arg(cons, args[0])
+    if L.itemkind not in ("point", "point3d"):
+        raise GeoError("Covariance 需要点列表")
+    three = L.itemkind == "point3d"
+
+    def fn(d):
+        import numpy as np
+        items = d[0].items
+        if len(items) < 2:
+            raise GeoError("Covariance 至少需要两个点")
+        if three:
+            pts = np.array([[float(p[0]), float(p[1]), float(p[2])] for p in items])
+        else:
+            pts = np.array([[float(p[0]), float(p[1])] for p in items])
+        q = pts - pts.mean(axis=0)
+        return {"data": (q.T @ q) / len(pts)}
+    return _mk(cons, GeoMatrix, "matrix", defn, [L], fn)
+
+
 def _cmd_fitsphere(cons, defn, args):
     """FitSphere[点列表]：最小二乘球拟合（代数拟合，需 ≥4 点）。"""
     if len(args) != 1:
@@ -6902,6 +6955,7 @@ ALIASES = {
     "网格": "mesh", "导入网格": "mesh",
     "参数曲面": "surfaceparam", "隐式曲面": "implicitsurface",
     "质心": "centroid", "拟合球": "fitsphere", "球拟合": "fitsphere",
+    "包围盒": "boundingbox", "点云包围盒": "boundingbox", "协方差": "covariance", "协方差矩阵": "covariance",
     "内切圆": "incircle", "内心": "incenter", "重心": "centroid",
     "滑动条": "slider", "文本": "text", "轨迹": "locus", "圆上点": "pointoncircle", "动点": "pointonpath",
     "删除": "delete", "重命名": "rename", "重定义": "redefine",
@@ -6967,7 +7021,7 @@ def _result_kind(name: str) -> str:
         "sphere": "geo3d", "plane": "geo3d", "cube": "geo3d",
         "surface": "geo3d", "fitplane": "geo3d", "mesh": "geo3d",
         "surfaceparam": "geo3d", "implicitsurface": "geo3d",
-        "centroid": "point", "fitsphere": "geo3d",
+        "centroid": "point", "fitsphere": "geo3d", "boundingbox": "geo3d", "covariance": "matrix",
         "cone": "geo3d", "cylinder": "geo3d", "prism": "geo3d", "pyramid": "geo3d",
         "tetrahedron": "geo3d", "octahedron": "geo3d", "hexahedron": "geo3d", "icosahedron": "geo3d", "dodecahedron": "geo3d",
         "parametric": "parametric", "polar": "polar", "implicit": "implicit",
@@ -7058,7 +7112,7 @@ COMMANDS = {
     "fitexpr": _cmd_fitexpr,
     "sphere": _cmd_sphere, "surface": _cmd_surface, "fitplane": _cmd_fitplane,
     "mesh": _cmd_mesh, "surfaceparam": _cmd_surface_param, "implicitsurface": _cmd_implicit_surface,
-    "fitsphere": _cmd_fitsphere,
+    "fitsphere": _cmd_fitsphere, "boundingbox": _cmd_bbox, "covariance": _cmd_covariance,
     "plane": _cmd_plane,
     "cube": _cmd_cube,
     "cone": _cmd_cone,
