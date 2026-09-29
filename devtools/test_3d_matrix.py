@@ -712,6 +712,102 @@ if e25 is None:
     check("面接触（零体积）→ error", bool(c25.elements["t0"].error), str(c25.elements["t0"].error))
 
 # ---------------------------------------------------------------------------
+section("T. 3D 网格导出（OBJ / STL）")
+from kernel.mesh_io import export_obj, export_stl  # noqa: E402
+
+c27, e27 = build(["O=(0,0,0)", "cc=Circle[O,2]", "cu=Cube[O,(2,0,0)]", "co=Cone[cc,3]",
+                  "sp=Sphere[O,2]", "pl=Plane[O,(1,0,0),(0,1,0)]", "sec=Intersect[pl,cu]",
+                  "P1=(1,1,1)", "P2=(3,1,1)", "cB=Cube[P1,P2]", "cap=Intersect[cu,cB]"])
+check("导出用例构造", e27 is None, str(e27))
+if e27 is None:
+    obj_text, w_obj = export_obj(c27)
+    stl_text, w_stl = export_stl(c27)
+    meshes = [c27.elements[l] for l in c27.order
+              if getattr(c27.elements[l], "objtype", "") in ("cube", "polyhedron")]
+    exp_v = sum(len(m.data["verts"]) for m in meshes)
+    exp_f = sum(len(m.data["faces"]) for m in meshes)
+    exp_tri = sum(sum(len(f) - 2 for f in m.data["faces"] if len(f) >= 3) for m in meshes)
+    got_v = sum(1 for l in obj_text.splitlines() if l.startswith("v "))
+    got_f = sum(1 for l in obj_text.splitlines() if l.startswith("f "))
+    got_o = sum(1 for l in obj_text.splitlines() if l.startswith("o "))
+    check("OBJ 顶点数 = 网格顶点总数", got_v == exp_v, "%d vs %d" % (got_v, exp_v))
+    check("OBJ 面数 = 网格面总数", got_f == exp_f, "%d vs %d" % (got_f, exp_f))
+    check("OBJ 每对象一个 o 块", got_o == len(meshes), "%d vs %d" % (got_o, len(meshes)))
+    check("OBJ 面索引 1-based 且不越界", all(
+        all(1 <= int(t) <= exp_v for t in l.split()[1:])
+        for l in obj_text.splitlines() if l.startswith("f ")))
+    check("OBJ 提示跳过非网格对象", any("跳过" in w for w in w_obj), str(w_obj))
+    got_facet = stl_text.count("facet normal")
+    check("STL 三角面数 = Σ(面顶点数−2)", got_facet == exp_tri, "%d vs %d" % (got_facet, exp_tri))
+    check("STL solid 块数 = 网格对象数", stl_text.count("\nsolid ") + stl_text.startswith("solid ") == len(meshes)
+          or (stl_text.count("solid ") - stl_text.count("endsolid ")) == len(meshes),
+          str(stl_text.count("solid ") - stl_text.count("endsolid ")))
+    normals_ok = True
+    for line in stl_text.splitlines():
+        if line.strip().startswith("facet normal"):
+            v = [float(x) for x in line.split()[2:5]]
+            nn = math.sqrt(sum(x * x for x in v))
+            if nn > 1e-9 and abs(nn - 1.0) > 1e-6:
+                normals_ok = False
+    check("STL 面法向均为单位向量", normals_ok)
+    check("STL 三角顶点数 = 3×面片数",
+          sum(1 for l in stl_text.splitlines() if l.strip().startswith("vertex ")) == 3 * got_facet)
+    # 空构造 → 明确警告
+    c_empty = Construction()
+    _t, w_empty = export_obj(c_empty)
+    check("无网格对象时给出警告", bool(w_empty) and "没有可导出" in w_empty[0], str(w_empty))
+
+# ---------------------------------------------------------------------------
+section("U. 球×空间圆 / 空间圆×空间圆")
+c28, e28 = build(["O=(0,0,0)", "A=(2,0,0)", "B=(1,0,1)", "s1=Sphere[O,2]", "s2=Sphere[A,2]",
+                  "sp14=Sphere[O,1.4]", "sB=Sphere[B,0.5]",
+                  "p0=Plane[O,(1,0,0),(0,1,0)]", "pz1=Plane[(0,0,1),(1,0,1),(0,1,1)]",
+                  "px=Plane[(1,0,0),(1,1,0),(1,0,1)]",
+                  "cc=Intersect[sp14,pz1]", "cA=Intersect[s1,p0]", "cB=Intersect[s2,p0]",
+                  "cC=Intersect[s2,px]",
+                  "sc1=Intersect[sB,cc]", "sc2=Intersect[sB,cc,2]",
+                  "qq1=Intersect[cA,cB]", "qq2=Intersect[cA,cB,2]",
+                  "qr1=Intersect[cA,cC]", "qr2=Intersect[cA,cC,2]"])
+check("球×圆 / 圆×圆用例构造", e28 is None, str(e28))
+if e28 is None:
+    r0 = math.sqrt(1.4 ** 2 - 1.0)
+    ex = r0 * (r0 * r0 + 1 - 0.25) / (2 * r0) / 1.0     # cos t = (r²+1−R²)/(2r)，x = r·cos t
+    x_expected = (r0 * r0 + 1 - 0.25) / 2.0
+    sc1, sc2 = c28.elements["sc1"], c28.elements["sc2"]
+    check("球×空间圆 交点1 x=(r²+1−R²)/2", not sc1.error and close(sc1.x, x_expected, 1e-9),
+          "err=%s x=%.9f 期望 %.9f" % (sc1.error, getattr(sc1, "x", 0) or 0, x_expected))
+    check("球×空间圆 交点1/2 关于 y 对称", not sc2.error and close(sc1.x, sc2.x, 1e-12) and close(sc1.y, -sc2.y, 1e-12),
+          "%.6f vs %.6f" % (sc1.y or 0, sc2.y or 0))
+    check("球×空间圆 均落在 z=1 平面", close(sc1.z, 1.0, 1e-9) and close(sc2.z, 1.0, 1e-9))
+    c28.process("sc3=Intersect[sp14,cc]")
+    check("圆在球面上 → 无穷多交点错误", "无穷多" in str(c28.elements["sc3"].error), str(c28.elements["sc3"].error))
+    c28.process("sc4=Intersect[s1,cc]")
+    check("球与圆不相交 → error", bool(c28.elements["sc4"].error), str(c28.elements["sc4"].error))
+    c28.process("sc5=Intersect[sB,cc,3]")
+    check("球×圆 取第 3 交点 → error", bool(c28.elements["sc5"].error), str(c28.elements["sc5"].error))
+    sq3 = math.sqrt(3)
+    q1, q2, r1e, r2e = (c28.elements[k] for k in ("qq1", "qq2", "qr1", "qr2"))
+    check("共面两圆 交点 (1,√3,0)", not q1.error and close(q1.x, 1.0, 1e-9) and close(q1.y, sq3, 1e-9)
+          and close(q1.z, 0.0, 1e-9), "err=%s" % q1.error)
+    check("共面两圆 第 2 交点 y 取负", not q2.error and close(q2.y, -sq3, 1e-9), "%.9f" % (getattr(q2, "y", 0) or 0))
+    check("异面（同轴共球面）两圆 交点同值", not r1e.error and close(r1e.x, 1.0, 1e-9) and close(r1e.y, sq3, 1e-9),
+          "err=%s" % r1e.error)
+    check("异面两圆 第 2 交点", not r2e.error and close(r2e.y, -sq3, 1e-9))
+    c28.process("q5=Intersect[cA,cA]")
+    check("同一圆 → 重合（无穷多）", "重合" in str(c28.elements["q5"].error), str(c28.elements["q5"].error))
+    c28.process("pz2=Plane[(0,0,1),(1,0,1),(0,1,1)]")
+    c28.process("cE=Intersect[s1,pz2]")
+    c28.process("q6=Intersect[cA,cE]")
+    check("平行异面两圆 → error", bool(c28.elements["q6"].error), str(c28.elements["q6"].error))
+    c28.process("q7=Intersect[cA,cB,3]")
+    check("圆×圆 取第 3 交点 → error", bool(c28.elements["q7"].error), str(c28.elements["q7"].error))
+    # 参数元素本身出错（相切球面圆）时给明确提示而非异常
+    c28.process("bad=Plane[(0,0,2),(1,0,2),(0,1,2)]")
+    c28.process("cBad=Intersect[s1,bad]")
+    rbad = c28.process("q8=Intersect[cA,cBad]")
+    check("求交参数自身出错 → 明确提示", "求交参数无效" in rbad, rbad[:70])
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D 内核检测矩阵：%d 项断言，%d 失败" % (COUNT[0], len(FAILS)))
 if FAILS:

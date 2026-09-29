@@ -562,6 +562,9 @@ def _cmd_intersect(cons, defn, args, idx=None):
     if k2 == "conic" and k1 in ("conic", "circle"):
         return _mk(cons, GeoPoint, "point", defn, [o1, o2], lambda d: _ix_conic_conic(d[0], d[1], idx or 1))
     if k1 == "geo3d" and k2 == "geo3d":
+        for _o in (o1, o2):
+            if getattr(_o, "error", None):
+                raise GeoError("求交参数无效：" + _o.label + "：" + str(_o.error))
         t1, t2 = o1.objtype, o2.objtype
         if t1 == "plane" and t2 == "plane":
             return _mk(cons, Geo3D, "geo3d", defn, [o1, o2], lambda d: _ix_plane_plane(d[0], d[1]))
@@ -583,6 +586,13 @@ def _cmd_intersect(cons, defn, args, idx=None):
                        lambda d: _ix_solid_line(d[1], d[0], idx, t1 == "segment"))
         if t1 == "sphere" and t2 == "sphere":
             return _mk(cons, Geo3D, "geo3d", defn, [o1, o2], lambda d: _ix_sphere_sphere(d[0], d[1]))
+        if (t1, t2) in (("sphere", "circle3d"), ("circle3d", "sphere")):
+            sph, cir = (o1, o2) if t1 == "sphere" else (o2, o1)
+            return _mk(cons, GeoPoint, "point", defn, [sph, cir],
+                       lambda d: _ix_sphere_circle3d(d[0], d[1], idx))
+        if t1 == "circle3d" and t2 == "circle3d":
+            return _mk(cons, GeoPoint, "point", defn, [o1, o2],
+                       lambda d: _ix_circle3d_circle3d(d[0], d[1], idx))
         if (t1, t2) in (("circle3d", "plane"), ("plane", "circle3d")):
             cir, pl = (o1, o2) if t1 == "circle3d" else (o2, o1)
             return _mk(cons, GeoPoint, "point", defn, [cir, pl],
@@ -790,6 +800,113 @@ def _ix_sphere_sphere(s1, s2):
     return {"objtype": "circle3d",
             "data": {"cx": ox, "cy": oy, "cz": oz, "r": math.sqrt(rr2),
                      "normal": [ux, uy, uz], "u": u, "v": v}}
+
+
+def _ix_sphere_circle3d(sph, cir, idx=None):
+    """球 ∩ 空间圆 → 交点（0/1/2 个）。圆上点 P(t)=C+r(cos t·u+sin t·v)，解 |P−S|²=R²。"""
+    c, r, _n0, u, v = _circle3d_basis(cir.data)
+    d = sph.data
+    S = [d["cx"], d["cy"], d["cz"]]
+    R = d["r"]
+    w = [c[0] - S[0], c[1] - S[1], c[2] - S[2]]
+    wu = w[0] * u[0] + w[1] * u[1] + w[2] * u[2]
+    wv = w[0] * v[0] + w[1] * v[1] + w[2] * v[2]
+    ww = w[0] * w[0] + w[1] * w[1] + w[2] * w[2]
+    D = (R * R - ww - r * r) / (2 * r)
+    R0 = math.sqrt(wu * wu + wv * wv)
+    if R0 < 1e-12:
+        if abs(D) < 1e-9:
+            raise GeoError("圆在球面上（无穷多交点）")
+        raise GeoError("圆与球不相交")
+    if abs(D) > R0 + 1e-12:
+        raise GeoError("圆与球不相交")
+    phi = math.atan2(wv, wu)
+    delta = math.acos(max(-1.0, min(1.0, D / R0)))
+    ts = sorted([phi + delta, phi - delta])
+    if len(ts) == 2 and abs(ts[0] - ts[1]) < 1e-12:
+        ts = [ts[0]]
+    k = idx or 1
+    if k > len(ts):
+        raise GeoError("交点只有 " + str(len(ts)) + " 个（请求第 " + str(k) + " 个）")
+    t = ts[k - 1]
+    return {"x": c[0] + r * (math.cos(t) * u[0] + math.sin(t) * v[0]),
+            "y": c[1] + r * (math.cos(t) * u[1] + math.sin(t) * v[1]),
+            "z": c[2] + r * (math.cos(t) * u[2] + math.sin(t) * v[2])}
+
+
+def _ix_circle3d_circle3d(c1_el, c2_el, idx=None):
+    """两空间圆求交 → 交点（共面走解析解，异面走采样 + 二分）。"""
+    c1, r1, n1, u1, v1 = _circle3d_basis(c1_el.data)
+    c2, r2, n2, u2, v2 = _circle3d_basis(c2_el.data)
+    dvec = [c2[i] - c1[i] for i in range(3)]
+    dot_n = n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]
+    plane_gap = n1[0] * dvec[0] + n1[1] * dvec[1] + n1[2] * dvec[2]
+    same_plane = abs(abs(dot_n) - 1.0) < 1e-9 and abs(plane_gap) < 1e-7
+
+    if same_plane:
+        # 平面内两圆（经典 2D 情形），以 c1 为原点、u1/v1 为基
+        px = dvec[0] * u1[0] + dvec[1] * u1[1] + dvec[2] * u1[2]
+        py = dvec[0] * v1[0] + dvec[1] * v1[1] + dvec[2] * v1[2]
+        dist = math.sqrt(px * px + py * py)
+        if dist < 1e-9:
+            if abs(r1 - r2) < 1e-9:
+                raise GeoError("两圆重合（无穷多交点）")
+            raise GeoError("同心圆无交点")
+        if dist > r1 + r2 + 1e-12 or dist < abs(r1 - r2) - 1e-12:
+            raise GeoError("两圆不相交")
+        a = (dist * dist + r1 * r1 - r2 * r2) / (2 * dist)
+        h2 = r1 * r1 - a * a
+        ux, uy = px / dist, py / dist
+        bx = c1[0] + a * ux * u1[0] + a * uy * v1[0]
+        by = c1[1] + a * ux * u1[1] + a * uy * v1[1]
+        bz = c1[2] + a * ux * u1[2] + a * uy * v1[2]
+        if h2 <= 1e-18:
+            pts = [[bx, by, bz]]
+        else:
+            h = math.sqrt(h2)
+            perp = [-uy * u1[0] + ux * v1[0], -uy * u1[1] + ux * v1[1], -uy * u1[2] + ux * v1[2]]
+            pts = [[bx + h * perp[0], by + h * perp[1], bz + h * perp[2]],
+                   [bx - h * perp[0], by - h * perp[1], bz - h * perp[2]]]
+    else:
+        # 平面不平行：圆2 与平面1 恰好交于 2 点，再筛「到 c1 距离 = r1」。
+        # （若用 |P−c1|²−r1² 作判别函数，两圆共球面/同轴时该函数恒为 0，会漏判。）
+        nx = n1[1] * n2[2] - n1[2] * n2[1]
+        ny = n1[2] * n2[0] - n1[0] * n2[2]
+        nz = n1[0] * n2[1] - n1[1] * n2[0]
+        if math.sqrt(nx * nx + ny * ny + nz * nz) < 1e-9:
+            raise GeoError("两圆所在平面平行，无交点")
+        dvec2 = [c2[i] - c1[i] for i in range(3)]
+        E = n1[0] * dvec2[0] + n1[1] * dvec2[1] + n1[2] * dvec2[2]
+        A = r2 * (n1[0] * u2[0] + n1[1] * u2[1] + n1[2] * u2[2])
+        B = r2 * (n1[0] * v2[0] + n1[1] * v2[1] + n1[2] * v2[2])
+        R0 = math.sqrt(A * A + B * B)
+        if abs(E) > R0 + 1e-12:
+            raise GeoError("两圆不相交")
+        phi = math.atan2(B, A)
+        delta = math.acos(max(-1.0, min(1.0, -E / R0)))
+        ts = sorted([phi + delta, phi - delta])
+        if len(ts) == 2 and abs(ts[0] - ts[1]) < 1e-12:
+            ts = [ts[0]]
+
+        def _p2(t):
+            return [c2[0] + r2 * (math.cos(t) * u2[0] + math.sin(t) * v2[0]),
+                    c2[1] + r2 * (math.cos(t) * u2[1] + math.sin(t) * v2[1]),
+                    c2[2] + r2 * (math.cos(t) * u2[2] + math.sin(t) * v2[2])]
+
+        pts = []
+        for t in ts:
+            p = _p2(t)
+            ddx, ddy, ddz = p[0] - c1[0], p[1] - c1[1], p[2] - c1[2]
+            if abs(math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) - r1) < 1e-7:
+                pts.append(p)
+        if not pts:
+            raise GeoError("两圆不相交")
+
+    k = idx or 1
+    if k > len(pts):
+        raise GeoError("交点只有 " + str(len(pts)) + " 个（请求第 " + str(k) + " 个）")
+    p = pts[k - 1]
+    return {"x": p[0], "y": p[1], "z": p[2]}
 
 
 def _ix_circle3d_plane(cir, pl, idx=None):

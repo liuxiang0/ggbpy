@@ -199,15 +199,28 @@ def export_svg(xmin: float = -10.0, xmax: float = 10.0, ymin: float = -10.0, yma
     )
 
 
-@app.get("/api/export/svg")
-def export_svg(xmin: float = -10.0, xmax: float = 10.0, ymin: float = -10.0, ymax: float = 10.0):
-    from kernel.svg_io import export_svg as _exp
-    svg = _exp(cons, (xmin, xmax, ymin, ymax))
-    return Response(
-        content=svg,
-        media_type="image/svg+xml",
-        headers={"Content-Disposition": 'attachment; filename="ggbpy.svg"'},
-    )
+@app.get("/api/export/obj")
+def export_obj():
+    """3D 网格导出：Wavefront OBJ（按对象分组，保留多边形面）。"""
+    from urllib.parse import quote
+    from kernel.mesh_io import export_obj as _exp
+    text, warnings = _exp(cons)
+    headers = {"Content-Disposition": 'attachment; filename="ggbpy.obj"'}
+    if warnings:
+        headers["X-Mesh-Warnings"] = quote(" | ".join(warnings), safe="")
+    return Response(content=text, media_type="model/obj", headers=headers)
+
+
+@app.get("/api/export/stl")
+def export_stl():
+    """3D 网格导出：ASCII STL（三角形面片 + 面法向，按对象分 solid 块）。"""
+    from urllib.parse import quote
+    from kernel.mesh_io import export_stl as _exp
+    text, warnings = _exp(cons)
+    headers = {"Content-Disposition": 'attachment; filename="ggbpy.stl"'}
+    if warnings:
+        headers["X-Mesh-Warnings"] = quote(" | ".join(warnings), safe="")
+    return Response(content=text, media_type="model/stl", headers=headers)
 
 
 @app.get("/api/download")

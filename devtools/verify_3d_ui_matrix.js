@@ -16,6 +16,7 @@
  * 退出码: 0 全通过 / 1 有失败 / 2 服务不可用
  */
 const { chromium } = require('/home/kumath/.openclaw/workspace/node_modules/playwright-core');
+const fs = require('fs');
 const EXE = '/home/kumath/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome';
 const BASE = process.env.GGBPY_BASE || 'http://127.0.0.1:8090';
 
@@ -447,6 +448,27 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     co5 ? ('wire=' + co5.wire + ' locked=' + co5.locked) : 'missing');
   const px5 = await nonBgPixels();
   check('交圆/线框圆锥已渲染（像素 > 500）', px5 > 500, 'non-bg pixels=' + px5);
+
+  // 第六批：OBJ / STL 导出按钮（真实下载校验）
+  await reset(['O=(0,0,0)', 'cc=Circle[O,2]', 'cu=Cube[O,(2,0,0)]', 'co=Cone[cc,3]']);
+  await open3d();
+  for (const [id, ext, needle] of [['btn-obj', 'obj', 'v '], ['btn-stl', 'stl', 'facet normal']]) {
+    const btn = await page.$('#' + id);
+    check('导出按钮存在 #' + id, !!btn, btn ? 'ok' : 'missing');
+    if (!btn) continue;
+    const [dl] = await Promise.all([
+      page.waitForEvent('download', { timeout: 20000 }).catch(() => null),
+      page.click('#' + id),
+    ]);
+    check('#' + id + ' 触发下载 .' + ext, !!dl && new RegExp('\\.' + ext + '$').test(dl.suggestedFilename()),
+      dl ? dl.suggestedFilename() : 'no download');
+    if (dl) {
+      const p = await dl.path();
+      const txt = p ? fs.readFileSync(p, 'utf8') : '';
+      check('.' + ext + ' 内容含「' + needle + '」且非空', txt.indexOf(needle) !== -1 && txt.length > 50,
+        'bytes=' + txt.length);
+    }
+  }
 
   // ---- H. JS 错误 ----
   section('H. JS 错误');

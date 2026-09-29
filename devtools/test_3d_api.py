@@ -376,6 +376,46 @@ check("API redo 后 wire/locked 保留",
       "%s/%s" % (co.get("wire") if co else None, co.get("locked") if co else None))
 
 # ---------------------------------------------------------------------------
+section("I. 第六批：OBJ/STL 导出 / 球×空间圆 / 空间圆×空间圆")
+clear()
+for t in ["O=(0,0,0)", "cc=Circle[O,2]", "cu=Cube[O,(2,0,0)]", "co=Cone[cc,3]",
+          "sp=Sphere[O,2]", "pl=Plane[O,(1,0,0),(0,1,0)]", "sec=Intersect[pl,cu]"]:
+    put(t)
+st, hdrs, raw = http("/api/export/obj")
+hdr = {k.lower(): v for k, v in hdrs.items()}
+obj_txt = raw.decode("utf-8")
+check("OBJ 导出 HTTP 200", st == 200, "HTTP %s" % st)
+check("OBJ 含 v/f/o 行", obj_txt.count("\nv ") > 0 and "\nf " in obj_txt and "\no " in obj_txt,
+      "v=%d f=%d" % (obj_txt.count("\nv "), obj_txt.count("\nf ")))
+check("OBJ 提示跳过非网格对象", "x-mesh-warnings" in hdr, str([k for k in hdr if "mesh" in k]))
+st2, h2, raw2 = http("/api/export/stl")
+stl_txt = raw2.decode("utf-8")
+check("STL 导出 HTTP 200", st2 == 200, "HTTP %s" % st2)
+check("STL 含 facet normal / solid", "facet normal" in stl_txt and stl_txt.startswith("solid "),
+      stl_txt.splitlines()[0][:40] if stl_txt else "")
+check("STL 三角数 = 立方体 12 + 圆锥 94", stl_txt.count("facet normal") == 106, str(stl_txt.count("facet normal")))
+# 球×空间圆 / 空间圆×空间圆
+put("B=(1,0,1)")
+put("sp14=Sphere[O,1.4]")
+put("pz1=Plane[(0,0,1),(1,0,1),(0,1,1)]")
+put("cc2=Intersect[sp14,pz1]")
+put("sB=Sphere[B,0.5]")
+put("sc=Intersect[sB,cc2]")
+put("A=(2,0,0)")
+put("s2=Sphere[A,2]")
+put("cA=Intersect[sp,pl]")
+put("cBc=Intersect[s2,pl]")
+put("qq=Intersect[cA,cBc]")
+els = state3d()
+sc = find(els, "sc")
+qq = find(els, "qq")
+r0 = (1.4 ** 2 - 1.0) ** 0.5
+check("球×空间圆 → 交点 x=(r²+1−R²)/2", sc is not None and abs(sc.get("x", 0) - (r0 * r0 + 1 - 0.25) / 2) < 1e-9,
+      "(%s,%s,%s)" % (sc.get("x"), sc.get("y"), sc.get("z")) if sc else None)
+check("空间圆×空间圆 → 交点 (1,√3,0)", qq is not None and abs(qq.get("x", 0) - 1.0) < 1e-9
+      and abs(abs(qq.get("y", 0)) - 3 ** 0.5) < 1e-9, "(%s,%s,%s)" % (qq.get("x"), qq.get("y"), qq.get("z")) if qq else None)
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D API 检测矩阵 @ %s：%d 项断言，%d 失败" % (BASE, COUNT[0], len(FAILS)))
 for f in FAILS:
