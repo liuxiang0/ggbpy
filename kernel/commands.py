@@ -1055,6 +1055,130 @@ def _cmd_covariance(cons, defn, args):
     return _mk(cons, GeoMatrix, "matrix", defn, [L], fn)
 
 
+def _cmd_cov_ellipsoid(cons, defn, args):
+    """CovarianceEllipsoid[点列表, 倍数?]：协方差椭球（特征向量为轴，半轴 = k√λ）。"""
+    if len(args) not in (1, 2):
+        raise GeoError("CovarianceEllipsoid 需要点列表[, 倍数]")
+    L = _list_arg(cons, args[0])
+    if L.itemkind not in ("point", "point3d"):
+        raise GeoError("CovarianceEllipsoid 需要三维点列表")
+    k = eval_number(cons, args[1]) if len(args) == 2 else 2.0
+    return _mk(cons, Geo3D, "geo3d", defn, [L], lambda d: _cov_ellipsoid_state(d[0].items, k))
+
+
+def _cov_ellipsoid_state(items, k):
+    import numpy as np
+    if len(items) < 2:
+        raise GeoError("协方差椭球至少需要两个点")
+    pts = np.array([[float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)] for p in items])
+    ctr = pts.mean(axis=0)
+    q = pts - ctr
+    cov = (q.T @ q) / len(pts)
+    w, v = np.linalg.eigh(cov)          # 升序：w[i] 对应 v[:,i]
+    axes = [float(k) * math.sqrt(max(0.0, float(w[i]))) for i in range(3)]
+    if max(axes) < 1e-12:
+        raise GeoError("点云退化（方差为 0），无法构成椭球")
+    n = 20
+    verts, faces, edges = [], [], []
+    for j in range(n + 1):
+        phi = math.pi * j / n
+        for i in range(n + 1):
+            th = 2 * math.pi * i / n
+            u = [math.sin(phi) * math.cos(th), math.sin(phi) * math.sin(th), math.cos(phi)]
+            p = [float(ctr[t]) for t in range(3)]
+            for a in range(3):
+                coef = axes[a] * sum(u[b] * float(v[b, a]) for b in range(3))
+                for t in range(3):
+                    p[t] += coef * float(v[t, a])
+            verts.append(p)
+
+    def vid(i, j):
+        return j * (n + 1) + i
+
+    for j in range(n):
+        for i in range(n):
+            faces.append([vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)])
+            edges.append([vid(i, j), vid(i + 1, j)])
+            edges.append([vid(i, j), vid(i, j + 1)])
+    return {"objtype": "polyhedron", "solid": "surface",
+            "data": {"verts": verts, "faces": faces, "edges": edges, "grid": n,
+                     "center": [float(c) for c in ctr], "axes": axes}}
+
+
+def _cmd_isoline(cons, defn, args):
+    """SurfaceIsoline[曲面, 值, 维度?]：曲面在固定参数处的参数线（curve3d）。
+
+    显式曲面 Surface[z=f(x,y)]：维度 1 → 固定 x；维度 2（默认）→ 固定 y。
+    参数曲面 SurfaceParam[...]：维度 1 → 固定 s；维度 2 → 固定 t。
+    """
+    if len(args) not in (2, 3):
+        raise GeoError("SurfaceIsoline 需要 曲面, 参数值[, 维度(1|2)]")
+    surf = _resolve(cons, args[0], ("geo3d",))
+    val = eval_number(cons, args[1])
+    dim = int(eval_number(cons, args[2])) if len(args) == 3 else (2 if getattr(surf, "solid", "") == "surface"
+                                                                  and (surf.data or {}).get("param") is None else 1)
+    if dim not in (1, 2):
+        raise GeoError("维度只能是 1 或 2")
+    return _mk(cons, Geo3D, "geo3d", defn, [surf], lambda d: _isoline_state(d[0], val, dim))
+
+
+def _isoline_state(surf, val, dim):
+    import sympy
+    d = surf.data or {}
+    if getattr(surf, "solid", "") != "surface":
+        raise GeoError("SurfaceIsoline 需要一个曲面（Surface / SurfaceParam / CovarianceEllipsoid）")
+    M = 120
+    if d.get("param"):
+        xb, yb, zb, sname, tname, smin, smax, tmin, tmax = d["param"]
+        su, tu = sympy.symbols(sname + " " + tname)
+        loc = {sname: su, tname: tu, "pi": sympy.pi, "e": sympy.E}
+        fns = [sympy.lambdify((su, tu), sympy.sympify(b.replace("^", "**"), locals=loc), "numpy")
+               for b in (xb, yb, zb)]
+        pts = []
+        for i in range(M + 1):
+            if dim == 1:
+                s = val
+                t = tmin + (tmax - tmin) * i / M
+            else:
+                s = smin + (smax - smin) * i / M
+                t = val
+            if dim == 1 and not (smin - 1e-9 <= s <= smax + 1e-9):
+                raise GeoError("参数值超出曲面定义域")
+            if dim == 2 and not (tmin - 1e-9 <= t <= tmax + 1e-9):
+                raise GeoError("参数值超出曲面定义域")
+            p = []
+            for f in fns:
+                v = f(s, t)
+                v = float(v) if not hasattr(v, "__len__") else float(v[0])
+                if not math.isfinite(v):
+                    raise GeoError("参数线取值非有限（可能落在奇点）")
+                p.append(v)
+            pts.append(p)
+    elif d.get("expr"):
+        xmin, xmax, ymin, ymax = d["ranges"]
+        f = sympy.lambdify(sympy.symbols("x y"), sympy.sympify(str(d["expr"]).replace("^", "**"),
+                                                              locals={"pi": sympy.pi, "e": sympy.E}), "numpy")
+        pts = []
+        for i in range(M + 1):
+            if dim == 1:
+                x, y = val, ymin + (ymax - ymin) * i / M
+                if not (xmin - 1e-9 <= x <= xmax + 1e-9):
+                    raise GeoError("参数值超出曲面定义域")
+            else:
+                x, y = xmin + (xmax - xmin) * i / M, val
+                if not (ymin - 1e-9 <= y <= ymax + 1e-9):
+                    raise GeoError("参数值超出曲面定义域")
+            z = f(x, y)
+            z = float(z) if not hasattr(z, "__len__") else float(z[0])
+            if not math.isfinite(z):
+                raise GeoError("参数线取值非有限（可能落在奇点）")
+            pts.append([x, y, z])
+    else:
+        raise GeoError("该曲面类型不支持参数线（需要 Surface / SurfaceParam）")
+    segs = [[pts[i], pts[i + 1]] for i in range(len(pts) - 1)]
+    return {"objtype": "curve3d", "data": {"segs": segs, "count": len(segs)}}
+
+
 def _cmd_fitsphere(cons, defn, args):
     """FitSphere[点列表]：最小二乘球拟合（代数拟合，需 ≥4 点）。"""
     if len(args) != 1:
@@ -4107,7 +4231,8 @@ def _surface_compute(expr, xmin, xmax, ymin, ymax, n):
             raise GeoError("曲面表达式无法求值：" + str(ex)[:80])
         return {"objtype": "polyhedron", "solid": "surface",
                 "data": {"verts": verts, "faces": faces, "edges": edges,
-                         "grid": n, "expr": expr}}
+                         "grid": n, "expr": expr,
+                         "ranges": [xmin, xmax, ymin, ymax]}}
     return fn
 
 
@@ -4196,7 +4321,9 @@ def _surface_param_compute(xb, yb, zb, sname, tname, smin, smax, tmin, tmax, n):
         for j in range(n):
             edges.append([vid(n, j), vid(n, j + 1)])
         return {"objtype": "polyhedron", "solid": "surface",
-                "data": {"verts": verts, "faces": faces, "edges": edges, "grid": n}}
+                "data": {"verts": verts, "faces": faces, "edges": edges, "grid": n,
+                         "param": [xb, yb, zb, sname, tname,
+                                   smin, smax, tmin, tmax]}}
     return fn
 
 
@@ -6956,6 +7083,7 @@ ALIASES = {
     "参数曲面": "surfaceparam", "隐式曲面": "implicitsurface",
     "质心": "centroid", "拟合球": "fitsphere", "球拟合": "fitsphere",
     "包围盒": "boundingbox", "点云包围盒": "boundingbox", "协方差": "covariance", "协方差矩阵": "covariance",
+    "协方差椭球": "covarianceellipsoid", "椭球": "covarianceellipsoid", "参数线": "surfaceisoline",
     "内切圆": "incircle", "内心": "incenter", "重心": "centroid",
     "滑动条": "slider", "文本": "text", "轨迹": "locus", "圆上点": "pointoncircle", "动点": "pointonpath",
     "删除": "delete", "重命名": "rename", "重定义": "redefine",
@@ -7022,6 +7150,7 @@ def _result_kind(name: str) -> str:
         "surface": "geo3d", "fitplane": "geo3d", "mesh": "geo3d",
         "surfaceparam": "geo3d", "implicitsurface": "geo3d",
         "centroid": "point", "fitsphere": "geo3d", "boundingbox": "geo3d", "covariance": "matrix",
+        "covarianceellipsoid": "geo3d", "surfaceisoline": "geo3d",
         "cone": "geo3d", "cylinder": "geo3d", "prism": "geo3d", "pyramid": "geo3d",
         "tetrahedron": "geo3d", "octahedron": "geo3d", "hexahedron": "geo3d", "icosahedron": "geo3d", "dodecahedron": "geo3d",
         "parametric": "parametric", "polar": "polar", "implicit": "implicit",
@@ -7113,6 +7242,7 @@ COMMANDS = {
     "sphere": _cmd_sphere, "surface": _cmd_surface, "fitplane": _cmd_fitplane,
     "mesh": _cmd_mesh, "surfaceparam": _cmd_surface_param, "implicitsurface": _cmd_implicit_surface,
     "fitsphere": _cmd_fitsphere, "boundingbox": _cmd_bbox, "covariance": _cmd_covariance,
+    "covarianceellipsoid": _cmd_cov_ellipsoid, "surfaceisoline": _cmd_isoline,
     "plane": _cmd_plane,
     "cube": _cmd_cube,
     "cone": _cmd_cone,

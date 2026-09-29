@@ -491,9 +491,13 @@ if e15 is None:
     warns = []
     xml = c15.save_ggb(warns)
     ET.fromstring(xml)
-    check(".ggb 给出 3D 跳过警告", len(warns) == 1 and "不支持 3D" in warns[0], str(warns))
-    check(".ggb 不含 3D 元素标签", 'label="A3"' not in xml and 'label="co"' not in xml and 'label="sp"' not in xml)
-    check(".ggb 跳过级联引用", 'name="Distance"' not in xml)
+    check(".ggb 3D 往返不再需要跳过警告", not warns, str(warns))
+    check(".ggb 包含 3D 元素标签", 'label="A3"' in xml and 'label="co"' in xml and 'label="sp"' in xml)
+    check(".ggb 3D 点带真实 z", 'z="3" w="1"' in xml)
+    c15b = Construction()
+    c15b.load_ggb(xml)
+    check(".ggb 3D 往返元素齐全", c15b.elements.get("co") is not None
+          and len(c15b.elements["co"].data["verts"]) == len(c15.elements["co"].data["verts"]))
 
 # ---------------------------------------------------------------------------
 section("L. 3D 求交的既定边界（锁定当前行为，超出即为变化）")
@@ -1269,6 +1273,109 @@ try:
     check("外部 buffer 的 .gltf → 报错", False, "未报错")
 except Exception as _ex:
     check("外部 buffer 的 .gltf → 报错", "外部 buffer" in str(_ex), str(_ex)[:40])
+
+# ---------------------------------------------------------------------------
+section("AG. .ggb 3D 完整往返")
+c45, e45 = build([
+    "A3=(1,2,3)", "B3=(4,5,6)", "O=(0,0,0)", "P=(1,2)", "c=Circle[O,2]",
+    "sp=Sphere[O,2]", "cu=Cube[O,(2,0,0)]", "co=Cone[c,3]",
+    "pl=Plane[O,(1,0,0),(0,1,0)]", "sec=Intersect[pl,cu]",
+    "sg=Segment[A3,B3]", "sph2=Sphere[(1,1,1),1.2]", "cur=Intersect[sph2,cu]",
+    "cc=Intersect[sp,pl]", "L={(0,0,0),(1,0,0),(0,1,0)}", "fp=FitPlane[L]",
+    "surf=Surface[x^2+y^2,-1,1,-1,1,6]",
+])
+check(".ggb 3D 用例构造", e45 is None, str(e45))
+if e45 is None:
+    warns = []
+    xml = c45.save_ggb(warns)
+    check(".ggb 含 3D 元素时不再警告", not warns, str(warns))
+    check(".ggb 三维点写出真实 z（w=\"1\"）", 'z="3" w="1"' in xml, "")
+    c46 = Construction()
+    c46.load_ggb(xml)
+    # 逐项对比
+    for lbl, key in [("A3", "z"), ("sp", "r"), ("cu", "verts"), ("co", "verts"),
+                     ("sec", "count"), ("cc", "r"), ("cur", "count"), ("surf", "verts")]:
+        e1 = c45.elements[lbl]
+        e2 = c46.elements.get(lbl)
+        d1 = getattr(e1, "data", None) or {}
+        d2 = getattr(e2, "data", None) or {} if e2 is not None else {}
+        if key == "z":
+            ok = e2 is not None and close(getattr(e2, "z", None) or 0, getattr(e1, "z", None) or 0, 1e-9)
+            detail = "z %s → %s" % (getattr(e1, "z", None), getattr(e2, "z", None) if e2 else None)
+        elif key in ("r",):
+            ok = e2 is not None and close(d2.get(key, 0), d1.get(key, 0), 1e-9)
+            detail = "%s %s → %s" % (key, d1.get(key), d2.get(key))
+        elif key == "verts":
+            ok = e2 is not None and len(d2.get("verts", [])) == len(d1.get("verts", []))
+            detail = "v %d → %d" % (len(d1.get("verts", [])), len(d2.get("verts", [])))
+        else:
+            ok = e2 is not None and d2.get(key) == d1.get(key)
+            detail = "%s %s → %s" % (key, d1.get(key), d2.get(key))
+        check(".ggb 往返 " + lbl, ok and (e2 is not None and not e2.error), detail + (" err=%s" % (e2.error if e2 else None)))
+    check(".ggb 往返 2D 点仍为二维", c46.elements.get("P") is not None and c46.elements["P"].z is None)
+    check(".ggb 往返 元素总数一致", len(c46.order) == len(c45.order),
+          "%d vs %d" % (len(c46.order), len(c45.order)))
+    # 导入网格（meshid）必须跳过并警告
+    _midx = _ms.put([[0, 0, 0], [1, 0, 0], [0, 1, 0]], [[0, 1, 2]])
+    c47, _e47 = build(["m=Mesh[" + _midx + "]"])
+    w2 = []
+    xml2 = c47.save_ggb(w2)
+    check("导入网格在 .ggb 中跳过并警告", bool(w2) and "跳过" in w2[0], str(w2)[:60])
+    check(".ggb 不写出来源不明的网格", 'label="m"' not in xml2)
+
+# ---------------------------------------------------------------------------
+section("AH. 协方差椭球 / 曲面参数线")
+c48, e48 = build([
+    "L={(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)}",
+    "e1=CovarianceEllipsoid[L,2]",
+    "S={(4,0,0),(-4,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)}",
+    "e2=CovarianceEllipsoid[S,2]",
+    "cyl=SurfaceParam[cos(t),sin(t),s,s,t,0,2,0,2*pi,16]",
+    "isoCyl=SurfaceIsoline[cyl,1,1]",
+    "tor=SurfaceParam[(2+cos(s))*cos(t),(2+cos(s))*sin(t),sin(s),s,t,0,2*pi,0,2*pi,20]",
+    "isoTor=SurfaceIsoline[tor,0,2]",
+    "flat=Surface[x^2+y^2,-1,1,-1,1,10]",
+    "isoFlat=SurfaceIsoline[flat,0.5,1]",
+    "imp=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,12]",
+])
+check("椭球/参数线用例构造", e48 is None, str(e48))
+if e48 is None:
+    import numpy as _np2  # noqa: E402
+    six = _np2.array([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], dtype=float)
+    q6 = six - six.mean(axis=0)
+    w6 = _np2.linalg.eigvalsh((q6.T @ q6) / len(six))
+    exp_axes = [2.0 * math.sqrt(max(0.0, float(x))) for x in w6]
+    got_axes = sorted(c48.elements["e1"].data["axes"])
+    check("椭球半轴 = k√λ（对称点云）", all(close(got_axes[i], exp_axes[i], 1e-9) for i in range(3)),
+          "%s vs %s" % ([round(a, 4) for a in got_axes], [round(a, 4) for a in exp_axes]))
+    check("对称点云 → 三轴相等", max(got_axes) - min(got_axes) < 1e-9)
+    axes2 = sorted(c48.elements["e2"].data["axes"])
+    check("长条点云 → 长轴 4.6188 / 短轴 1.1547",
+          close(axes2[2], 4.618802153517007, 1e-9) and close(axes2[0], 1.1547005383792517, 1e-9),
+          str([round(a, 4) for a in axes2]))
+    check("椭球网格 v/f（21×21 → 441/400）",
+          len(c48.elements["e1"].data["verts"]) == 441 and len(c48.elements["e1"].data["faces"]) == 400)
+    cyl_pts = [p for s in c48.elements["isoCyl"].data["segs"] for p in s]
+    check("圆柱参数线（固定 s=1）：z 恒为 1 且 r=1",
+          all(close(p[2], 1.0, 1e-9) for p in cyl_pts) and all(close(math.hypot(p[0], p[1]), 1.0, 1e-9) for p in cyl_pts),
+          "n=%d" % len(cyl_pts))
+    flat_pts = [p for s in c48.elements["isoFlat"].data["segs"] for p in s]
+    check("平面参数线（固定 x=0.5）：x 恒 0.5 且 z = 0.25+y²",
+          all(close(p[0], 0.5, 1e-9) for p in flat_pts)
+          and all(close(p[2], 0.25 + p[1] ** 2, 1e-9) for p in flat_pts), "n=%d" % len(flat_pts))
+    tor_pts = [p for s in c48.elements["isoTor"].data["segs"] for p in s]
+    check("环面参数线（固定 t=0）：y=0 且 z=sin(s)",
+          all(close(p[1], 0.0, 1e-9) for p in tor_pts), "n=%d" % len(tor_pts))
+    c48.process("bad=SurfaceIsoline[cyl,5,1]")
+    check("参数值超出定义域 → 明确报错",
+          bool(c48.elements["bad"].error) and "超出" in c48.elements["bad"].error,
+          str(c48.elements["bad"].error))
+    c48.process("bad2=SurfaceIsoline[imp,0,1]")
+    check("隐式曲面参数线 → 明确报错",
+          bool(c48.elements["bad2"].error) and "不支持参数线" in c48.elements["bad2"].error,
+          str(c48.elements["bad2"].error))
+    r_dim = c48.process("bad3=SurfaceIsoline[cyl,1,3]")
+    check("非法维度 → 明确报错", "维度" in r_dim, r_dim[:50])
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

@@ -263,11 +263,10 @@ put("co=Cone[cc,3]")
 st, hdrs, raw = http("/api/export/ggb")
 hdr = {k.lower(): v for k, v in hdrs.items()}
 check(".ggb 导出 HTTP 200", st == 200, "HTTP %s" % st)
-check(".ggb 提示跳过 3D（响应头）", "x-ggb-warnings" in hdr and "x-ggb-skipped-3d" in hdr,
+check(".ggb 3D 往返不再警告（无跳过头）", "x-ggb-skipped-3d" not in hdr,
       str({k: v for k, v in hdr.items() if "ggb" in k})[:120])
-warn = urllib.parse.unquote(hdr.get("x-ggb-warnings", ""))
-check(".ggb 警告含中文提示", "不支持 3D" in warn, warn[:80])
-check(".ggb 跳过 3D 元素", b'label="A3"' not in raw and b'label="co"' not in raw, "")
+check(".ggb 含 3D 元素（A3 带真实 z）", b'label="A3"' in raw and b'z="3" w="1"' in raw, "")
+check(".ggb 含 3D 派生对象（圆锥）", b'name="Cone"' in raw, "")
 check(".ggb 保留 2D 元素", b'label="A"' in raw, "")
 import xml.etree.ElementTree as ET  # noqa: E402
 try:
@@ -664,6 +663,57 @@ if (rm2 or {}).get("id"):
     v3 = {e.get("label"): e.get("value") for e in (d3 or {}).get("elements", [])}
     check("glTF 导入立方体体积 ≈ 8", _num_or_none(v3.get("V_mG")) is not None
           and abs(_num_or_none(v3["V_mG"]) - 8.0) < 1e-4, str(v3.get("V_mG")))
+
+# ---------------------------------------------------------------------------
+section("N. 第十一批：.ggb 3D 往返 / 协方差椭球 / 曲面参数线")
+clear()
+for t in ["A3=(1,2,3)", "O=(0,0,0)", "P=(1,2)", "c=Circle[O,2]", "sp=Sphere[O,2]",
+          "cu=Cube[O,(2,0,0)]", "co=Cone[c,3]"]:
+    put(t)
+st, hdrs, raw = http("/api/export/ggb")
+hdr = {k.lower(): v for k, v in hdrs.items()}
+xml = raw.decode("utf-8")
+check(".ggb 导出 HTTP 200", st == 200, "HTTP %s" % st)
+check(".ggb 不再警告跳过 3D", "x-ggb-warnings" not in hdr, str([k for k in hdr if "ggb" in k]))
+check(".ggb 含三维点真实 z（w=\"1\"）", 'z="3" w="1"' in xml, xml[:80])
+check(".ggb 含 3D 命令（Sphere/Cube/Cone）", 'name="Sphere"' in xml and 'name="Cube"' in xml and 'name="Cone"' in xml)
+req = urllib.request.Request(BASE + "/api/load", data=xml.encode("utf-8"),
+                             headers={"Content-Type": "text/plain"}, method="POST")
+try:
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        rl = json.loads(resp.read().decode("utf-8"))
+except Exception as e:
+    rl = {"ok": False, "message": str(e)}
+check(".ggb 载入 HTTP 正常", (rl or {}).get("ok") is True, str(rl)[:80])
+els = state3d()
+sp = find(els, "sp")
+cu = find(els, "cu")
+co = find(els, "co")
+check(".ggb 往返后球 r=2 仍在", sp is not None and abs((sp.get("data") or {}).get("r", 0) - 2.0) < 1e-9,
+      str((sp.get("data") or {}).get("r") if sp else None))
+check(".ggb 往返后立方体 8 顶点 / 圆锥 49 顶点",
+      cu is not None and len((cu.get("data") or {}).get("verts", [])) == 8
+      and co is not None and len((co.get("data") or {}).get("verts", [])) == 49,
+      "%s/%s" % (len((cu.get("data") or {}).get("verts", [])) if cu else None,
+                 len((co.get("data") or {}).get("verts", [])) if co else None))
+check(".ggb 往返后二维点仍无 z",
+      find(els, "P") is not None and find(els, "P").get("z") in (0.0, None),
+      str(find(els, "P").get("z") if find(els, "P") else None))
+# 协方差椭球 + 参数线
+clear()
+for t in ["L={(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)}", "ell=CovarianceEllipsoid[L,2]",
+          "cyl=SurfaceParam[cos(t),sin(t),s,s,t,0,2,0,2*pi,16]", "iso=SurfaceIsoline[cyl,1,1]"]:
+    put(t)
+els = state3d()
+ell = find(els, "ell")
+iso = find(els, "iso")
+check("API 协方差椭球 → surface 网格（441 顶点）",
+      ell is not None and ell.get("solid") == "surface" and len((ell.get("data") or {}).get("verts", [])) == 441,
+      "%s/%s" % (ell.get("solid") if ell else None,
+                 len((ell.get("data") or {}).get("verts", [])) if ell else None))
+check("API 曲面参数线 → curve3d（120 段）",
+      iso is not None and iso.get("objtype") == "curve3d" and (iso.get("data") or {}).get("count") == 120,
+      "%s/%s" % (iso.get("objtype") if iso else None, (iso.get("data") or {}).get("count") if iso else None))
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

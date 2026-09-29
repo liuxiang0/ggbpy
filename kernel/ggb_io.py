@@ -26,17 +26,23 @@ def _is_3d(el) -> bool:
     return el.kind == "geo3d" or (el.kind == "point" and getattr(el, "z", None) is not None)
 
 
+def _needs_external_data(el) -> bool:
+    """导出需要额外数据块、无法只靠 defn 重放的元素（OBJ/STL/glTF 导入的网格）。"""
+    return bool(getattr(el, "meshid", ""))
+
+
 def _refs_label(defn: str, label: str) -> bool:
     """defn 中是否以独立标识符形式引用了 label。"""
     return re.search(r"(?<![A-Za-z0-9_])" + re.escape(label) + r"(?![A-Za-z0-9_])", defn) is not None
 
 
 def _collect_3d_skips(cons) -> List[str]:
-    """需要从 .ggb 导出中跳过的标签：3D 元素 + 级联引用它们的元素。
+    """需要从 .ggb 导出中跳过的标签：依赖外部网格数据（mesh_store）的元素 + 级联引用者。
 
-    .ggb 子集不支持 3D；跳过而不是写出丢失 z 的错误数据，避免"静默损坏"。
+    3D 点/球/多面体/曲面等已能通过「3D 点坐标 + 命令重放」完整往返，
+    只有 OBJ/STL/glTF 导入的网格必须把数据放在 .ggk 里，因此单独跳过并警告。
     """
-    skipped = [lab for lab in cons.order if _is_3d(cons.elements[lab])]
+    skipped = [lab for lab in cons.order if _needs_external_data(cons.elements[lab])]
     skip_set = set(skipped)
     changed = True
     while changed:
@@ -72,9 +78,9 @@ def export_ggb(cons, warnings: Optional[List[str]] = None) -> str:
     lines: List[str] = []
     skip = set(_collect_3d_skips(cons))
     if skip:
-        note = ("ggbpy 提示：.ggb（GeoGebra XML 子集）不支持 3D 对象，已跳过 " +
-                str(len(skip)) + " 个元素：" + ", ".join(lab for lab in cons.order if lab in skip) +
-                "。请用 .ggk 保存以保留 3D 内容。")
+        note = ("ggbpy 提示：以下元素依赖外部网格数据（OBJ/STL/glTF 导入），.ggb 子集无法承载，已跳过 " +
+                str(len(skip)) + " 个：" + ", ".join(lab for lab in cons.order if lab in skip) +
+                "。请用 .ggk 保存以保留这些网格。")
         if warnings is not None:
             warnings.append(note)
         lines.append('<?xml version="1.0" encoding="utf-8"?>')
@@ -92,7 +98,12 @@ def export_ggb(cons, warnings: Optional[List[str]] = None) -> str:
         lines.append('      <show object="true" label="true"/>')
         lines.append('      <objColor r="0" g="0" b="0" alpha="0"/>')
         if el.kind == "point" and el.free:
-            lines.append('      <coords x="' + _fmt(el.x) + '" y="' + _fmt(el.y) + '" z="1"/>')
+            if getattr(el, "z", None) is not None:
+                # 三维点：写出真实 z 并加 w="1"（2D 点用 z="1" 的齐次约定）
+                lines.append('      <coords x="' + _fmt(el.x) + '" y="' + _fmt(el.y)
+                             + '" z="' + _fmt(el.z) + '" w="1"/>')
+            else:
+                lines.append('      <coords x="' + _fmt(el.x) + '" y="' + _fmt(el.y) + '" z="1"/>')
         elif el.kind == "vector" and el.free:
             lines.append('      <coords x="' + _fmt(el.dx) + '" y="' + _fmt(el.dy) + '" z="0"/>')
         elif el.kind == "number" and el.free:
@@ -155,8 +166,14 @@ def import_ggb(cons, text: str) -> None:
         coords = elem.find("coords")
         value = elem.find("value")
         expression = elem.find("expression")
-        if etype == "point" and coords is not None and coords.get("z", "1") == "1":
-            cons.process_internal(label + "=(" + coords.get("x", "0") + "," + coords.get("y", "0") + ")")
+        if etype == "point" and coords is not None:
+            cx, cy = coords.get("x", "0"), coords.get("y", "0")
+            zattr = coords.get("z", "1")
+            # 三维点：w="1" 标记（本程序导出约定），或 z 不是齐次 1
+            if coords.get("w") == "1" or zattr not in ("", "1"):
+                cons.process_internal(label + "=(" + cx + "," + cy + "," + zattr + ")")
+            else:
+                cons.process_internal(label + "=(" + cx + "," + cy + ")")
         elif etype == "vector" and coords is not None:
             cons.process_internal(label + "=(" + coords.get("x", "0") + "," + coords.get("y", "0") + ")")
         elif etype == "number" and value is not None:

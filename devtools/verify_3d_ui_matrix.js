@@ -650,6 +650,36 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   const pxG = await nonBgPixels();
   check('glTF 导入网格已渲染（像素 > 500）', pxG > 500, 'non-bg pixels=' + pxG);
 
+  // 第十一批：协方差椭球 + 曲面参数线渲染
+  await reset(['O=(0,0,0)']);
+  await page.fill('#cmd', 'L={(1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1)}');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(500);
+  await page.fill('#cmd', 'ell=CovarianceEllipsoid[L,2]');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(800);
+  await page.fill('#cmd', 'cyl=SurfaceParam[cos(t),sin(t),s,s,t,0,2,0,2*pi,16]');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(800);
+  await page.fill('#cmd', 'iso=SurfaceIsoline[cyl,1,1]');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(800);
+  await open3d();
+  await page.waitForTimeout(800);
+  const els11 = await state3d();
+  const ell11 = els11.filter(e => e.label === 'ell')[0];
+  const iso11 = els11.filter(e => e.label === 'iso')[0];
+  check('椭球元素出现（441 顶点 surface）',
+    !!ell11 && ell11.solid === 'surface' && (ell11.data.verts || []).length === 441,
+    ell11 ? (ell11.solid + '/' + (ell11.data.verts || []).length) : 'missing');
+  check('参数线元素出现（curve3d 120 段）',
+    !!iso11 && iso11.objtype === 'curve3d' && (iso11.data.segs || []).length === 120,
+    iso11 ? (iso11.objtype + '/' + (iso11.data.segs || []).length) : 'missing');
+  const clientN11 = await page.evaluate(() => window.__ggbpyDebug.els3dCount());
+  check('输入后 3D 列表含 4 个对象', clientN11 === 4, 'els3d=' + clientN11);
+  const px11 = await nonBgPixels();
+  check('椭球与参数线已渲染（像素 > 500）', px11 > 500, 'non-bg pixels=' + px11);
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));
