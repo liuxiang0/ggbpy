@@ -339,6 +339,43 @@ check("API Volume[立方体交] = 1", _m is not None and abs(float(_m.group(0)) 
 check("API Perimeter[截面] = 8", "8" in str(vals.get("secP")), str(vals.get("secP")))
 
 # ---------------------------------------------------------------------------
+section("H. 第五批：球×球 / 空间圆求交 / 样式快照（undo/redo 保留 wire·locked）")
+clear()
+for t in ["O=(0,0,0)", "A=(2,0,0)", "c=Circle[O,2]", "co=Cone[c,3]",
+          "s1=Sphere[O,2]", "s2=Sphere[A,2]"]:
+    put(t)
+put("sc=Intersect[s1,s2]")
+els = state3d()
+sc = find(els, "sc")
+check("球×球 → circle3d（r=√3）", sc is not None and sc.get("objtype") == "circle3d"
+      and abs((sc.get("data") or {}).get("r", 0) - 3 ** 0.5) < 1e-9,
+      "%s/%s" % (sc.get("objtype") if sc else None, (sc.get("data") or {}).get("r") if sc else None))
+put("sp=Sphere[O,1.4]")
+put("pz=Plane[(0,0,1),(1,0,1),(0,1,1)]")
+put("cc=Intersect[sp,pz]")
+put("px=Plane[(0.5,0,0),(0.5,1,0),(0.5,0,1)]")
+put("cp=Intersect[cc,px]")
+els = state3d()
+cp = find(els, "cp")
+check("空间圆×平面 → 交点", cp is not None and cp.get("kind") == "point"
+      and abs(cp.get("x", 0) - 0.5) < 1e-9, "(%s,%s,%s)" % (cp.get("x"), cp.get("y"), cp.get("z")) if cp else None)
+# 样式：SetWire/SetLocked → undo → redo 后仍保留
+put("SetWire[co,true]")
+put("SetLocked[co,true]")
+put("trigger=Sphere[O,1]")
+http("/api/undo", {}, method="POST")
+els = state3d()
+co = find(els, "co")
+check("API undo 后 wire 保留", co is not None and co.get("wire") is True, str(co.get("wire") if co else None))
+check("API undo 后 locked 保留", co is not None and co.get("locked") is True, str(co.get("locked") if co else None))
+http("/api/redo", {}, method="POST")
+els = state3d()
+co = find(els, "co")
+check("API redo 后 wire/locked 保留",
+      co is not None and co.get("wire") is True and co.get("locked") is True,
+      "%s/%s" % (co.get("wire") if co else None, co.get("locked") if co else None))
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D API 检测矩阵 @ %s：%d 项断言，%d 失败" % (BASE, COUNT[0], len(FAILS)))
 for f in FAILS:

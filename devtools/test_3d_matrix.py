@@ -444,8 +444,10 @@ if e21 is None:
     r = c21.process("bad=Intersect[cu,sp]")
     check("立体×球 明确不支持", "3D 求交暂不支持" in r, r[:80])
     c21.process("cc=Intersect[sp,pl]")
-    r = c21.process("bad2=Intersect[cc,cu]")
-    check("空间圆×立体 明确不支持", "3D 求交暂不支持" in r, r[:80])
+    c21.process("bad2=Intersect[cc,cu]")
+    check("空间圆×立体 已支持（回归：交点或明确无交点）",
+          not c21.elements["bad2"].error or "无交点" in c21.elements["bad2"].error,
+          str(c21.elements["bad2"].error))
 
 # ---------------------------------------------------------------------------
 section("K. 序列化（.ggk 往返 / undo-redo / .ggb 跳过 3D）")
@@ -600,6 +602,114 @@ if e23 is None:
     check("整段在立体内部 → 明确提示",
           bool(c23.elements["ix6"].error) and "无交点" in c23.elements["ix6"].error,
           str(c23.elements["ix6"].error))
+
+# ---------------------------------------------------------------------------
+section("R. 球×球 / 空间圆求交 / 样式快照 / 退化网格")
+c24, e24 = build([
+    "O=(0,0,0)", "A=(2,0,0)", "B=(5,0,0)", "C=(0.5,0,0)",
+    "s1=Sphere[O,2]", "s2=Sphere[A,2]", "s3=Sphere[B,2]", "s4=Sphere[C,2]", "s5=Sphere[O,0.4]",
+    "sp=Sphere[O,1.4]", "pz=Plane[(0,0,1),(1,0,1),(0,1,1)]",
+    "px=Plane[(0.5,0,0),(0.5,1,0),(0.5,0,1)]",
+    "py=Plane[(0,2,0),(1,2,0),(0,2,1)]",
+    "cu=Cube[O,(2,0,0)]", "cc=Intersect[sp,pz]",
+    "u1=Intersect[s1,s2]", "u2=Intersect[s2,s1]",
+    "v1=Intersect[cc,px]", "v2=Intersect[cc,px,2]",
+    "w1=Intersect[cc,cu]", "w2=Intersect[cc,cu,2]",
+])
+check("第五批用例构造", e24 is None, str(e24))
+if e24 is None:
+    u1 = c24.elements["u1"]
+    check("球×球 → circle3d", getattr(u1, "objtype", "") == "circle3d", str(getattr(u1, "objtype", None)))
+    if getattr(u1, "objtype", "") == "circle3d":
+        d = u1.data
+        check("交圆圆心 = (1,0,0)", close(d["cx"], 1.0) and close(d["cy"], 0.0) and close(d["cz"], 0.0),
+              "(%s,%s,%s)" % (d["cx"], d["cy"], d["cz"]))
+        check("交圆半径 = √3", close(d["r"], math.sqrt(3), 1e-9), "%.6f" % d["r"])
+    u2 = c24.elements["u2"]
+    check("球×球 交换顺序：同一交圆", close(u2.data["cx"], 1.0) and close(u2.data["r"], math.sqrt(3), 1e-9))
+    for cmd, kw in [("e1=Intersect[s1,s3]", "相离"), ("e2=Intersect[s1,s5]", "同心"),
+                    ("e3=Intersect[s1,s4]", None), ("e4=Intersect[s1,s1]", "同心")]:
+        c24.process(cmd)
+        el = c24.elements[cmd.split("=")[0]]
+        if kw:
+            check("球×球 " + kw + " → error", bool(el.error) and kw in el.error, str(el.error))
+        else:
+            check("球×球 内含 → 仍有交圆（小偏心情形）", not el.error and close(el.data["cx"], 0.25, 1e-9),
+                  str(el.error))
+    # 空间圆 × 平面
+    v1, v2 = c24.elements["v1"], c24.elements["v2"]
+    rr = math.sqrt(1.4 ** 2 - 1.0)          # 圆半径 √(1.96-1)=0.979796
+    yy = math.sqrt(rr * rr - 0.25)
+    check("空间圆×平面 第 1 交点 (0.5,−√(r²−0.25),1)",
+          not v1.error and close(v1.x, 0.5, 1e-9) and close(v1.y, -yy, 1e-9) and close(v1.z, 1.0, 1e-9),
+          "err=%s (%s,%s,%s)" % (v1.error, getattr(v1, "x", None), getattr(v1, "y", None), getattr(v1, "z", None)))
+    check("空间圆×平面 第 2 交点 y 取正", not v2.error and close(v2.y, yy, 1e-9), "%.9f" % (getattr(v2, "y", 0) or 0))
+    c24.process("v3=Intersect[cc,px,3]")
+    check("空间圆×平面 取第 3 交点 → error", bool(c24.elements["v3"].error), str(c24.elements["v3"].error))
+    c24.process("v4=Intersect[cc,py]")
+    check("空间圆与平面相离 → error", bool(c24.elements["v4"].error), str(c24.elements["v4"].error))
+    c24.process("v5=Intersect[cc,pz]")
+    check("空间圆与所在平面共面 → error", bool(c24.elements["v5"].error) and "共面" in c24.elements["v5"].error,
+          str(c24.elements["v5"].error))
+    # 空间圆 × 立体
+    check("空间圆×立体 交点 (0,√(r²),1)", not c24.elements["w1"].error
+          and close(c24.elements["w1"].x, 0.0, 1e-6) and close(c24.elements["w1"].z, 1.0, 1e-6),
+          str(c24.elements["w1"].error))
+    check("空间圆×立体 第 2 交点", not c24.elements["w2"].error and close(c24.elements["w2"].y, 0.0, 1e-6),
+          str(c24.elements["w2"].error))
+    c24.process("cin=Sphere[(1,1,1),0.5]")
+    c24.process("pcin=Plane[(0,0,1),(1,0,1),(0,1,1)]")
+    c24.process("cc2=Intersect[cin,pcin]")
+    c24.process("in1=Intersect[cc2,cu]")
+    check("整圆在立体内部 → error", bool(c24.elements["in1"].error) and "无交点" in c24.elements["in1"].error,
+          str(c24.elements["in1"].error))
+
+section("S. 样式快照（undo/redo 保留 locked/wire）与退化网格")
+c25, e25 = build(["O=(0,0,0)", "c=Circle[O,2]", "co=Cone[c,3]", "sp=Sphere[O,1]"])
+check("样式用例构造", e25 is None, str(e25))
+if e25 is None:
+    c25.elements["co"].color = "#ff0000"
+    c25.elements["co"].locked = True
+    c25.elements["co"].wire = True
+    c25.process("x=Sphere[O,1.5]")
+    c25.undo()
+    el = c25.elements["co"]
+    check("undo 后 color 保留", el.color == "#ff0000", str(el.color))
+    check("undo 后 locked 保留", el.locked is True, str(el.locked))
+    check("undo 后 wire 保留", getattr(el, "wire", None) is True, str(getattr(el, "wire", None)))
+    c25.redo()
+    el = c25.elements["co"]
+    check("redo 后 locked/wire 保留",
+          el.locked is True and getattr(el, "wire", None) is True and el.color == "#ff0000",
+          "%s/%s" % (el.locked, getattr(el, "wire", None)))
+    # .ggk 往返保留样式
+    txt = c25.save_json()
+    c26 = Construction()
+    c26.load_json(txt)
+    el2 = c26.elements.get("co")
+    check(".ggk 往返 locked/wire 保留", el2 is not None and el2.locked is True and getattr(el2, "wire", None) is True,
+          "%s/%s" % (getattr(el2, "locked", None), getattr(el2, "wire", None)))
+    # 退化网格：薄板相交（体积小但形状有效）与零体积接触
+    c25.process("P1=(1.999,1,1)", )
+    c25.process("P2=(3.999,1,1)")
+    c25.process("cu=Cube[O,(2,0,0)]")
+    c25.process("thin=Cube[P1,P2]")
+    c25.process("slab=Intersect[cu,thin]")
+    slab = c25.elements["slab"]
+    ok_thin = (not slab.error) and len(slab.data["verts"]) == 8 and len(slab.data["faces"]) == 6
+    check("薄板相交仍得有效凸多面体（8/6）", ok_thin, slab.error or "%d/%d" % (len(slab.data["verts"]), len(slab.data["faces"])))
+    if ok_thin:
+        c25.process("V_slab=Volume[slab]")
+        check("薄板体积 = 0.001×1×1 = 0.001", close(c25.elements["V_slab"].value, 0.001, 1e-9),
+              "%.9f" % c25.elements["V_slab"].value)
+        bad_faces = [f for f in slab.data["faces"] if len(f) < 3]
+        check("网格无退化面（面顶点 ≥ 3）", not bad_faces, str(bad_faces))
+        check("薄板 Euler V-E+F=2", len(slab.data["verts"]) - len(slab.data["edges"]) + len(slab.data["faces"]) == 2)
+    # 面接触（零体积）→ 报错
+    c25.process("M1=(2,0,0)"); c25.process("M2=(4,0,0)")
+    c25.process("touch=Cube[M1,M2]")
+    c25.process("t0=Intersect[cu,touch]")
+    check("面接触（零体积）→ error", bool(c25.elements["t0"].error), str(c25.elements["t0"].error))
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

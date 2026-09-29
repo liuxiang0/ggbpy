@@ -413,6 +413,41 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   check('列表显示「空间圆」', listTxt4.indexOf('空间圆') !== -1 || listTxt4.indexOf('Circle (3D)') !== -1,
     listTxt4.replace(/\s+/g, ' ').slice(0, 80));
 
+  // 第五批：样式快照（UI 撤销/重做后 wire/locked 不丢）与球∩球交圆
+  await reset(['O=(0,0,0)', 'c=Circle[O,2]']);
+  await inp('co=Cone[c,3]');
+  await inp('SetWire[co,true]');
+  await inp('SetLocked[co,true]');
+  await inp('A=(2,0,0)');
+  await inp('s1=Sphere[O,2]');
+  await inp('s2=Sphere[A,2]');
+  await inp('sc=Intersect[s1,s2]');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+  await open3d();
+  await page.waitForTimeout(600);
+  let els5 = await state3d();
+  let co5 = els5.filter(e => e.label === 'co')[0];
+  check('准备：圆锥线框/锁定已置位', !!co5 && co5.wire === true && co5.locked === true,
+    co5 ? ('wire=' + co5.wire + ' locked=' + co5.locked) : 'missing');
+  const sc5 = els5.filter(e => e.objtype === 'circle3d')[0];
+  check('球∩球 → 空间圆渲染元素', !!sc5 && Math.abs((sc5.data || {}).r - Math.sqrt(3)) < 1e-9,
+    sc5 ? String(sc5.data.r) : 'missing');
+  await page.click('#btn-undo');
+  await page.waitForTimeout(900);
+  els5 = await state3d();
+  co5 = els5.filter(e => e.label === 'co')[0];
+  check('UI undo 后 wire/locked 保留', !!co5 && co5.wire === true && co5.locked === true,
+    co5 ? ('wire=' + co5.wire + ' locked=' + co5.locked) : 'missing');
+  await page.click('#btn-redo');
+  await page.waitForTimeout(900);
+  els5 = await state3d();
+  co5 = els5.filter(e => e.label === 'co')[0];
+  check('UI redo 后 wire/locked 保留', !!co5 && co5.wire === true && co5.locked === true,
+    co5 ? ('wire=' + co5.wire + ' locked=' + co5.locked) : 'missing');
+  const px5 = await nonBgPixels();
+  check('交圆/线框圆锥已渲染（像素 > 500）', px5 > 500, 'non-bg pixels=' + px5);
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));

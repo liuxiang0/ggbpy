@@ -183,20 +183,33 @@ class Construction:
     # 快照 / 撤销 / 重做
     # ------------------------------------------------------------------
     def snapshot(self) -> List[tuple]:
-        """快照 = (label, defn, color, visible)，供撤销/重做。"""
-        return [(lab, self.elements[lab].defn,
-                 self.elements[lab].color, self.elements[lab].visible) for lab in self.order]
+        """快照 = (label, defn, color, visible, locked, wire)，供撤销/重做。
+
+        样式必须全部入快照：只存 color/visible 会导致撤销/重做后「锁定」「线框」丢失。
+        """
+        out = []
+        for lab in self.order:
+            el = self.elements[lab]
+            out.append((lab, el.defn, el.color, el.visible, el.locked,
+                        bool(getattr(el, "wire", False))))
+        return out
 
     def restore(self, snap: List[tuple]) -> None:
         self.elements.clear()
         self.order.clear()
         self._counters.clear()
-        for lab, defn, color, visible in snap:
+        for item in snap:
+            lab, defn, color, visible = item[0], item[1], item[2], item[3]
+            locked = item[4] if len(item) > 4 else False
+            wire = item[5] if len(item) > 5 else False
             self.process_internal(defn)
             el = self.elements.get(lab)
             if el is not None:
                 el.color = color
                 el.visible = visible
+                el.locked = locked
+                if hasattr(el, "wire"):
+                    el.wire = wire
 
     def _push_undo(self) -> None:
         self._undo.append(self.snapshot())

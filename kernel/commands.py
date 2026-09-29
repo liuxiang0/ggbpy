@@ -581,6 +581,18 @@ def _cmd_intersect(cons, defn, args, idx=None):
         if _is_solid_el(o2) and t1 in ("segment", "line3d"):
             return _mk(cons, GeoPoint, "point", defn, [o1, o2],
                        lambda d: _ix_solid_line(d[1], d[0], idx, t1 == "segment"))
+        if t1 == "sphere" and t2 == "sphere":
+            return _mk(cons, Geo3D, "geo3d", defn, [o1, o2], lambda d: _ix_sphere_sphere(d[0], d[1]))
+        if (t1, t2) in (("circle3d", "plane"), ("plane", "circle3d")):
+            cir, pl = (o1, o2) if t1 == "circle3d" else (o2, o1)
+            return _mk(cons, GeoPoint, "point", defn, [cir, pl],
+                       lambda d: _ix_circle3d_plane(d[0], d[1], idx))
+        if t1 == "circle3d" and _is_solid_el(o2):
+            return _mk(cons, GeoPoint, "point", defn, [o1, o2],
+                       lambda d: _ix_circle3d_solid(d[0], d[1], idx))
+        if t2 == "circle3d" and _is_solid_el(o1):
+            return _mk(cons, GeoPoint, "point", defn, [o1, o2],
+                       lambda d: _ix_circle3d_solid(d[1], d[0], idx))
         if (t1, t2) in (("sphere", "plane"), ("plane", "sphere")):
             sph, pl = (o1, o2) if t1 == "sphere" else (o2, o1)
             return _mk(cons, Geo3D, "geo3d", defn, [sph, pl], lambda d: _ix_sphere_plane(d[0], d[1]))
@@ -749,6 +761,124 @@ def _ray_triangle(orig, dirv, a, b, c):
     t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv
     # 容差：起点恰在面上（t=0）也算命中；由调用方按线段范围过滤
     return t if t > -1e-9 else None
+
+
+def _circle3d_basis(d):
+    """空间圆的 (圆心, 半径, 法向, 基 u, 基 v)。"""
+    return ([d["cx"], d["cy"], d["cz"]], d["r"], d["normal"], d["u"], d["v"])
+
+
+def _ix_sphere_sphere(s1, s2):
+    """两球求交 → 交圆（空间圆）：交平面垂直于连心线，半径 √(r1²−a²)。"""
+    a1, b1, c1, r1 = s1.data["cx"], s1.data["cy"], s1.data["cz"], s1.data["r"]
+    a2, b2, c2, r2 = s2.data["cx"], s2.data["cy"], s2.data["cz"], s2.data["r"]
+    dx, dy, dz = a2 - a1, b2 - b1, c2 - c1
+    dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if dist < 1e-9:
+        raise GeoError("同心球没有交线（球面重合或内含）")
+    if dist > r1 + r2 + 1e-9:
+        raise GeoError("两球相离，无交线")
+    if dist < abs(r1 - r2) - 1e-9:
+        raise GeoError("一球完全在另一球内部，无交线")
+    ux, uy, uz = dx / dist, dy / dist, dz / dist
+    t = (dist * dist + r1 * r1 - r2 * r2) / (2 * dist)      # 交平面到球心 1 的距离
+    rr2 = r1 * r1 - t * t
+    if rr2 <= 1e-18:
+        raise GeoError("两球相切（交线退化为一点）")
+    ox, oy, oz = a1 + t * ux, b1 + t * uy, c1 + t * uz
+    u, v, _n = _frame_from_axis([ux, uy, uz])
+    return {"objtype": "circle3d",
+            "data": {"cx": ox, "cy": oy, "cz": oz, "r": math.sqrt(rr2),
+                     "normal": [ux, uy, uz], "u": u, "v": v}}
+
+
+def _ix_circle3d_plane(cir, pl, idx=None):
+    """空间圆 ∩ 平面 → 交点（0/1/2 个，按 idx 取第 n 个，默认第 1 个）。"""
+    c, r, _n0, u, v = _circle3d_basis(cir.data)
+    a, b, cc, dd = pl.data["a"], pl.data["b"], pl.data["c"], pl.data["d"]
+    ln = math.sqrt(a * a + b * b + cc * cc)
+    if ln < 1e-12:
+        raise GeoError("平面退化")
+    nx, ny, nz = a / ln, b / ln, cc / ln
+    dpl = dd / ln
+    E = nx * c[0] + ny * c[1] + nz * c[2] + dpl          # 圆心到平面的有符号距离
+    A = r * (nx * u[0] + ny * u[1] + nz * u[2])
+    B = r * (nx * v[0] + ny * v[1] + nz * v[2])
+    R = math.sqrt(A * A + B * B)
+    if R < 1e-12:
+        if abs(E) < 1e-9:
+            raise GeoError("圆与平面共面（交线为整个圆）")
+        raise GeoError("圆所在平面与给定平面平行，无交点")
+    if abs(E) > R + 1e-12:
+        raise GeoError("平面与圆不相交")
+    phi = math.atan2(B, A)
+    delta = math.acos(max(-1.0, min(1.0, -E / R)))
+    ts = [phi + delta, phi - delta]
+    ts.sort()
+    if len(ts) == 2 and abs(ts[0] - ts[1]) < 1e-12:
+        ts = [ts[0]]
+    k = idx or 1
+    if k > len(ts):
+        raise GeoError("交点只有 " + str(len(ts)) + " 个（请求第 " + str(k) + " 个）")
+    t = ts[k - 1]
+    return {"x": c[0] + r * (math.cos(t) * u[0] + math.sin(t) * v[0]),
+            "y": c[1] + r * (math.cos(t) * u[1] + math.sin(t) * v[1]),
+            "z": c[2] + r * (math.cos(t) * u[2] + math.sin(t) * v[2])}
+
+
+def _ix_circle3d_solid(cir, solid, idx=None):
+    """空间圆 ∩ 凸立体 → 交点（沿圆周采样 + 二分细化；相切时用最近点兜底）。"""
+    c, r, _n0, u, v = _circle3d_basis(cir.data)
+    planes = _solid_planes(solid)
+
+    def pt(t):
+        return [c[0] + r * (math.cos(t) * u[0] + math.sin(t) * v[0]),
+                c[1] + r * (math.cos(t) * u[1] + math.sin(t) * v[1]),
+                c[2] + r * (math.cos(t) * u[2] + math.sin(t) * v[2])]
+
+    def inside(p):
+        return all(n[0] * p[0] + n[1] * p[1] + n[2] * p[2] + dd <= 1e-9 for n, dd in planes)
+
+    N = 720
+    crossings = []
+    prev_t, prev_ins = 0.0, inside(pt(0.0))
+    for k in range(1, N + 1):
+        t = 2 * math.pi * k / N
+        ins = inside(pt(t))
+        if ins != prev_ins:
+            lo, hi, ilo = prev_t, t, prev_ins
+            for _ in range(60):
+                mid = 0.5 * (lo + hi)
+                if inside(pt(mid)) == ilo:
+                    lo = mid
+                else:
+                    hi = mid
+            crossings.append(0.5 * (lo + hi))
+        prev_t, prev_ins = t, ins
+    if not crossings:
+        # 相切兜底：找圆周上距某面最近且整体在体内的点
+        best = None
+        for k in range(N):
+            t = 2 * math.pi * k / N
+            p = pt(t)
+            if not inside(p):
+                continue
+            dist = min(abs(n[0] * p[0] + n[1] * p[1] + n[2] * p[2] + dd) for n, dd in planes)
+            if best is None or dist < best[0]:
+                best = (dist, t)
+        if best is not None and best[0] < 1e-6:
+            crossings = [best[1]]
+        else:
+            raise GeoError("圆与立体无交点（整圆在立体内部或外部）")
+    # 去重（相切会成对出现）
+    uniq = []
+    for t in sorted(crossings):
+        if not uniq or abs(t - uniq[-1]) > 1e-6:
+            uniq.append(t)
+    k = idx or 1
+    if k > len(uniq):
+        raise GeoError("交点只有 " + str(len(uniq)) + " 个（请求第 " + str(k) + " 个）")
+    return dict(zip(("x", "y", "z"), pt(uniq[k - 1])))
 
 
 def _ix_sphere_plane(sph, pl):
@@ -4093,6 +4223,8 @@ def _normalize_mesh(verts, faces):
             continue
         nx, ny, nz = _newell_normal(verts, idx)
         ln = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if ln < 1e-12 and len(idx) < 3:
+            continue
         if ln < 1e-12:
             # 蝴蝶结/乱序面（如立方体顶面 [4,6,7,5]）Newell 法向会抵消为 0：
             # 改用「最大面积三角形」的叉积作平面法向，再走同一套排序 + 外向判定。
@@ -4113,8 +4245,7 @@ def _normalize_mesh(verts, faces):
                         if area > best[0]:
                             best = (area, mx, my, mz)
             if best[0] < 1e-12:
-                out.append(idx)
-                continue
+                continue          # 退化面（面积≈0）直接丢弃，避免污染体积/遮挡计算
             nx, ny, nz = best[1], best[2], best[3]
             ln = math.sqrt(nx * nx + ny * ny + nz * nz)
         hx, hy, hz = nx / ln, ny / ln, nz / ln
