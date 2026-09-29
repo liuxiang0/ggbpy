@@ -330,15 +330,15 @@ def image_upload(b: ImageBody):
 async def import_mesh(request: Request):
     """导入 OBJ 网格文本 → 存入网格仓库，返回 id（前端随后输入 m=Mesh[id]）。"""
     try:
-        from kernel.mesh_io import parse_obj
+        from kernel.mesh_io import parse_mesh
         from kernel import mesh_store
-        text = (await request.body()).decode("utf-8", errors="replace")
-        verts, faces, warnings = parse_obj(text)
+        raw = await request.body()
+        verts, faces, warnings, fmt = parse_mesh(raw)
         mid = mesh_store.put(verts, faces)
         rec = mesh_store.get(mid)
-        return {"ok": True, "id": mid, "verts": len(rec["verts"]), "faces": len(rec["faces"]),
+        return {"ok": True, "id": mid, "format": fmt, "verts": len(rec["verts"]), "faces": len(rec["faces"]),
                 "edges": len(mesh_store.edges_of(rec["faces"])), "warnings": warnings,
-                "message": "已导入网格 %d 顶点 / %d 面" % (len(rec["verts"]), len(rec["faces"]))}
+                "message": "已导入 %s 网格 %d 顶点 / %d 面" % (fmt, len(rec["verts"]), len(rec["faces"]))}
     except Exception as e:
         return {"ok": False, "message": "导入失败: " + str(e)}
 

@@ -506,6 +506,42 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     check('导入网格已渲染（像素 > 500）', pxM > 500, 'non-bg pixels=' + pxM);
   }
 
+  // 第八批：参数曲面 + STL 文件导入
+  await reset(['O=(0,0,0)']);
+  await page.fill('#cmd', 'tor=SurfaceParam[(2+cos(s))*cos(t),(2+cos(s))*sin(t),sin(s),s,t,0,2*pi,0,2*pi,16]');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(900);
+  await open3d();
+  await page.waitForTimeout(600);
+  let els8 = await state3d();
+  const tor8 = els8.filter(e => e.solid === 'surface' && /SurfaceParam/.test(e.defn || ''))[0];
+  check('参数曲面经输入框建成（17²=289 顶点）', !!tor8 && (tor8.data.verts || []).length === 289,
+    tor8 ? String((tor8.data.verts || []).length) : 'missing');
+  const px8 = await nonBgPixels();
+  check('参数曲面已渲染（像素 > 500）', px8 > 500, 'non-bg pixels=' + px8);
+  // STL 导入（ASCII）
+  const stlPath = require('os').tmpdir() + '/ggbpy_ui_test.stl';
+  fs.writeFileSync(stlPath, ['solid tetra',
+    '  facet normal 0 0 -1', '    outer loop', '      vertex 0 0 0', '      vertex 2 0 0',
+    '      vertex 0 2 0', '    endloop', '  endfacet',
+    '  facet normal 0 -1 0', '    outer loop', '      vertex 0 0 0', '      vertex 0 0 2',
+    '      vertex 2 0 0', '    endloop', '  endfacet',
+    '  facet normal -1 0 0', '    outer loop', '      vertex 0 0 0', '      vertex 0 2 0',
+    '      vertex 0 0 2', '    endloop', '  endfacet',
+    '  facet normal 1 1 1', '    outer loop', '      vertex 2 0 0', '      vertex 0 0 2',
+    '      vertex 0 2 0', '    endloop', '  endfacet', 'endsolid tetra'].join('\n'));
+  await page.setInputFiles('#objfile', stlPath);
+  await page.waitForTimeout(1200);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+  await open3d();
+  await page.waitForTimeout(500);
+  els8 = await state3d();
+  const stlMesh = els8.filter(e => e.solid === 'mesh')[0];
+  check('STL 导入生成网格元素（4/4/6）', !!stlMesh && (stlMesh.data.verts || []).length === 4
+    && (stlMesh.data.faces || []).length === 4 && (stlMesh.data.edges || []).length === 6,
+    stlMesh ? (stlMesh.data.verts.length + '/' + stlMesh.data.faces.length + '/' + stlMesh.data.edges.length) : 'missing');
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));

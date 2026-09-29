@@ -3983,6 +3983,206 @@ def _cmd_mesh(cons, defn, args):
     return el
 
 
+def _cmd_surface_param(cons, defn, args):
+    """SurfaceParam[x(s,t), y(s,t), z(s,t), s, t, smin, smax, tmin, tmax, 网格数?]
+
+    参数曲面 → (n+1)² 网格；表达式可引用滑块。
+    """
+    if len(args) not in (9, 10):
+        raise GeoError("SurfaceParam 需要 x(s,t), y(s,t), z(s,t), s, t, smin, smax, tmin, tmax[, 网格数]")
+    xb, yb, zb, sname, tname = args[0], args[1], args[2], args[3].strip(), args[4].strip()
+    for nm in (sname, tname):
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", nm):
+            raise GeoError("非法参数名: " + nm)
+    if sname == tname:
+        raise GeoError("两个参数名不能相同")
+    smin, smax = eval_number(cons, args[5]), eval_number(cons, args[6])
+    tmin, tmax = eval_number(cons, args[7]), eval_number(cons, args[8])
+    n = int(eval_number(cons, args[9])) if len(args) == 10 else 24
+    if smax <= smin or tmax <= tmin:
+        raise GeoError("SurfaceParam 的范围需满足 max > min")
+    n = max(2, min(n, 96))
+    el = Geo3D(label_of(defn), defn)
+    el.objtype = "polyhedron"
+    el.solid = "surface"
+    el.set_deps(_num_deps(cons, defn),
+                _surface_param_compute(xb, yb, zb, sname, tname, smin, smax, tmin, tmax, n))
+    return cons.add(el)
+
+
+def _surface_param_compute(xb, yb, zb, sname, tname, smin, smax, tmin, tmax, n):
+    import sympy
+
+    def fn(deps):
+        vals = {d.label: d.value for d in deps if hasattr(d, "value")}
+        try:
+            su, tu = sympy.symbols(sname + " " + tname)
+            loc = {**vals, "pi": sympy.pi, "e": sympy.E, sname: su, tname: tu}
+            fns = [sympy.lambdify((su, tu), sympy.sympify(b.replace("^", "**"), locals=loc), "numpy")
+                   for b in (xb, yb, zb)]
+            verts, faces, edges = [], [], []
+            for j in range(n + 1):
+                tv = tmin + (tmax - tmin) * j / n
+                for i in range(n + 1):
+                    sv = smin + (smax - smin) * i / n
+                    p = []
+                    for f in fns:
+                        v = f(sv, tv)
+                        v = float(v) if not hasattr(v, "__len__") else float(v[0])
+                        if not math.isfinite(v):
+                            raise GeoError("参数曲面在 (%.3f,%.3f) 取值非有限" % (sv, tv))
+                        p.append(v)
+                    verts.append(p)
+        except GeoError:
+            raise
+        except Exception as ex:
+            raise GeoError("参数曲面表达式无法求值：" + str(ex)[:80])
+
+        def vid(i, j):
+            return j * (n + 1) + i
+
+        for j in range(n):
+            for i in range(n):
+                faces.append([vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)])
+                edges.append([vid(i, j), vid(i + 1, j)])
+                edges.append([vid(i, j), vid(i, j + 1)])
+        for i in range(n):
+            edges.append([vid(i, n), vid(i + 1, n)])
+        for j in range(n):
+            edges.append([vid(n, j), vid(n, j + 1)])
+        return {"objtype": "polyhedron", "solid": "surface",
+                "data": {"verts": verts, "faces": faces, "edges": edges, "grid": n}}
+    return fn
+
+
+def _cmd_implicit_surface(cons, defn, args):
+    """ImplicitSurface[f(x,y,z)=0, xmin, xmax, ymin, ymax, zmin, zmax, 分辨率?]
+
+    marching tetrahedra 抽取等值面 → 三角网格（solid=surface）。
+    """
+    if len(args) not in (7, 8):
+        raise GeoError("ImplicitSurface 需要 f(x,y,z)=0, xmin, xmax, ymin, ymax, zmin, zmax[, 分辨率]")
+    expr = args[0]
+    if "=" in expr:
+        lhs, rhs = expr.split("=", 1)
+        expr = "(" + lhs + ")-(" + rhs + ")"
+    xmin, xmax = eval_number(cons, args[1]), eval_number(cons, args[2])
+    ymin, ymax = eval_number(cons, args[3]), eval_number(cons, args[4])
+    zmin, zmax = eval_number(cons, args[5]), eval_number(cons, args[6])
+    n = int(eval_number(cons, args[7])) if len(args) == 8 else 20
+    if xmax <= xmin or ymax <= ymin or zmax <= zmin:
+        raise GeoError("ImplicitSurface 的范围需满足 max > min")
+    n = max(4, min(n, 64))
+    el = Geo3D(label_of(defn), defn)
+    el.objtype = "polyhedron"
+    el.solid = "surface"
+    el.set_deps(_num_deps(cons, defn),
+                _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n))
+    return cons.add(el)
+
+
+def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
+    import sympy
+    import numpy as np
+
+    # 立方体 6 个四面体（沿主对角线 0-7 的 Kuhn 分解）
+    TETRA = [(0, 1, 3, 7), (0, 3, 2, 7), (0, 2, 6, 7), (0, 6, 4, 7), (0, 4, 5, 7), (0, 5, 1, 7)]
+
+    def fn(deps):
+        vals = {d.label: d.value for d in deps if hasattr(d, "value")}
+        try:
+            xs_, ys_, zs_ = sympy.symbols("x y z")
+            loc = {**vals, "pi": sympy.pi, "e": sympy.E}
+            f = sympy.lambdify((xs_, ys_, zs_), sympy.sympify(expr.replace("^", "**"), locals=loc), "numpy")
+        except Exception as ex:
+            raise GeoError("隐式曲面表达式无法求值：" + str(ex)[:80])
+        gx = [xmin + (xmax - xmin) * i / n for i in range(n + 1)]
+        gy = [ymin + (ymax - ymin) * j / n for j in range(n + 1)]
+        gz = [zmin + (zmax - zmin) * k / n for k in range(n + 1)]
+        X, Y, Z = np.meshgrid(gx, gy, gz, indexing="ij")
+        try:
+            F = np.asarray(f(X, Y, Z), dtype=float)
+        except Exception as ex:
+            raise GeoError("隐式曲面取值失败：" + str(ex)[:80])
+        if not np.all(np.isfinite(F)):
+            raise GeoError("隐式曲面在该范围内取值非有限（可能存在奇点）")
+
+        verts = []
+        vindex = {}
+
+        def _vid(p):
+            key = (round(p[0], 7), round(p[1], 7), round(p[2], 7))
+            i = vindex.get(key)
+            if i is None:
+                i = len(verts)
+                vindex[key] = i
+                verts.append([p[0], p[1], p[2]])
+            return i
+
+        def _corner(i, j, k):
+            return np.array([gx[i], gy[j], gz[k]])
+
+        faces = []
+        for i in range(n):
+            for j in range(n):
+                for k in range(n):
+                    corners = {}
+                    for di in (0, 1):
+                        for dj in (0, 1):
+                            for dk in (0, 1):
+                                idx = di + 2 * dj + 4 * dk
+                                corners[idx] = (_corner(i + di, j + dj, k + dk), F[i + di, j + dj, k + dk])
+                    for t in TETRA:
+                        pts = [corners[c] for c in t]
+                        inside = [p[1] < 0 for p in pts]
+                        cnt = sum(inside)
+                        if cnt == 0 or cnt == 4:
+                            continue
+                        segs = []
+                        for a in range(4):
+                            for b in range(a + 1, 4):
+                                if inside[a] != inside[b]:
+                                    pa, fa = pts[a]
+                                    pb, fb = pts[b]
+                                    tt = fa / (fa - fb)
+                                    segs.append(pa + tt * (pb - pa))
+                        if cnt == 1 or cnt == 3:
+                            if len(segs) >= 3:
+                                faces.append([_vid(segs[0]), _vid(segs[1]), _vid(segs[2])])
+                        else:
+                            if len(segs) >= 4:
+                                faces.append([_vid(segs[0]), _vid(segs[1]), _vid(segs[2])])
+                                faces.append([_vid(segs[0]), _vid(segs[2]), _vid(segs[3])])
+        if not faces:
+            raise GeoError("该范围内没有 f=0 的等值面（请扩大范围或调整分辨率）")
+        # 朝向：法向指向 f 增大方向（外部）
+        eps = 1e-6 * max(xmax - xmin, ymax - ymin, zmax - zmin)
+        fixed = []
+        for f3 in faces:
+            a, b, c = (np.array(verts[i]) for i in f3)
+            nvec = np.cross(b - a, c - a)
+            ln = float(np.linalg.norm(nvec))
+            if ln < 1e-15:
+                continue
+            nvec = nvec / ln
+            try:
+                f_plus = float(f(*(a + eps * nvec)))
+                f_minus = float(f(*(a - eps * nvec)))
+            except Exception:
+                fixed.append(list(f3))
+                continue
+            fixed.append(list(f3) if f_plus > f_minus else [f3[0], f3[2], f3[1]])
+        edges = set()
+        for f3 in fixed:
+            for m in range(3):
+                p, q = f3[m], f3[(m + 1) % 3]
+                edges.add((min(p, q), max(p, q)))
+        return {"objtype": "polyhedron", "solid": "surface",
+                "data": {"verts": [list(v) for v in verts], "faces": fixed,
+                         "edges": [[a, b] for a, b in sorted(edges)], "grid": n}}
+    return fn
+
+
 def _cmd_fitplane(cons, defn, args):
     """FitPlane[点列表]：三维点云最小二乘拟合平面（法向 = 协方差最小特征向量）。"""
     if len(args) != 1:
@@ -6608,6 +6808,7 @@ ALIASES = {
     "面积": "area", "体积": "volume", "表面积": "area", "周长": "perimeter",
     "曲面": "surface", "拟合平面": "fitplane", "平面拟合": "fitplane",
     "网格": "mesh", "导入网格": "mesh",
+    "参数曲面": "surfaceparam", "隐式曲面": "implicitsurface",
     "内切圆": "incircle", "内心": "incenter", "重心": "centroid",
     "滑动条": "slider", "文本": "text", "轨迹": "locus", "圆上点": "pointoncircle", "动点": "pointonpath",
     "删除": "delete", "重命名": "rename", "重定义": "redefine",
@@ -6672,6 +6873,7 @@ def _result_kind(name: str) -> str:
         "length": "number", "sort": "list", "fitline": "line", "fitpoly": "function",
         "sphere": "geo3d", "plane": "geo3d", "cube": "geo3d",
         "surface": "geo3d", "fitplane": "geo3d", "mesh": "geo3d",
+        "surfaceparam": "geo3d", "implicitsurface": "geo3d",
         "cone": "geo3d", "cylinder": "geo3d", "prism": "geo3d", "pyramid": "geo3d",
         "tetrahedron": "geo3d", "octahedron": "geo3d", "hexahedron": "geo3d", "icosahedron": "geo3d", "dodecahedron": "geo3d",
         "parametric": "parametric", "polar": "polar", "implicit": "implicit",
@@ -6761,7 +6963,7 @@ COMMANDS = {
     "fitpoly": _cmd_fitpoly,
     "fitexpr": _cmd_fitexpr,
     "sphere": _cmd_sphere, "surface": _cmd_surface, "fitplane": _cmd_fitplane,
-    "mesh": _cmd_mesh,
+    "mesh": _cmd_mesh, "surfaceparam": _cmd_surface_param, "implicitsurface": _cmd_implicit_surface,
     "plane": _cmd_plane,
     "cube": _cmd_cube,
     "cone": _cmd_cone,

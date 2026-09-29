@@ -146,3 +146,77 @@ def parse_obj(text: str) -> Tuple[List[List[float]], List[List[int]], List[str]]
     if skipped["vt"] or skipped["vn"] or skipped["other"]:
         warnings.append("已忽略 vt=%d vn=%d 其它=%d 行" % (skipped["vt"], skipped["vn"], skipped["other"]))
     return verts, faces, warnings
+
+
+def _parse_stl_ascii(text: str):
+    """ASCII STL：facet normal / outer loop / vertex ×3。"""
+    from .elements import GeoError
+
+    verts: List[List[float]] = []
+    faces: List[List[int]] = []
+    cur: List[int] = []
+    for line in text.splitlines():
+        t = line.strip().split()
+        if not t:
+            continue
+        if t[0] == "vertex" and len(t) >= 4:
+            verts.append([float(t[1]), float(t[2]), float(t[3])])
+            cur.append(len(verts) - 1)
+        elif t[0] == "endloop":
+            if len(cur) >= 3:
+                faces.append(cur[:3])
+            cur = []
+    if not verts or not faces:
+        raise GeoError("ASCII STL 中没有可用的三角面片")
+    return verts, faces, []
+
+
+def _parse_stl_binary(data: bytes):
+    """二进制 STL：80 字节头 + uint32 面数 + 每面 50 字节（法向3 + 顶点9 + 属性2）。"""
+    import struct
+    from .elements import GeoError
+
+    if len(data) < 84:
+        raise GeoError("二进制 STL 长度不足")
+    (count,) = struct.unpack("<I", data[80:84])
+    if 84 + count * 50 > len(data):
+        raise GeoError("二进制 STL 面数与文件长度不符（可能不是 STL）")
+    verts: List[List[float]] = []
+    faces: List[List[int]] = []
+    off = 84
+    for _ in range(count):
+        rec = struct.unpack("<12fH", data[off:off + 50])
+        base = len(verts)
+        for i in range(3):
+            verts.append([rec[3 + i * 3], rec[4 + i * 3], rec[5 + i * 3]])
+        faces.append([base, base + 1, base + 2])
+        off += 50
+    if not faces:
+        raise GeoError("二进制 STL 中没有面片")
+    return verts, faces, []
+
+
+def parse_mesh(data) -> Tuple[List[List[float]], List[List[int]], List[str], str]:
+    """自动识别并解析 OBJ / ASCII STL / 二进制 STL → (verts, faces, warnings, 格式名)。"""
+    from .elements import GeoError
+
+    if isinstance(data, (bytes, bytearray)):
+        raw = bytes(data)
+        head = raw[:2048].lower()
+        if head.lstrip().startswith(b"solid") and b"facet" in head:
+            v, f, w = _parse_stl_ascii(raw.decode("utf-8", errors="replace"))
+            return v, f, w, "stl-ascii"
+        if b"\nv " in raw[:8192] or raw[:2] == b"v ":
+            v, f, w = parse_obj(raw.decode("utf-8", errors="replace"))
+            return v, f, w, "obj"
+        try:
+            v, f, w = _parse_stl_binary(raw)
+            return v, f, w, "stl-binary"
+        except Exception:
+            raise GeoError("无法识别的网格文件（支持 OBJ / ASCII STL / 二进制 STL）")
+    text = str(data)
+    if "facet" in text[:2048].lower() and text.lstrip().lower().startswith("solid"):
+        v, f, w = _parse_stl_ascii(text)
+        return v, f, w, "stl-ascii"
+    v, f, w = parse_obj(text)
+    return v, f, w, "obj"

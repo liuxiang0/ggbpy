@@ -3372,7 +3372,7 @@
     if (!f) return;
     var rd = new FileReader();
     rd.onload = function () {
-      fetch('/api/mesh', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: rd.result })
+      fetch('/api/mesh', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: rd.result })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (!d || !d.ok) {
@@ -3386,7 +3386,7 @@
         })
         .catch(function (e) { setMsg((lang === 'en' ? 'OBJ import error: ' : 'OBJ 导入出错: ') + e, true); });
     };
-    rd.readAsText(f);
+    rd.readAsArrayBuffer(f);
   });
   btn('btn-image', function () {
     document.getElementById('imgfile').click();

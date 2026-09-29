@@ -935,6 +935,161 @@ if e31 is None:
     check("未知网格 id → 明确报错", "找不到网格数据" in r_bad, r_bad[:60])
 
 # ---------------------------------------------------------------------------
+section("Y. 参数曲面 SurfaceParam")
+c33, e33 = build([
+    "tor=SurfaceParam[(2+cos(s))*cos(t),(2+cos(s))*sin(t),sin(s),s,t,0,2*pi,0,2*pi,32]",
+    "cyl=SurfaceParam[cos(t),sin(t),s,s,t,0,2,0,2*pi,48]",
+    "aa=2",
+    "dep=SurfaceParam[aa*cos(t),aa*sin(t),s,s,t,0,1,0,2*pi,8]",
+])
+check("参数曲面构造", e33 is None, str(e33))
+if e33 is None:
+    tor = c33.elements["tor"]
+    d = tor.data
+    check("环面网格 v/f（32×32 → 1089/1024）",
+          (len(d["verts"]), len(d["faces"])) == (1089, 1024),
+          "%d/%d" % (len(d["verts"]), len(d["faces"])))
+    check("参数曲面 solid=surface", tor.solid == "surface" and tor.objtype == "polyhedron",
+          "%s/%s" % (tor.solid, tor.objtype))
+    zs = [v[2] for v in d["verts"]]
+    check("环面 z ∈ [−1,1]", close(min(zs), -1.0, 1e-9) and close(max(zs), 1.0, 1e-9),
+          "%.6f..%.6f" % (min(zs), max(zs)))
+    rr = [math.hypot(v[0], v[1]) for v in d["verts"]]
+    check("环面管心距半径 ∈ [1,3]", close(min(rr), 1.0, 1e-9) and close(max(rr), 3.0, 1e-9),
+          "%.6f..%.6f" % (min(rr), max(rr)))
+    c33.process("A_tor=Area[tor]")
+    exp_tor = 4 * math.pi ** 2 * 2 * 1
+    check("环面面积 ≈ 4π²Rr（误差 <1%）",
+          abs(c33.elements["A_tor"].value - exp_tor) / exp_tor < 0.01,
+          "%.4f vs %.4f" % (c33.elements["A_tor"].value, exp_tor))
+    c33.process("A_cyl=Area[cyl]")
+    exp_cyl = 2 * math.pi * 2
+    check("圆柱侧面面积 ≈ 2πrh（误差 <1%）",
+          abs(c33.elements["A_cyl"].value - exp_cyl) / exp_cyl < 0.01,
+          "%.4f vs %.4f" % (c33.elements["A_cyl"].value, exp_cyl))
+    r_range = c33.process("bad=SurfaceParam[cos(t),sin(t),s,s,t,0,2,1,1,8]")
+    check("参数范围退化 → 明确报错", "范围" in r_range, r_range[:60])
+    c33.process("bad2=SurfaceParam[1/s,0,t,s,t,0,1,0,1,6]")
+    check("参数曲面奇点 → error", bool(c33.elements["bad2"].error), str(c33.elements["bad2"].error))
+    z0 = c33.elements["dep"].data["verts"][0][0]
+    c33.elements["aa"].value = 3.0
+    c33._recompute(c33.elements["aa"])
+    z1 = c33.elements["dep"].data["verts"][0][0]
+    check("参数曲面随滑块重算（aa 2→3）", not close(z0, z1), "%.3f → %.3f" % (z0, z1))
+    r_nc = c33.process("bad3=SurfaceParam[cos(t),sin(t),s,s,s,0,1,0,1,4]")
+    check("参数名相同 → 报错", "不能相同" in r_nc, r_nc[:60])
+
+# ---------------------------------------------------------------------------
+section("Z. 隐式曲面 ImplicitSurface（marching tetrahedra）")
+c34, e34 = build([
+    "sph=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,24]",
+    "tor=ImplicitSurface[(sqrt(x^2+y^2)-2)^2+z^2-1=0,-3.2,3.2,-3.2,3.2,-1.5,1.5,24]",
+])
+check("隐式曲面构造", e34 is None, str(e34))
+if e34 is None:
+    sph = c34.elements["sph"]
+    d = sph.data
+    check("球面等值面有网格（顶点 > 500 / 面 > 1000）",
+          len(d["verts"]) > 500 and len(d["faces"]) > 1000,
+          "%d/%d" % (len(d["verts"]), len(d["faces"])))
+    check("隐式曲面 solid=surface", sph.solid == "surface", sph.solid)
+    rr = [math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2) for v in d["verts"]]
+    h = 4.4 / 24.0          # 网格步长：线性插值截断误差应在一个步长量级内
+    check("等值面顶点贴近真球面（误差 < 网格步长）",
+          all(abs(r - 2.0) < h for r in rr), "%.6f..%.6f (h=%.4f)" % (min(rr), max(rr), h))
+    c34.process("A_sph=Area[sph]")
+    exp_sph = 4 * math.pi * 4
+    check("球面等值面面积（误差 <8%）",
+          abs(c34.elements["A_sph"].value - exp_sph) / exp_sph < 0.08,
+          "%.4f vs %.4f" % (c34.elements["A_sph"].value, exp_sph))
+    c34.process("A_tor=Area[tor]")
+    exp_tor = 4 * math.pi ** 2 * 2 * 1
+    check("圆环等值面面积（误差 <8%）",
+          abs(c34.elements["A_tor"].value - exp_tor) / exp_tor < 0.08,
+          "%.4f vs %.4f" % (c34.elements["A_tor"].value, exp_tor))
+    c34.process("bad=ImplicitSurface[x^2+y^2+z^2+1=0,-1,1,-1,1,-1,1,8]")
+    check("无等值面 → error", bool(c34.elements["bad"].error), str(c34.elements["bad"].error))
+    r_range = c34.process("bad2=ImplicitSurface[x,-1,1,-1,1,1,1,8]")
+    check("z 范围退化 → 明确报错", "范围" in r_range, r_range[:60])
+    c34.process("V_sph=Volume[sph]")
+    check("隐式曲面 Volume → 曲面无体积", bool(c34.elements["V_sph"].error)
+          and "没有体积" in c34.elements["V_sph"].error, str(c34.elements["V_sph"].error))
+
+# ---------------------------------------------------------------------------
+section("AA. STL 导入（ASCII / 二进制 / 往返）")
+import struct as _struct  # noqa: E402
+from kernel.mesh_io import parse_mesh  # noqa: E402
+STL_ASCII = """solid tetra
+  facet normal 0 0 -1
+    outer loop
+      vertex 0 0 0
+      vertex 2 0 0
+      vertex 0 2 0
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 0 2
+      vertex 2 0 0
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 2 0
+      vertex 0 0 2
+    endloop
+  endfacet
+  facet normal 1 1 1
+    outer loop
+      vertex 2 0 0
+      vertex 0 0 2
+      vertex 0 2 0
+    endloop
+  endfacet
+endsolid tetra
+"""
+va, fa, _wa, fmta = parse_mesh(STL_ASCII.encode())
+check("ASCII STL 解析（12 顶点 / 4 三角）", fmta == "stl-ascii" and len(va) == 12 and len(fa) == 4,
+      "%s %d/%d" % (fmta, len(va), len(fa)))
+tris = [(va[fa[i][0]], va[fa[i][1]], va[fa[i][2]]) for i in range(len(fa))]
+blob = b"\x00" * 80 + _struct.pack("<I", len(tris))
+for t3 in tris:
+    blob += _struct.pack("<12fH", 0, 0, 0, *t3[0], *t3[1], *t3[2], 0)
+vb, fb, _wb, fmtb = parse_mesh(blob)
+check("二进制 STL 解析（12 顶点 / 4 三角）", fmtb == "stl-binary" and len(vb) == 12 and len(fb) == 4,
+      "%s %d/%d" % (fmtb, len(vb), len(fb)))
+_mid2 = _ms.put(vb, fb)
+c35, e35 = build(["m=Mesh[" + _mid2 + "]", "V_m=Volume[m]", "A_m=Area[m]"])
+check("STL 导入 → Mesh 元素", e35 is None, str(e35))
+if e35 is None:
+    m = c35.elements["m"]
+    check("四面体网格 4/4/6",
+          (len(m.data["verts"]), len(m.data["faces"]), len(m.data["edges"])) == (4, 4, 6),
+          "%d/%d/%d" % (len(m.data["verts"]), len(m.data["faces"]), len(m.data["edges"])))
+    check("STL 四面体体积 = 4/3", close(c35.elements["V_m"].value, 4.0 / 3.0, 1e-9),
+          "%.9f" % c35.elements["V_m"].value)
+    txt = c35.save_json()
+    c36 = Construction()
+    c36.load_json(txt)
+    check(".ggk 往返保留 STL 导入网格",
+          c36.elements.get("m") is not None and len(c36.elements["m"].data["faces"]) == 4)
+# 导出 → 导入 往返（立方体）
+c37, _e37 = build(["cu=Cube[(0,0,0),(2,0,0)]"])
+stl_text, _w = export_stl(c37)
+v3, f3, _w3, fmt3 = parse_mesh(stl_text.encode())
+check("STL 导出→导入 往返（12 三角）", fmt3 == "stl-ascii" and len(f3) == 12, "%s %d" % (fmt3, len(f3)))
+_mid3 = _ms.put(v3, f3)
+c38, _e38 = build(["m=Mesh[" + _mid3 + "]", "V=Volume[m]"])
+check("往返后立方体体积 = 8", close(c38.elements["V"].value, 8.0, 1e-9), "%.9f" % c38.elements["V"].value)
+try:
+    parse_mesh(b"\x01\x02\x03 not a mesh at all, quite long padding to avoid binary stl misdetect" + b"\x00" * 200)
+    check("无法识别的网格文件 → 报错", False, "未报错")
+except Exception as _ex:
+    check("无法识别的网格文件 → 报错", True, str(_ex)[:40])
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D 内核检测矩阵：%d 项断言，%d 失败" % (COUNT[0], len(FAILS)))
 if FAILS:

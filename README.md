@@ -88,22 +88,27 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **`Surface[z=f(x,y), xmin, xmax, ymin, ymax, 网格数?]` 显式曲面**：生成 (n+1)² 网格（默认 24×24，上限 96），复用网格渲染/遮挡/导出链路（`solid="surface"`）；表达式可引用**滑块**并在拖动时重算；`Area[曲面]` 求曲面面积（如 `z=x` 的斜面 = √2），`Volume[曲面]` 明确报「曲面没有体积」；网格点取值非有限（奇点）或范围退化都有明确错误；曲面可直接参与 `Intersect`（如与平面求截线）
   - **三维点列表与 `FitPlane`**：列表语法支持三分量元组 `{(0,0,0),(1,0,0),(0,1,1)}`（`itemkind=point3d`，取值 `L(1)` 得带 z 的三维点）；`FitPlane[点列表]` 用协方差最小特征向量做最小二乘拟合平面（返回可继续参与求交/截面的 `plane` 元素）；点云共线（秩 1）或重合会明确报错
   - **OBJ 导入**：工具条新增 **📥 OBJ** 按钮（`/api/mesh` + `Mesh[网格id]`），导入的网格存进网格仓库并随 **.ggk 保存/加载**（与图片仓库同机制），可直接接 `Volume`/`Area`/`Intersect`/OBJ·STL 再导出
+- **第八批（2026-09-29）**：
+  - **参数曲面 `SurfaceParam[x(s,t), y(s,t), z(s,t), s, t, smin, smax, tmin, tmax, 网格数?]`**：任意双参数曲面网格（默认 24×24），表达式可引用滑块；示例：环面 `SurfaceParam[(2+cos(s))*cos(t),(2+cos(s))*sin(t),sin(s),s,t,0,2*pi,0,2*pi,32]`（面积 78.51 vs 解析 4π²Rr=78.96，误差 0.56%）、圆柱面、螺旋面；参数范围退化/参数名相同/奇点都有明确错误
+  - **隐式曲面 `ImplicitSurface[f(x,y,z)=0, xmin, xmax, ymin, ymax, zmin, zmax, 分辨率?]`**：**marching tetrahedra** 抽取等值面（立方体按 Kuhn 分解成 6 个四面体，逐四面体插值三角化 + 法向朝 f 增大方向定向），输出三角网格可渲染/求面积/导出；示例：球面 `x^2+y^2+z^2-4=0`（面积误差 4.3%）、圆环 `(√(x²+y²)−2)²+z²−1=0`（误差 3.3%）；无等值面、取值非有限、范围退化都有明确错误
+  - **STL 导入**：`📥 OBJ` 按钮现在同时支持 **OBJ / ASCII STL / 二进制 STL**（自动嗅探格式，二进制按 50 字节面记录解析），导入后同样是 `Mesh[网格id]` 元素并随 .ggk 持久化；实测导出→导入往返：立方体 STL 12 三角 → 网格 8/6/12、体积精确为 8
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
 - **3D 求交边界**：支持 面×面（交线）、直线/线段×面、平面×立体（截面）、球×平面、球×球、**球×空间圆**、空间圆×平面、**空间圆×空间圆**、空间圆×立体、立体×立体（凸交）、立体×直线/线段、球×直线/线段；**球×立体、球面×曲面、体×空间圆（曲线输出）尚未支持**，会明确报错；平行/重合平面、超出线段的交点、相切球面会产出元素并带 `error`
 - **`.ggb` 导出跳过 3D**：GeoGebra XML 子集不支持 3D，导出时跳过 3D 元素及其级联引用，并在 XML 首部写入警告注释、响应头 `X-GGB-Warnings`（percent-encoded）给出提示 —— **3D 内容请用 .ggk 保存**
 - **SVG 导出只含 2D 视图**（3D 对象按设计跳过）
-- **曲面只支持显式 `z=f(x,y)`**：参数曲面 `(u,v)` 与隐式 `f(x,y,z)=0`（marching cubes）尚未实现；曲面网格用于显示/面积/导出，`Volume` 无定义
+- **曲面三类均已支持**：显式 `Surface[z=f(x,y)]`、参数 `SurfaceParam[x(s,t),…]`、隐式 `ImplicitSurface[f(x,y,z)=0]`（marching **tetrahedra**，属线性插值近似：网格越细越准，粗网格下面积误差约 0.1%–8%）；曲面网格用于显示/面积/导出，`Volume` 无定义（明确报错）
+- **网格导入只做几何**：OBJ/STL 导入保留顶点与面（顶点去重、面索引重排），忽略材质/UV/法向行与颜色；非闭合网格仍可显示/导出，但 `Volume` 结果无物理意义
 - `Perimeter` 仍只接受多边形/圆（不接受立体；立体的周长无定义）
 
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_3d_detection.sh       # 内核 336 + API 115 + 浏览器 84 项断言（需服务运行）
+bash devtools/run_3d_detection.sh       # 内核 365 + API 122 + 浏览器 87 项断言（需服务运行）
 ```
 
-- `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 曲面 × FitPlane × OBJ 导入 × 样式快照 × 序列化 × 3D 度量语义）
+- `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 显式/参数/隐式曲面 × FitPlane × OBJ·STL 导入 × 样式快照 × 序列化 × 3D 度量语义）
 - `devtools/test_3d_api.py` —— API 层（`/api/state3d` schema（含 section）、错误传播、undo/redo、`.ggb` 警告、`.ggk` 载入、功能验收）
 - `devtools/verify_3d_ui_matrix.js` —— 浏览器层（15 个工具全部路径、退化与取消、工具切换、滑块驱动、嵌套输入、截面/空间圆渲染、样式撤销重做、OBJ/STL 真实下载、像素校验、零 JS 错误）
 
@@ -112,7 +117,7 @@ bash devtools/run_3d_detection.sh       # 内核 336 + API 115 + 浏览器 84 �
 - `AreParallel/ArePerpendicular/AreCollinear/AreConcyclic/AreCongruent/AreConcurrent` + `Prove`（Botana 坐标法 + SymPy 符号归约；区分「恒假（存在反例）」与「退化敏感」）
 - `SetCoords/SetValue/SetColor/SetVisible/SetLocked/SetWire/Rename/Delete` 等脚本命令
 - 自定义宏（Macro，GUI 点选输入/输出）、命令脚本面板（.ggs 批量执行）
-- **保存/加载**：自有 .ggk（JSON，含视口/样式/宏/导入网格），兼容 .ggb XML 导入导出、SVG/PNG 导出、**3D 网格 OBJ/STL 导出与 OBJ 导入**（3D 视图工具条 📥OBJ / OBJ / STL 按钮）
+- **保存/加载**：自有 .ggk（JSON，含视口/样式/宏/导入网格），兼容 .ggb XML 导入导出、SVG/PNG 导出、**3D 网格 OBJ/STL 导出与 OBJ/STL 导入**（3D 视图工具条 📥OBJ / OBJ / STL 按钮）
 - **插入图片**：工具栏 🖼 选择图片 → 点击两个基点放置；拖动第二基点缩放，**保持原始长宽比**（图片随 .ggk 保存/加载）
 - 一键生成**试卷 HTML**（题目截图 + 题干/答案编辑，A4 打印即 PDF）；**短链接分享**
 

@@ -480,6 +480,94 @@ if mid:
     check("导入立方体体积 = 8", "8" in str(v3.get("V_m")), str(v3.get("V_m")))
 
 # ---------------------------------------------------------------------------
+section("K. 第八批：参数曲面 / 隐式曲面 / STL 导入")
+clear()
+for t in ["tor=SurfaceParam[(2+cos(s))*cos(t),(2+cos(s))*sin(t),sin(s),s,t,0,2*pi,0,2*pi,20]",
+          "A_tor=Area[tor]",
+          "sph=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,20]",
+          "A_sph=Area[sph]"]:
+    put(t)
+els = state3d()
+tor = find(els, "tor")
+sph = find(els, "sph")
+check("参数曲面经 API 建成（21²=441 顶点）",
+      tor is not None and len((tor.get("data") or {}).get("verts", [])) == 441 and tor.get("solid") == "surface",
+      "%s/%s" % (tor.get("solid") if tor else None,
+                 len((tor.get("data") or {}).get("verts", [])) if tor else None))
+check("隐式曲面经 API 建成（顶点 > 300）",
+      sph is not None and len((sph.get("data") or {}).get("verts", [])) > 300 and sph.get("solid") == "surface",
+      "%s/%s" % (sph.get("solid") if sph else None,
+                 len((sph.get("data") or {}).get("verts", [])) if sph else None))
+st, d = jget("/api/state")
+vals = {e.get("label"): e.get("value") for e in (d or {}).get("elements", [])}
+def _num(v):
+    m = _re.search(r"-?\d+(?:\.\d+)?", str(v))
+    return float(m.group(0)) if m else None
+check("API 环面面积 ≈ 78.96（±6%）",
+      _num(vals.get("A_tor")) is not None and abs(_num(vals["A_tor"]) - 78.957) / 78.957 < 0.06,
+      str(vals.get("A_tor")))
+check("API 球面等值面面积 ≈ 50.27（±10%）",
+      _num(vals.get("A_sph")) is not None and abs(_num(vals["A_sph"]) - 50.265) / 50.265 < 0.10,
+      str(vals.get("A_sph")))
+# STL 导入（ASCII）
+STL_TEXT = """solid tetra
+  facet normal 0 0 -1
+    outer loop
+      vertex 0 0 0
+      vertex 2 0 0
+      vertex 0 2 0
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 0 2
+      vertex 2 0 0
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 2 0
+      vertex 0 0 2
+    endloop
+  endfacet
+  facet normal 1 1 1
+    outer loop
+      vertex 2 0 0
+      vertex 0 0 2
+      vertex 0 2 0
+    endloop
+  endfacet
+endsolid tetra
+"""
+req = urllib.request.Request(BASE + "/api/mesh", data=STL_TEXT.encode("utf-8"),
+                             headers={"Content-Type": "application/octet-stream"}, method="POST")
+try:
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        rst = resp.status
+        rm = json.loads(resp.read().decode("utf-8"))
+except Exception as e:
+    rst, rm = 0, {"ok": False, "message": str(e)}
+check("POST /api/mesh 识别 ASCII STL",
+      rst == 200 and (rm or {}).get("ok") and rm.get("format") == "stl-ascii"
+      and rm.get("verts") == 4 and rm.get("faces") == 4,
+      json.dumps(rm, ensure_ascii=False)[:120])
+if (rm or {}).get("id"):
+    put("mSTL=Mesh[" + rm["id"] + "]")
+    put("V_mSTL=Volume[mSTL]")
+    els = state3d()
+    m = find(els, "mSTL")
+    check("STL 导入 → Mesh 元素 4/4/6",
+          m is not None and (len((m.get("data") or {}).get("verts", [])),
+                             len((m.get("data") or {}).get("faces", [])),
+                             len((m.get("data") or {}).get("edges", []))) == (4, 4, 6),
+          str([len((m.get("data") or {}).get(k, [])) for k in ("verts", "faces", "edges")]) if m else None)
+    st3, d3 = jget("/api/state")
+    v3 = {e.get("label"): e.get("value") for e in (d3 or {}).get("elements", [])}
+    check("STL 四面体体积 = 4/3", "1.333" in str(v3.get("V_mSTL")), str(v3.get("V_mSTL")))
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D API 检测矩阵 @ %s：%d 项断言，%d 失败" % (BASE, COUNT[0], len(FAILS)))
 for f in FAILS:
