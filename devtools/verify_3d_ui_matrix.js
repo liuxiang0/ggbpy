@@ -385,6 +385,34 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   });
   check('UI 输入 Area[cu] = 24', aEl && aEl.indexOf('24') !== -1, String(aEl));
 
+  // 第四批：空间圆（球∩平面）与体∩体渲染
+  await reset(['O=(0,0,0)', 'sp=Sphere[O,2]', 'pl=Plane[O,(1,0,0),(0,1,0)]']);
+  await inp('cc=Intersect[sp,pl]');
+  await inp('P1=(1,1,1)');
+  await inp('P2=(3,1,1)');
+  await inp('cu=Cube[O,(2,0,0)]');
+  await inp('cu2=Cube[P1,P2]');
+  await inp('cap=Intersect[cu,cu2]');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+  await open3d();
+  await page.waitForTimeout(700);
+  const els4 = await state3d();
+  const cc4 = els4.filter(e => e.objtype === 'circle3d')[0];
+  const cap4 = els4.filter(e => /Intersect\[cu,cu2\]/.test(e.defn || ''))[0];
+  check('空间圆元素出现（r=2）', !!cc4 && Math.abs((cc4.data || {}).r - 2) < 1e-9,
+    cc4 ? String(cc4.data.r) : 'missing');
+  check('体∩体元素出现（8 顶点）', !!cap4 && (cap4.data.verts || []).length === 8,
+    cap4 ? String((cap4.data.verts || []).length) : 'missing');
+  const px4 = await nonBgPixels();
+  check('空间圆/交集已渲染（像素 > 500）', px4 > 500, 'non-bg pixels=' + px4);
+  const listTxt4 = await page.evaluate(() => {
+    const el = document.querySelector('#obj-list') || document.querySelector('.obj-list') || document.body;
+    return el ? el.textContent : '';
+  });
+  check('列表显示「空间圆」', listTxt4.indexOf('空间圆') !== -1 || listTxt4.indexOf('Circle (3D)') !== -1,
+    listTxt4.replace(/\s+/g, ' ').slice(0, 80));
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));

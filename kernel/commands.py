@@ -581,6 +581,11 @@ def _cmd_intersect(cons, defn, args, idx=None):
         if _is_solid_el(o2) and t1 in ("segment", "line3d"):
             return _mk(cons, GeoPoint, "point", defn, [o1, o2],
                        lambda d: _ix_solid_line(d[1], d[0], idx, t1 == "segment"))
+        if (t1, t2) in (("sphere", "plane"), ("plane", "sphere")):
+            sph, pl = (o1, o2) if t1 == "sphere" else (o2, o1)
+            return _mk(cons, Geo3D, "geo3d", defn, [sph, pl], lambda d: _ix_sphere_plane(d[0], d[1]))
+        if _is_solid_el(o1) and _is_solid_el(o2):
+            return _mk(cons, Geo3D, "geo3d", defn, [o1, o2], lambda d: _ix_solid_solid(d[0], d[1]))
         if t1 == "sphere" and t2 in ("segment", "line3d"):
             return _mk(cons, GeoPoint, "point", defn, [o1, o2],
                        lambda d: _ix_sphere_line(d[0], d[1], idx, t2 == "segment"))
@@ -681,7 +686,13 @@ def _ix_solid_plane(solid, pl):
     for i, j in edges:
         p, q = vs[i], vs[j]
         fp, fq = _val(p), _val(q)
-        if fp == 0.0 and fq == 0.0:
+        if abs(fp) < 1e-9 and abs(fq) < 1e-9:
+            continue                      # 整条边落在平面上：该面本身在平面内，交由其它边给出顶点
+        if abs(fp) < 1e-9:
+            pts.append([p[0], p[1], p[2]])
+            continue                      # 端点恰在平面上（如平面正好切过顶面）
+        if abs(fq) < 1e-9:
+            pts.append([q[0], q[1], q[2]])
             continue
         if (fp > 0) == (fq > 0):
             continue
@@ -736,7 +747,153 @@ def _ray_triangle(orig, dirv, a, b, c):
     if v < -1e-9 or u + v > 1 + 1e-9:
         return None
     t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv
-    return t if t > 1e-9 else None
+    # 容差：起点恰在面上（t=0）也算命中；由调用方按线段范围过滤
+    return t if t > -1e-9 else None
+
+
+def _ix_sphere_plane(sph, pl):
+    """球 ∩ 平面 → 3D 圆（objtype=circle3d，带圆心/半径/所在平面法向与基）。"""
+    d = sph.data
+    cx, cy, cz, r = d["cx"], d["cy"], d["cz"], d["r"]
+    a, b, c, dd = pl.data["a"], pl.data["b"], pl.data["c"], pl.data["d"]
+    ln = math.sqrt(a * a + b * b + c * c)
+    if ln < 1e-12:
+        raise GeoError("平面退化")
+    nx, ny, nz = a / ln, b / ln, c / ln
+    sdist = nx * cx + ny * cy + nz * cz + dd / ln          # 球心到平面的有符号距离（平面：n·x+d=0）
+    if abs(sdist) > r + 1e-9:
+        raise GeoError("平面与球不相交（球心距 %.6f > 半径 %.6f）" % (abs(sdist), r))
+    rr = math.sqrt(max(0.0, r * r - sdist * sdist))
+    if rr < 1e-9:
+        raise GeoError("平面与球相切（交线退化为一点）")
+    ox, oy, oz = cx - sdist * nx, cy - sdist * ny, cz - sdist * nz   # 圆心 = 球心在平面上的投影
+    u, v, _n = _frame_from_axis([nx, ny, nz])
+    return {"objtype": "circle3d",
+            "data": {"cx": ox, "cy": oy, "cz": oz, "r": rr,
+                     "normal": [nx, ny, nz], "u": u, "v": v}}
+
+
+# ---- 凸多面体半空间裁剪（体∩体） ----
+
+def _solid_planes(el):
+    """把凸立体转成外向半空间列表 [(n, d)]：内部满足 n·x + d ≤ 0。"""
+    vs = el.data["verts"]
+    faces = el.data["faces"]
+    planes = []
+    for f in faces:
+        nx, ny, nz = _newell_normal(vs, f)
+        ln = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if ln < 1e-12:
+            continue
+        nx, ny, nz = nx / ln, ny / ln, nz / ln
+        p = vs[f[0]]
+        planes.append(((nx, ny, nz), -(nx * p[0] + ny * p[1] + nz * p[2])))
+    return planes
+
+
+def _clip_polyhedron(verts, faces, plane):
+    """用一个半空间 n·x + d ≤ 0 裁剪凸多面体（顶点/面表），返回新的 (verts, faces)。"""
+    n, d = plane
+
+    def inside(p):
+        return n[0] * p[0] + n[1] * p[1] + n[2] * p[2] + d <= 1e-12
+
+    def cut_point(p, q):
+        fp = n[0] * p[0] + n[1] * p[1] + n[2] * p[2] + d
+        fq = n[0] * q[0] + n[1] * q[1] + n[2] * q[2] + d
+        t = fp / (fp - fq)
+        return [p[k] + t * (q[k] - p[k]) for k in range(3)]
+
+    out_faces = []
+    cut_pts = []
+    for f in faces:
+        pts = [verts[i] for i in f]
+        newpoly = []
+        m = len(pts)
+        for i in range(m):
+            p, q = pts[i], pts[(i + 1) % m]
+            ip, iq = inside(p), inside(q)
+            if ip:
+                newpoly.append(p)
+            if ip != iq:
+                cp = cut_point(p, q)
+                newpoly.append(cp)
+                cut_pts.append(cp)
+        # 去重（相邻重复点）
+        dedup = []
+        for p in newpoly:
+            if not dedup or math.dist(p, dedup[-1]) > 1e-9:
+                dedup.append(p)
+        if len(dedup) >= 3:
+            if math.dist(dedup[0], dedup[-1]) < 1e-9:
+                dedup.pop()
+            out_faces.append(dedup)
+    if not out_faces:
+        return [], []
+    # 顶点表（按坐标去重）
+    new_verts = []
+    for f in out_faces:
+        for p in f:
+            if not any(math.dist(p, q) < 1e-9 for q in new_verts):
+                new_verts.append(p)
+    idx_faces = [[next(i for i, q in enumerate(new_verts) if math.dist(p, q) < 1e-9) for p in f] for f in out_faces]
+    # 截面封盖：把裁剪产生的点按平面内极角排序
+    if len(cut_pts) >= 3:
+        uniq = []
+        for p in cut_pts:
+            if not any(math.dist(p, q) < 1e-9 for q in uniq):
+                uniq.append(p)
+        if len(uniq) >= 3:
+            ctr = [sum(p[k] for p in uniq) / len(uniq) for k in range(3)]
+            ux = uy = uz = 0.0
+            for p in uniq:
+                dx, dy, dz = p[0] - ctr[0], p[1] - ctr[1], p[2] - ctr[2]
+                dd = math.sqrt(dx * dx + dy * dy + dz * dz)
+                if dd > 1e-12:
+                    ux, uy, uz = dx / dd, dy / dd, dz / dd
+                    break
+            wx = n[1] * uz - n[2] * uy
+            wy = n[2] * ux - n[0] * uz
+            wz = n[0] * uy - n[1] * ux
+
+            def _ang(p):
+                dx, dy, dz = p[0] - ctr[0], p[1] - ctr[1], p[2] - ctr[2]
+                return math.atan2(dx * wx + dy * wy + dz * wz, dx * ux + dy * uy + dz * uz)
+
+            uniq.sort(key=_ang)
+            cap = []
+            for p in uniq:
+                if not any(math.dist(p, q) < 1e-9 for q in [new_verts[i] for i in range(len(new_verts))]):
+                    new_verts.append(p)
+                cap.append(next(i for i, q in enumerate(new_verts) if math.dist(p, q) < 1e-9))
+            idx_faces.append(cap)
+    return new_verts, idx_faces
+
+
+def _ix_solid_solid(s1, s2):
+    """两个凸立体求交 → 凸多面体（半空间裁剪）。"""
+    verts = [list(v) for v in s1.data["verts"]]
+    faces = [list(f) for f in s1.data["faces"]]
+    for pl in _solid_planes(s1) + _solid_planes(s2):
+        verts, faces = _clip_polyhedron(verts, faces, pl)
+        if len(verts) < 4 or not faces:
+            raise GeoError("两个立体的交集为空或退化为面/点")
+    # 由面表恢复边表
+    edges = []
+    for f in faces:
+        for i in range(len(f)):
+            a, b = f[i], f[(i + 1) % len(f)]
+            if a == b:
+                continue
+            key = (min(a, b), max(a, b))
+            if key not in edges:
+                edges.append(key)
+    if not edges:
+        raise GeoError("两个立体的交集退化")
+    mesh = {"verts": [list(v) for v in verts], "faces": [list(f) for f in faces], "edges": [list(e) for e in edges]}
+    if _mesh_volume(mesh) < 1e-9:
+        raise GeoError("两个立体的交集退化为零体积（面/点接触）")
+    return {"objtype": "polyhedron", "data": mesh}
 
 
 def _ix_solid_line(solid, lin, idx, bounded):
@@ -751,19 +908,19 @@ def _ix_solid_line(solid, lin, idx, bounded):
             t = _ray_triangle(p, dirv, a, vs[face[i]], vs[face[i + 1]])
             if t is None:
                 continue
-            if bounded and t > 1 + 1e-9:
+            if bounded and (t < -1e-9 or t > 1 + 1e-9):
                 continue
-            ts.append(t)
+            ts.append(min(1.0, max(0.0, t)) if bounded else t)
     if not ts:
-        raise GeoError("直线与立体不相交")
+        raise GeoError("线段与立体无交点（整段在立体内部或外部）" if bounded else "直线与立体不相交")
     ts.sort()
     uniq = []
     for t in ts:
-        if not uniq or abs(t - uniq[-1]) > 1e-9:
+        if not uniq or abs(t - uniq[-1]) > 1e-7:
             uniq.append(t)
     k = (idx or 1)
     if k > len(uniq):
-        raise GeoError("直线与立体只有 " + str(len(uniq)) + " 个交点（请求第 " + str(k) + " 个）")
+        raise GeoError("交点只有 " + str(len(uniq)) + " 个（请求第 " + str(k) + " 个）")
     t = uniq[k - 1]
     return {"x": p[0] + t * dirv[0], "y": p[1] + t * dirv[1], "z": p[2] + t * dirv[2]}
 
@@ -790,9 +947,11 @@ def _ix_sphere_line(sph, lin, idx, bounded):
     if not ts:
         raise GeoError("交点不在线段上")
     ts.sort()
+    if len(ts) == 2 and abs(ts[0] - ts[1]) < 1e-9:
+        ts = [ts[0]]          # 相切：判别式≈0 时两根重合，只算一个交点
     k = (idx or 1)
     if k > len(ts):
-        raise GeoError("球与线段只有 " + str(len(ts)) + " 个交点（请求第 " + str(k) + " 个）")
+        raise GeoError("交点只有 " + str(len(ts)) + " 个（请求第 " + str(k) + " 个）")
     t = ts[k - 1]
     return {"x": p[0] + t * dx, "y": p[1] + t * dy, "z": p[2] + t * dz}
 
@@ -1993,6 +2152,14 @@ def _cmd_volume(cons, defn, args):
                lambda d: {"value": _solid_volume(d[0])})
 
 
+def _section_perimeter(el) -> float:
+    """截面多边形周长（闭合环边长之和）。"""
+    pts = (getattr(el, "data", None) or {}).get("pts") or []
+    if len(pts) < 2:
+        raise GeoError("截面顶点不足，周长无定义")
+    return sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
+
+
 def _cmd_perimeter(cons, defn, args):
     obj = _resolve(cons, args[0])
     if obj.kind == "polygon":
@@ -2001,7 +2168,10 @@ def _cmd_perimeter(cons, defn, args):
     if obj.kind == "circle":
         return _mk(cons, GeoNumber, "number", defn, [obj],
                    lambda d: {"value": 2 * math.pi * d[0].r})
-    raise GeoError("Perimeter 需要 多边形或圆")
+    if obj.kind == "geo3d" and getattr(obj, "objtype", "") == "section":
+        return _mk(cons, GeoNumber, "number", defn, [obj],
+                   lambda d: {"value": _section_perimeter(d[0])})
+    raise GeoError("Perimeter 需要 多边形/圆 或 3D 截面")
 
 
 def _cmd_circumference(cons, defn, args):

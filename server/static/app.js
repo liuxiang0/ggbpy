@@ -80,7 +80,7 @@
       solid: { sphere: '球', plane: '平面', cube: '立方体', cone: '圆锥', cylinder: '圆柱',
                prism: '棱柱', pyramid: '棱锥', tetrahedron: '正四面体', octahedron: '正八面体',
                hexahedron: '正六面体', icosahedron: '正二十面体', dodecahedron: '正十二面体',
-               segment: '线段', line3d: '直线', section: '截面' }
+               segment: '线段', line3d: '直线', section: '截面', circle3d: '空间圆' }
     },
     en: {
       undo: '↶ Undo', redo: '↷ Redo', snap: 'Snap', demo: 'Demo', grid: 'Grid', axes: 'Axes',
@@ -151,7 +151,7 @@
       solid: { sphere: 'Sphere', plane: 'Plane', cube: 'Cube', cone: 'Cone', cylinder: 'Cylinder',
                prism: 'Prism', pyramid: 'Pyramid', tetrahedron: 'Tetrahedron', octahedron: 'Octahedron',
                hexahedron: 'Hexahedron', icosahedron: 'Icosahedron', dodecahedron: 'Dodecahedron',
-               segment: 'Segment', line3d: 'Line', section: 'Section' }
+               segment: 'Segment', line3d: 'Line', section: 'Section', circle3d: 'Circle (3D)' }
     }
   };
   var MSG_MAP_EN = {
@@ -2133,6 +2133,19 @@
           }
           faces.push({ poly: ringPts, z: zr / ringPts.length, color: 'rgba(217,70,239,.06)', stroke: 'rgba(217,70,239,.55)', wire: e.wire });
         }
+      } else if (e.objtype === 'circle3d') {
+        // 空间圆（球∩平面）：用平面内正交基采样成闭合折线
+        var c3 = dt, u3 = dt.u || [1, 0, 0], v3 = dt.v || [0, 1, 0];
+        var seg3 = 64, prev3 = null, first3 = null;
+        for (var ci3 = 0; ci3 <= seg3; ci3++) {
+          var th3 = 2 * Math.PI * ci3 / seg3;
+          var pt3 = [c3.cx + c3.r * (Math.cos(th3) * u3[0] + Math.sin(th3) * v3[0]),
+                     c3.cy + c3.r * (Math.cos(th3) * u3[1] + Math.sin(th3) * v3[1]),
+                     c3.cz + c3.r * (Math.cos(th3) * u3[2] + Math.sin(th3) * v3[2])];
+          if (prev3) segs.push([prev3, pt3]);
+          else first3 = pt3;
+          prev3 = pt3;
+        }
       } else if (e.objtype === 'section') {
         // 平面截立体得到的截面多边形（任意空间平面）：填充 + 闭合边
         var sPts = dt.pts || [];
@@ -2436,6 +2449,7 @@
     }
     if (el.objtype === 'plane') return dt.az || 0;
     if (el.objtype === 'sphere') return dt.cz || 0;
+    if (el.objtype === 'circle3d') return dt.cz || 0;
     if (el.objtype === 'section') {
       var sp = dt.pts || [];
       if (!sp.length) return planeZ;

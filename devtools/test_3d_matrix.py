@@ -443,8 +443,9 @@ if e21 is None:
     check("平行平面 → error", bool(c21.elements["par"].error), str(c21.elements["par"].error))
     r = c21.process("bad=Intersect[cu,sp]")
     check("立体×球 明确不支持", "3D 求交暂不支持" in r, r[:80])
-    r = c21.process("bad2=Intersect[pl,sp]")
-    check("面×球 明确不支持（圆暂缺）", "3D 求交暂不支持" in r, r[:80])
+    c21.process("cc=Intersect[sp,pl]")
+    r = c21.process("bad2=Intersect[cc,cu]")
+    check("空间圆×立体 明确不支持", "3D 求交暂不支持" in r, r[:80])
 
 # ---------------------------------------------------------------------------
 section("K. 序列化（.ggk 往返 / undo-redo / .ggb 跳过 3D）")
@@ -506,10 +507,99 @@ if e17 is None:
     c17.process("ix5=Intersect[pl1,cu]")
     check("平面×立体仍然可用（回归）", getattr(c17.elements["ix5"], "objtype", "") == "section",
           str(getattr(c17.elements["ix5"], "objtype", None)))
-    r6 = c17.process("ix6=Intersect[cu,cu]")
-    check("立体×立体明确不支持", not r6.startswith("OK") and "3D 求交暂不支持" in r6, r6[:70])
-    r7 = c17.process("ix7=Intersect[pl1,sp]")
-    check("面×球明确不支持（3D 圆暂缺）", not r7.startswith("OK") and "3D 求交暂不支持" in r7, r7[:70])
+    c17.process("ix6=Intersect[cu,cu]")
+    check("立体×立体已支持（回归：同立体相交）", not c17.elements["ix6"].error
+          and len(c17.elements["ix6"].data["verts"]) == 8, str(c17.elements["ix6"].error))
+    c17.process("ix7=Intersect[pl1,sp]")
+    check("面×球已支持（3D 圆）", getattr(c17.elements["ix7"], "objtype", "") == "circle3d",
+          str(getattr(c17.elements["ix7"], "objtype", None)))
+    r8 = c17.process("ix8=Intersect[sp,cu]")
+    check("球×立体仍明确不支持", not r8.startswith("OK") and "3D 求交暂不支持" in r8, r8[:70])
+
+# ---------------------------------------------------------------------------
+section("P. 面×球 → 3D 圆 / 体×体 / 截面周长")
+c22, e22 = build([
+    "O=(0,0,0)", "cA=Cube[O,(2,0,0)]", "sp=Sphere[O,2]",
+    "top=Plane[(0,0,2),(1,0,2),(0,1,2)]", "mid=Plane[(0,0,1),(1,0,1),(0,1,1)]",
+    "tan=Plane[(0,0,2),(1,0,2),(0,1,2)]", "far=Plane[(0,0,3),(1,0,3),(0,1,3)]",
+    "P1=(1,1,1)", "P2=(3,1,1)", "cB=Cube[P1,P2]",
+    "R1=(1,0,0)", "R2=(3,0,0)", "cR=Cube[R1,R2]",
+    "F1=(5,0,0)", "F2=(7,0,0)", "cD=Cube[F1,F2]",
+    "cc1=Intersect[sp,mid]", "cc2=Intersect[mid,sp]",
+    "ab=Intersect[cA,cB]", "ba=Intersect[cB,cA]", "aa=Intersect[cA,cA]",
+    "ar=Intersect[cA,cR]", "ad=Intersect[cA,cD]",
+    "sec_top=Intersect[cA,top]", "sec_mid=Intersect[cA,mid]",
+    "per_top=Perimeter[sec_top]", "per_mid=Perimeter[sec_mid]",
+])
+check("第四批用例构造", e22 is None, str(e22))
+if e22 is None:
+    cc = c22.elements["cc1"]
+    check("球∩平面 → circle3d", getattr(cc, "objtype", "") == "circle3d", str(getattr(cc, "objtype", None)))
+    if getattr(cc, "objtype", "") == "circle3d":
+        d = cc.data
+        check("圆心 = 球心投影 (0,0,1)", close(d["cx"], 0.0) and close(d["cy"], 0.0) and close(d["cz"], 1.0),
+              "(%s,%s,%s)" % (d["cx"], d["cy"], d["cz"]))
+        check("半径 = √(r²-d²) = √3", close(d["r"], math.sqrt(3), 1e-9), "%.6f" % d["r"])
+        check("法向等于平面法向 (0,0,1)", close(abs(d["normal"][2]), 1.0), str(d["normal"]))
+    check("面×球 交换顺序一致",
+          getattr(c22.elements["cc2"], "objtype", "") == "circle3d"
+          and close(c22.elements["cc2"].data["r"], math.sqrt(3), 1e-9))
+    c22.process("cc3=Intersect[sp,tan]")
+    check("平面与球相切 → error", bool(c22.elements["cc3"].error), str(c22.elements["cc3"].error))
+    c22.process("cc4=Intersect[sp,far]")
+    check("平面与球不相交 → error", bool(c22.elements["cc4"].error), str(c22.elements["cc4"].error))
+    # 体 × 体
+    for lbl, exp_v, exp_n in [("ab", 1.0, (8, 6, 12)), ("ba", 1.0, (8, 6, 12)), ("aa", 8.0, (8, 6, 12)),
+                              ("ar", 4.0, (8, 6, 12))]:
+        el = c22.elements[lbl]
+        d = el.data
+        got_n = (len(d["verts"]), len(d["faces"]), len(d["edges"]))
+        check("体∩体 " + lbl + " v/f/e", got_n == exp_n, str(got_n))
+        c22.process("V_" + lbl + "=Volume[" + lbl + "]")
+        check("体∩体 " + lbl + " 体积 = %.1f" % exp_v,
+              close(c22.elements["V_" + lbl].value, exp_v, 1e-9), "%.6f" % c22.elements["V_" + lbl].value)
+    check("体∩体 对称性", close(c22.elements["V_ab"].value, c22.elements["V_ba"].value, 1e-12))
+    c22.process("ad=Intersect[cA,cD]")
+    check("不相交立体 → error", bool(c22.elements["ad"].error), str(c22.elements["ad"].error))
+    # 截面：平面与顶面重合
+    check("平面与顶面重合 → section count=4", getattr(c22.elements["sec_top"], "objtype", "") == "section"
+          and c22.elements["sec_top"].data["count"] == 4,
+          str(getattr(c22.elements["sec_top"], "data", {}).get("count")))
+    check("顶面截面周长 = 8", close(c22.elements["per_top"].value, 8.0, 1e-9), "%.6f" % c22.elements["per_top"].value)
+    check("腰截面周长 = 8", close(c22.elements["per_mid"].value, 8.0, 1e-9), "%.6f" % c22.elements["per_mid"].value)
+    check("Perimeter 对非截面仍报错", "需要" in c22.process("bad=Perimeter[cA]"), c22.process("bad=Perimeter[cA]")[:60])
+
+# ---------------------------------------------------------------------------
+section("Q. 求交退化容差（t=0 命中 / 相切 / 端点贴面）")
+c23, e23 = build(["O=(0,0,0)", "sp=Sphere[O,2]", "cu=Cube[O,(2,0,0)]",
+                  "sg1=Segment[(2,0,0),(4,0,0)]", "sg2=Segment[(-4,0,0),(-2,0,0)]",
+                  "ln_t=Line[(2,-5,0),(2,5,0)]",
+                  "sg_face=Segment[(0,1,1),(-2,1,1)]",
+                  "ix1=Intersect[sp,sg1]", "ix2=Intersect[sp,sg2]",
+                  "ix3=Intersect[sp,ln_t]", "ix4=Intersect[cu,sg_face]"])
+check("容差用例构造", e23 is None, str(e23))
+if e23 is None:
+    p1 = c23.elements["ix1"]
+    check("线段起点恰在球面（t=0）→ 命中", not p1.error and close(p1.x, 2.0, 1e-9) and close(p1.y, 0.0, 1e-9),
+          "err=%s (%s,%s)" % (p1.error, getattr(p1, "x", None), getattr(p1, "y", None)))
+    p2 = c23.elements["ix2"]
+    check("线段终点恰在球面（t=1）→ 命中", not p2.error and close(p2.x, -2.0, 1e-9),
+          "err=%s x=%s" % (p2.error, getattr(p2, "x", None)))
+    p3 = c23.elements["ix3"]
+    check("相切直线（判别式=0）→ 单点", not p3.error and close(p3.x, 2.0, 1e-9) and close(p3.y, 0.0, 1e-9),
+          "err=%s" % p3.error)
+    c23.process("ix5=Intersect[sp,ln_t,2]")
+    check("相切直线取第 2 交点 → 明确报错",
+          bool(c23.elements["ix5"].error) and "只有 1 个" in c23.elements["ix5"].error,
+          str(c23.elements["ix5"].error))
+    p4 = c23.elements["ix4"]
+    check("线段端点贴立体表面（t=0）→ 命中", not p4.error and close(p4.x, 0.0, 1e-9)
+          and close(p4.y, 1.0, 1e-9) and close(p4.z, 1.0, 1e-9),
+          "err=%s (%s,%s,%s)" % (p4.error, getattr(p4, "x", None), getattr(p4, "y", None), getattr(p4, "z", None)))
+    c23.process("ix6=Intersect[cu,Segment[(1,1,1),(1.5,1.5,1.5)]]")
+    check("整段在立体内部 → 明确提示",
+          bool(c23.elements["ix6"].error) and "无交点" in c23.elements["ix6"].error,
+          str(c23.elements["ix6"].error))
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

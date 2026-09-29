@@ -128,7 +128,7 @@ SETUP = [
     "O=(0,0,0)", "A3=(1,2,3)", "B3=(4,5,6)", "cc=Circle[O,2]",
     "sg=Segment[A3,B3]", "ln=Line[A3,B3]", "pl=Plane[O,(1,0,0),(0,1,0)]",
     "sp=Sphere[O,2]", "cu=Cube[O,(2,0,0)]", "co=Cone[cc,3]", "cy=Cylinder[cc,3]",
-    "sec=Intersect[pl,cu]",
+    "sec=Intersect[pl,cu]", "spc=Intersect[sp,pl]",
     "pr=Prism[O,(2,0,0),(0,2,0)]", "py=Pyramid[O,(2,0,0),(0,2,0)]",
     "te=Tetrahedron[O,(2,0,0),(0,2,0)]", "oc=Octahedron[O,(2,0,0),(0,2,0)]",
     "he=Hexahedron[O,(2,0,0),(0,2,0)]", "ic=Icosahedron[O,(2,0,0),(0,2,0)]",
@@ -142,7 +142,7 @@ for t in SETUP:
         check("API 创建 " + t, False, json.dumps(r1, ensure_ascii=False)[:120])
 check("全部 3D 用例已创建", ok_all)
 els = state3d()
-check("state3d 元素数 = 19", len(els) == 19, str(len(els)))
+check("state3d 元素数 = 20", len(els) == 20, str(len(els)))
 
 tbl = [
     # label, kind, objtype, solid, 必需 data 键
@@ -162,6 +162,7 @@ tbl = [
     ("ic", "geo3d", "polyhedron", "icosahedron", ["verts", "faces", "edges"]),
     ("do", "geo3d", "polyhedron", "dodecahedron", ["verts", "faces", "edges"]),
     ("sec", "geo3d", "section", None, ["pts", "normal", "count"]),
+    ("spc", "geo3d", "circle3d", None, ["cx", "cy", "cz", "r", "normal", "u", "v"]),
 ]
 for lbl, kind, objtype, solid, keys in tbl:
     e = find(els, lbl)
@@ -314,6 +315,28 @@ st, d = jget("/api/state")
 vals = {e.get("label"): e.get("value") for e in (d or {}).get("elements", [])}
 check("API Volume[Cone[Circle[O,2],3]] = 4π", "12.566371" in str(vals.get("V")), str(vals.get("V")))
 check("API Area[Sphere[O,2]] = 16π", "50.265482" in str(vals.get("A")), str(vals.get("A")))
+# 第四批：面×球（3D 圆）/ 体×体 / 截面周长
+for t in ["Q1=(1,1,1)", "Q2=(3,1,1)", "cu2=Cube[Q1,Q2]", "cap=Intersect[cu,cu2]",
+          "capV=Volume[cap]", "spc=Intersect[sp,pl]", "secP=Perimeter[sec]"]:
+    put(t)
+els = state3d()
+cap = find(els, "cap")
+check("体×体 → 凸多面体 8/6/12",
+      cap is not None and (len((cap.get("data") or {}).get("verts", [])),
+                           len((cap.get("data") or {}).get("faces", [])),
+                           len((cap.get("data") or {}).get("edges", []))) == (8, 6, 12),
+      str([len((cap.get("data") or {}).get(k, [])) for k in ("verts", "faces", "edges")]) if cap else None)
+spc = find(els, "spc")
+check("面×球 → circle3d r=2", spc is not None and spc.get("objtype") == "circle3d"
+      and abs((spc.get("data") or {}).get("r", 0) - 2.0) < 1e-9,
+      "%s/%s" % (spc.get("objtype") if spc else None, (spc.get("data") or {}).get("r") if spc else None))
+st, d = jget("/api/state")
+vals = {e.get("label"): e.get("value") for e in (d or {}).get("elements", [])}
+import re as _re  # noqa: E402
+_m = _re.search(r"-?\d+(?:\.\d+)?", str(vals.get("capV")))
+check("API Volume[立方体交] = 1", _m is not None and abs(float(_m.group(0)) - 1.0) < 1e-9,
+      str(vals.get("capV")))
+check("API Perimeter[截面] = 8", "8" in str(vals.get("secP")), str(vals.get("secP")))
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
