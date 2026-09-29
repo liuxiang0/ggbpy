@@ -220,3 +220,69 @@ def parse_mesh(data) -> Tuple[List[List[float]], List[List[int]], List[str], str
         return v, f, w, "stl-ascii"
     v, f, w = parse_obj(text)
     return v, f, w, "obj"
+
+
+def export_gltf(cons) -> Tuple[str, List[str]]:
+    """导出为 glTF 2.0（单文件 .gltf，几何数据内嵌 base64 buffer）。
+
+    每个网格对象一个 node/mesh（POSITION + indices，模式 4=三角形）。
+    """
+    import base64
+    import json
+    import struct
+
+    meshes, warnings = _mesh_elements(cons)
+    blob = bytearray()
+    buffer_views = []
+    accessors = []
+    nodes = []
+    gltf_meshes = []
+    for mi, el in enumerate(meshes):
+        vs = el.data["verts"]
+        faces = el.data["faces"]
+        # POSITION
+        pos = bytearray()
+        for v in vs:
+            pos += struct.pack("<3f", float(v[0]), float(v[1]), float(v[2]))
+        pos_view = len(buffer_views)
+        buffer_views.append({"buffer": 0, "byteOffset": len(blob), "byteLength": len(pos)})
+        blob += pos
+        xs = [float(v[0]) for v in vs]
+        ys = [float(v[1]) for v in vs]
+        zs = [float(v[2]) for v in vs]
+        pos_acc = len(accessors)
+        accessors.append({"bufferView": pos_view, "componentType": 5126, "count": len(vs),
+                          "type": "VEC3", "min": [min(xs), min(ys), min(zs)],
+                          "max": [max(xs), max(ys), max(zs)]})
+        # 三角化索引
+        idx = []
+        for f in faces:
+            for i in range(1, len(f) - 1):
+                idx += [f[0], f[i], f[i + 1]]
+        if not idx:
+            continue
+        ib = bytearray()
+        for i in idx:
+            ib += struct.pack("<I", int(i))
+        idx_view = len(buffer_views)
+        buffer_views.append({"buffer": 0, "byteOffset": len(blob), "byteLength": len(ib)})
+        blob += ib
+        idx_acc = len(accessors)
+        accessors.append({"bufferView": idx_view, "componentType": 5125, "count": len(idx), "type": "SCALAR"})
+        gltf_meshes.append({"name": el.label,
+                            "primitives": [{"attributes": {"POSITION": pos_acc}, "indices": idx_acc, "mode": 4}]})
+        nodes.append({"mesh": mi, "name": el.label})
+    if not nodes:
+        warnings.append("没有可导出的 3D 网格对象（glTF 只导出网格体）")
+    data = {
+        "asset": {"version": "2.0", "generator": "ggbpy"},
+        "scene": 0,
+        "scenes": [{"nodes": list(range(len(nodes)))}],
+        "nodes": nodes,
+        "meshes": gltf_meshes,
+        "buffers": [{"byteLength": len(blob),
+                     "uri": "data:application/octet-stream;base64," + base64.b64encode(bytes(blob)).decode("ascii")}],
+        "bufferViews": buffer_views,
+        "accessors": accessors,
+    }
+    return json.dumps(data, ensure_ascii=False), warnings

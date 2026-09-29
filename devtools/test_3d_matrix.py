@@ -441,8 +441,10 @@ if e21 is None:
     c21.process("pl2=Plane[(0,0,5),(1,0,5),(0,1,5)]")
     c21.process("par=Intersect[pl,pl2]")
     check("平行平面 → error", bool(c21.elements["par"].error), str(c21.elements["par"].error))
-    r = c21.process("bad=Intersect[cu,sp]")
-    check("立体×球 明确不支持", "3D 求交暂不支持" in r, r[:80])
+    c21.process("ixs=Intersect[cu,sp]")
+    check("立体×球 已支持（交线 curve3d 或明确无交线）",
+          not c21.elements["ixs"].error or "不相交" in c21.elements["ixs"].error,
+          str(c21.elements["ixs"].error))
     c21.process("cc=Intersect[sp,pl]")
     c21.process("bad2=Intersect[cc,cu]")
     check("空间圆×立体 已支持（回归：交点或明确无交点）",
@@ -515,8 +517,9 @@ if e17 is None:
     c17.process("ix7=Intersect[pl1,sp]")
     check("面×球已支持（3D 圆）", getattr(c17.elements["ix7"], "objtype", "") == "circle3d",
           str(getattr(c17.elements["ix7"], "objtype", None)))
-    r8 = c17.process("ix8=Intersect[sp,cu]")
-    check("球×立体仍明确不支持", not r8.startswith("OK") and "3D 求交暂不支持" in r8, r8[:70])
+    c17.process("ix8=Intersect[sp,cu]")
+    check("球×立体已支持（回归）", not c17.elements["ix8"].error
+          or "不相交" in c17.elements["ix8"].error, str(c17.elements["ix8"].error))
 
 # ---------------------------------------------------------------------------
 section("P. 面×球 → 3D 圆 / 体×体 / 截面周长")
@@ -1088,6 +1091,102 @@ try:
     check("无法识别的网格文件 → 报错", False, "未报错")
 except Exception as _ex:
     check("无法识别的网格文件 → 报错", True, str(_ex)[:40])
+
+# ---------------------------------------------------------------------------
+section("AB. 3D 统计：Centroid / FitSphere")
+c39, e39 = build([
+    "L={(0,0,0),(2,0,0),(0,2,0),(0,0,2)}", "ce=Centroid[L]",
+    "L2={(1,2),(3,4),(5,6)}", "ce2=Centroid[L2]",
+    "poly=Polygon[(0,0),(2,0),(2,2)]", "ce3=Centroid[poly]",
+    "ce4=Centroid[{(1,1),(3,3)}]",
+    "fs=FitSphere[L]",
+])
+check("统计用例构造", e39 is None, str(e39))
+if e39 is None:
+    ce = c39.elements["ce"]
+    check("三维点列表质心 = (0.5,0.5,0.5)",
+          ce.kind == "point" and close(ce.x, 0.5) and close(ce.y, 0.5) and close(ce.z, 0.5),
+          "(%s,%s,%s)" % (ce.x, ce.y, ce.z))
+    ce2 = c39.elements["ce2"]
+    check("二维点列表质心 = (3,4) 且无 z",
+          close(ce2.x, 3.0) and close(ce2.y, 4.0) and ce2.z is None, "(%s,%s,%s)" % (ce2.x, ce2.y, ce2.z))
+    ce3 = c39.elements["ce3"]
+    check("多边形质心仍可用 = (4/3, 2/3)", close(ce3.x, 4.0 / 3.0) and close(ce3.y, 2.0 / 3.0),
+          "(%s,%s)" % (ce3.x, ce3.y))
+    ce4 = c39.elements["ce4"]
+    check("内联点列表质心 = (2,2)", close(ce4.x, 2.0) and close(ce4.y, 2.0))
+    fs = c39.elements["fs"]
+    d = fs.data
+    check("FitSphere 球心 (1,1,1) r=√3",
+          getattr(fs, "objtype", "") == "sphere" and close(d["cx"], 1.0, 1e-9) and close(d["r"], math.sqrt(3), 1e-9),
+          "c=(%.6f,%.6f,%.6f) r=%.6f" % (d["cx"], d["cy"], d["cz"], d["r"]))
+    c39.process("fs2=FitSphere[{(0,0,0),(2,0,0),(0,2,0),(0,0,2),(1,1,1)}]")
+    check("不共球点云 → error", bool(c39.elements["fs2"].error), str(c39.elements["fs2"].error))
+    r_few = c39.process("fs3=FitSphere[{(0,0,0),(1,0,0),(0,1,0)}]")
+    check("不足 4 点 → error", bool(c39.elements["fs3"].error) or "至少" in r_few,
+          str(c39.elements["fs3"].error) if "fs3" in c39.elements else r_few[:50])
+
+# ---------------------------------------------------------------------------
+section("AC. 球面×立体 → 交线（curve3d）")
+c40, e40 = build(["cu=Cube[(0,0,0),(2,0,0)]",
+                  "sA=Sphere[(1,1,1),1.2]", "xA=Intersect[sA,cu]",
+                  "sB=Sphere[(1,1,1),1.5]", "xB=Intersect[sB,cu]",
+                  "sC=Sphere[(1,1,1),0.9]", "xC=Intersect[sC,cu]",
+                  "sD=Sphere[(1,1,1),2.0]", "xD=Intersect[sD,cu]",
+                  "sE=Sphere[(1,1,1),1.7320508]", "xE=Intersect[sE,cu]"])
+check("球×立体用例构造", e40 is None, str(e40))
+if e40 is None:
+    xA = c40.elements["xA"]
+    check("r=1.2 得交线 curve3d 且段数 > 100",
+          getattr(xA, "objtype", "") == "curve3d" and xA.data["count"] > 100,
+          "%s/%s" % (getattr(xA, "objtype", None), getattr(xA, "data", {}).get("count")))
+    pts = [p for seg in xA.data["segs"] for p in seg]
+    dd = max(abs(math.dist(p, (1, 1, 1)) - 1.2) for p in pts)
+    check("交线点精确落在球面（|d−r| < 1e-12）", dd < 1e-12, "max=%.2e" % dd)
+    onb = all(abs(max(abs(p[0] - 1), abs(p[1] - 1), abs(p[2] - 1)) - 1) < 1e-7 for p in pts)
+    check("交线点都在立方体表面", onb)
+    check("r=1.5 交线段数 > 100", c40.elements["xB"].data["count"] > 100,
+          str(c40.elements["xB"].data["count"]))
+    check("r=0.9（球在立方体内）→ error", bool(c40.elements["xC"].error), str(c40.elements["xC"].error))
+    check("r=2.0（球包住立方体）→ error", bool(c40.elements["xD"].error), str(c40.elements["xD"].error))
+    check("相切（球过 8 顶点）→ error", bool(c40.elements["xE"].error), str(c40.elements["xE"].error))
+    c40.process("sph2=Sphere[(0,0,0),1.5]")
+    c40.process("x2=Intersect[sph2,cu]")
+    check("球心在立方体顶点处仍有交线", not c40.elements["x2"].error
+          and c40.elements["x2"].data["count"] > 10, str(c40.elements["x2"].error))
+
+# ---------------------------------------------------------------------------
+section("AD. glTF 2.0 导出")
+from kernel.mesh_io import export_gltf  # noqa: E402
+import base64 as _b64  # noqa: E402
+import json as _json  # noqa: E402
+import struct as _st  # noqa: E402
+
+c41, _e41 = build(["cu=Cube[(0,0,0),(2,0,0)]", "cc=Circle[(0,0),2]", "co=Cone[cc,3]"])
+gltf_text, w_gltf = export_gltf(c41)
+g = _json.loads(gltf_text)
+check("glTF JSON 合法且版本 2.0", g.get("asset", {}).get("version") == "2.0")
+check("glTF 节点/网格数 = 网格对象数（2）", len(g["nodes"]) == 2 and len(g["meshes"]) == 2,
+      "%d/%d" % (len(g["nodes"]), len(g["meshes"])))
+raw = _b64.b64decode(g["buffers"][0]["uri"].split(",")[1])
+check("glTF buffer 长度与 byteLength 一致", len(raw) == g["buffers"][0]["byteLength"],
+      "%d vs %d" % (len(raw), g["buffers"][0]["byteLength"]))
+cu = c41.elements["cu"].data
+co = c41.elements["co"].data
+exp_v = len(cu["verts"]) + len(co["verts"])
+exp_tri = sum(len(f) - 2 for f in cu["faces"]) + sum(len(f) - 2 for f in co["faces"])
+pos_accs = [a for a in g["accessors"] if a["type"] == "VEC3"]
+idx_accs = [a for a in g["accessors"] if a["type"] == "SCALAR"]
+check("glTF POSITION 顶点总数一致", sum(a["count"] for a in pos_accs) == exp_v,
+      "%d vs %d" % (sum(a["count"] for a in pos_accs), exp_v))
+check("glTF 索引总数 = 3×三角数", sum(a["count"] for a in idx_accs) == 3 * exp_tri,
+      "%d vs %d" % (sum(a["count"] for a in idx_accs), 3 * exp_tri))
+a0 = pos_accs[0]
+check("glTF POSITION min/max 正确（立方体 0..2）",
+      a0["min"] == [0.0, 0.0, 0.0] and a0["max"] == [2.0, 2.0, 2.0], str(a0["min"]) + str(a0["max"]))
+first = _st.unpack_from("<3f", raw, g["bufferViews"][a0["bufferView"]]["byteOffset"])
+check("glTF 首顶点数据可解析", all(abs(first[i] - [0.0, 0.0, 0.0][i]) < 1e-9 for i in range(3)), str(first))
+check("glTF 无网格时给出警告", bool(export_gltf(Construction())[1]))
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

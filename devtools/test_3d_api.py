@@ -568,6 +568,46 @@ if (rm or {}).get("id"):
     check("STL 四面体体积 = 4/3", "1.333" in str(v3.get("V_mSTL")), str(v3.get("V_mSTL")))
 
 # ---------------------------------------------------------------------------
+section("L. 第九批：3D 统计 / 球×立体交线 / glTF 导出")
+clear()
+for t in ["L={(0,0,0),(2,0,0),(0,2,0),(0,0,2)}", "ce=Centroid[L]", "fs=FitSphere[L]",
+          "cu=Cube[(0,0,0),(2,0,0)]", "sA=Sphere[(1,1,1),1.2]", "xA=Intersect[sA,cu]"]:
+    put(t)
+els = state3d()
+ce = find(els, "ce")
+fs = find(els, "fs")
+xA = find(els, "xA")
+check("API Centroid 三维点列表 → (0.5,0.5,0.5)",
+      ce is not None and abs(ce.get("x", 0) - 0.5) < 1e-9 and abs(ce.get("z", 0) - 0.5) < 1e-9,
+      "(%s,%s,%s)" % (ce.get("x"), ce.get("y"), ce.get("z")) if ce else None)
+check("API FitSphere → 球心 (1,1,1) r=√3",
+      fs is not None and fs.get("objtype") == "sphere"
+      and abs((fs.get("data") or {}).get("r", 0) - 3 ** 0.5) < 1e-9,
+      "%s/%s" % (fs.get("objtype") if fs else None, (fs.get("data") or {}).get("r") if fs else None))
+check("API 球×立体 → 交线 curve3d（段数 > 100）",
+      xA is not None and xA.get("objtype") == "curve3d" and (xA.get("data") or {}).get("count", 0) > 100,
+      "%s/%s" % (xA.get("objtype") if xA else None, (xA.get("data") or {}).get("count") if xA else None))
+# glTF 导出
+st, hdrs, raw = http("/api/export/gltf")
+hdr = {k.lower(): v for k, v in hdrs.items()}
+check("glTF 导出 HTTP 200", st == 200, "HTTP %s" % st)
+try:
+    g = json.loads(raw.decode("utf-8"))
+    ok_json = g.get("asset", {}).get("version") == "2.0"
+except Exception as e:
+    g, ok_json = None, False
+check("glTF JSON 合法（asset.version=2.0）", ok_json, (raw[:60].decode("utf-8", "replace")))
+if ok_json:
+    import base64 as _b64
+    blob = _b64.b64decode(g["buffers"][0]["uri"].split(",")[1])
+    check("glTF buffer 长度一致", len(blob) == g["buffers"][0]["byteLength"],
+          "%d vs %d" % (len(blob), g["buffers"][0]["byteLength"]))
+    check("glTF 至少 1 个 node/mesh + POSITION accessor",
+          len(g["nodes"]) >= 1 and len(g["meshes"]) >= 1
+          and any(a["type"] == "VEC3" for a in g["accessors"]),
+          "%d nodes / %d accessors" % (len(g["nodes"]), len(g["accessors"])))
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D API 检测矩阵 @ %s：%d 项断言，%d 失败" % (BASE, COUNT[0], len(FAILS)))
 for f in FAILS:

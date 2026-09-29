@@ -223,6 +223,18 @@ def export_stl():
     return Response(content=text, media_type="model/stl", headers=headers)
 
 
+@app.get("/api/export/gltf")
+def export_gltf():
+    """3D 网格导出：glTF 2.0（单文件 .gltf，几何内嵌 base64 buffer）。"""
+    from urllib.parse import quote
+    from kernel.mesh_io import export_gltf as _exp
+    text, warnings = _exp(cons)
+    headers = {"Content-Disposition": 'attachment; filename="ggbpy.gltf"'}
+    if warnings:
+        headers["X-Mesh-Warnings"] = quote(" | ".join(warnings), safe="")
+    return Response(content=text, media_type="model/gltf+json", headers=headers)
+
+
 @app.get("/api/download")
 def download(xmin: float = -10.0, xmax: float = 10.0, ymin: float = -10.0, ymax: float = 10.0):
     """保存：自有 .ggk 格式（JSON，含样式与视口）。"""

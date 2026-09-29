@@ -12,7 +12,7 @@
   var I18N = {
     zh: {
       undo: '↶ 撤销', redo: '↷ 重做', snap: '吸附', demo: '示例', grid: '网格', axes: '坐标轴',
-      clear: '清空', save: '保存', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', objin: '📥OBJ', load: '加载', cas: 'CAS', d3: '3D',
+      clear: '清空', save: '保存', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', gltf: 'GLTF', objin: '📥OBJ', load: '加载', cas: 'CAS', d3: '3D',
       help_t: '命令帮助', save_t: '保存为 .ggk（含样式与视口）', cas_t: '打开/关闭 CAS 视图',
       cmd_ph: '代数输入：A=(1,2)  f(x)=x^2  M=Midpoint[A,B]  c=Circle[A,B]  P=Intersect[c,g] …',
       hint: '拖拽自由点 · 滚轮缩放 · 空白处平移 · 输入后回车创建对象 · CAS 符号计算 · 3D 视图',
@@ -80,11 +80,11 @@
       solid: { sphere: '球', plane: '平面', cube: '立方体', cone: '圆锥', cylinder: '圆柱',
                prism: '棱柱', pyramid: '棱锥', tetrahedron: '正四面体', octahedron: '正八面体',
                hexahedron: '正六面体', icosahedron: '正二十面体', dodecahedron: '正十二面体',
-               segment: '线段', line3d: '直线', section: '截面', circle3d: '空间圆' }
+               segment: '线段', line3d: '直线', section: '截面', circle3d: '空间圆', curve3d: '交线' }
     },
     en: {
       undo: '↶ Undo', redo: '↷ Redo', snap: 'Snap', demo: 'Demo', grid: 'Grid', axes: 'Axes',
-      clear: 'Clear', save: 'Save', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', objin: '📥OBJ', load: 'Load', cas: 'CAS', d3: '3D',
+      clear: 'Clear', save: 'Save', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', gltf: 'GLTF', objin: '📥OBJ', load: 'Load', cas: 'CAS', d3: '3D',
       help_t: 'Command help', save_t: 'Save as .ggk (styles + viewport)', cas_t: 'Toggle CAS panel',
       cmd_ph: 'Algebra input: A=(1,2)  f(x)=x^2  M=Midpoint[A,B]  c=Circle[A,B]  P=Intersect[c,g] …',
       hint: 'Drag free points · Scroll to zoom · Drag empty space to pan · Enter to create · CAS · 3D',
@@ -151,7 +151,7 @@
       solid: { sphere: 'Sphere', plane: 'Plane', cube: 'Cube', cone: 'Cone', cylinder: 'Cylinder',
                prism: 'Prism', pyramid: 'Pyramid', tetrahedron: 'Tetrahedron', octahedron: 'Octahedron',
                hexahedron: 'Hexahedron', icosahedron: 'Icosahedron', dodecahedron: 'Dodecahedron',
-               segment: 'Segment', line3d: 'Line', section: 'Section', circle3d: 'Circle (3D)' }
+               segment: 'Segment', line3d: 'Line', section: 'Section', circle3d: 'Circle (3D)', curve3d: 'Intersection curve' }
     }
   };
   var MSG_MAP_EN = {
@@ -2133,6 +2133,9 @@
           }
           faces.push({ poly: ringPts, z: zr / ringPts.length, color: 'rgba(217,70,239,.06)', stroke: 'rgba(217,70,239,.55)', wire: e.wire });
         }
+      } else if (e.objtype === 'curve3d') {
+        var cs = dt.segs || [];
+        for (var ci4 = 0; ci4 < cs.length; ci4++) segs.push([cs[ci4][0], cs[ci4][1]]);
       } else if (e.objtype === 'circle3d') {
         // 空间圆（球∩平面）：用平面内正交基采样成闭合折线
         var c3 = dt, u3 = dt.u || [1, 0, 0], v3 = dt.v || [0, 1, 0];
@@ -2450,6 +2453,13 @@
     if (el.objtype === 'plane') return dt.az || 0;
     if (el.objtype === 'sphere') return dt.cz || 0;
     if (el.objtype === 'circle3d') return dt.cz || 0;
+    if (el.objtype === 'curve3d') {
+      var sgs = dt.segs || [];
+      if (!sgs.length) return planeZ;
+      var zc = 0, n4 = 0;
+      for (var si4 = 0; si4 < sgs.length; si4++) { zc += sgs[si4][0][2]; n4++; }
+      return n4 ? zc / n4 : planeZ;
+    }
     if (el.objtype === 'section') {
       var sp = dt.pts || [];
       if (!sp.length) return planeZ;
@@ -3354,6 +3364,9 @@
   });
   btn('btn-stl', function () {
     window.location.href = '/api/export/stl';
+  });
+  btn('btn-gltf', function () {
+    window.location.href = '/api/export/gltf';
   });
   btn('btn-png', function () {
     var a = document.createElement('a');

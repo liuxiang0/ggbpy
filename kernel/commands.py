@@ -606,6 +606,10 @@ def _cmd_intersect(cons, defn, args, idx=None):
         if (t1, t2) in (("sphere", "plane"), ("plane", "sphere")):
             sph, pl = (o1, o2) if t1 == "sphere" else (o2, o1)
             return _mk(cons, Geo3D, "geo3d", defn, [sph, pl], lambda d: _ix_sphere_plane(d[0], d[1]))
+        if t1 == "sphere" and _is_solid_el(o2):
+            return _mk(cons, Geo3D, "geo3d", defn, [o1, o2], lambda d: _ix_sphere_solid(d[0], d[1]))
+        if t2 == "sphere" and _is_solid_el(o1):
+            return _mk(cons, Geo3D, "geo3d", defn, [o1, o2], lambda d: _ix_sphere_solid(d[1], d[0]))
         if _is_solid_el(o1) and _is_solid_el(o2):
             return _mk(cons, Geo3D, "geo3d", defn, [o1, o2], lambda d: _ix_solid_solid(d[0], d[1]))
         if t1 == "sphere" and t2 in ("segment", "line3d"):
@@ -996,6 +1000,67 @@ def _ix_circle3d_solid(cir, solid, idx=None):
     if k > len(uniq):
         raise GeoError("交点只有 " + str(len(uniq)) + " 个（请求第 " + str(k) + " 个）")
     return dict(zip(("x", "y", "z"), pt(uniq[k - 1])))
+
+
+def _cmd_fitsphere(cons, defn, args):
+    """FitSphere[点列表]：最小二乘球拟合（代数拟合，需 ≥4 点）。"""
+    if len(args) != 1:
+        raise GeoError("FitSphere 需要三维点列表，如 {(0,0,0),(2,0,0),(0,2,0),(0,0,2)}")
+    L = _list_arg(cons, args[0])
+    if L.itemkind not in ("point", "point3d"):
+        raise GeoError("FitSphere 需要三维点列表")
+    return _mk(cons, Geo3D, "geo3d", defn, [L], lambda d: _fitsphere_state(d[0].items))
+
+
+def _fitsphere_state(items):
+    import numpy as np
+    pts = np.array([[float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)] for p in items])
+    if len(pts) < 4:
+        raise GeoError("FitSphere 至少需要 4 个点")
+    A = np.hstack([2.0 * pts, np.ones((len(pts), 1))])
+    bvec = (pts ** 2).sum(axis=1)
+    sol, *_ = np.linalg.lstsq(A, bvec, rcond=None)
+    cx, cy, cz, dd = (float(v) for v in sol)
+    r2 = dd + cx * cx + cy * cy + cz * cz
+    if r2 <= 1e-12:
+        raise GeoError("球拟合退化（点云过于集中）")
+    r = math.sqrt(r2)
+    # 残差检查：偏离球面过大说明点云不共球
+    dev = float(np.max(np.abs(np.linalg.norm(pts - np.array([cx, cy, cz]), axis=1) - r)))
+    if dev > 1e-6 * max(1.0, r):
+        raise GeoError("点云不共球（最大偏差 %.6g）" % dev)
+    return {"objtype": "sphere", "solid": "sphere",
+            "data": {"cx": cx, "cy": cy, "cz": cz, "r": r}}
+
+
+def _ix_sphere_solid(sph, solid):
+    """球面 ∩ 凸立体 → 交线（objtype=curve3d：按立体各面分段的折线集合）。"""
+    d = sph.data
+    c = [d["cx"], d["cy"], d["cz"]]
+    r = d["r"]
+    N = 180
+    segs = []
+    for (n, dd), face in zip(_solid_planes(solid), solid.data["faces"]):
+        sdist = n[0] * c[0] + n[1] * c[1] + n[2] * c[2] + dd
+        if abs(sdist) > r - 1e-9:
+            continue                      # 平面与球不相交/相切
+        rr = math.sqrt(max(0.0, r * r - sdist * sdist))
+        cen = [c[i] - sdist * n[i] for i in range(3)]
+        u, v, _nn = _frame_from_axis(list(n))
+        planes = _solid_planes(solid)
+        keep = []
+        for k in range(N):
+            t = 2 * math.pi * k / N
+            p = [cen[i] + rr * (math.cos(t) * u[i] + math.sin(t) * v[i]) for i in range(3)]
+            if all(nn[0] * p[0] + nn[1] * p[1] + nn[2] * p[2] + dq <= 1e-7 for nn, dq in planes):
+                keep.append(p)
+        if len(keep) < 2:
+            continue
+        for k in range(len(keep) - 1):
+            segs.append([keep[k], keep[k + 1]])
+    if not segs:
+        raise GeoError("球面与立体不相交（或交线退化）")
+    return {"objtype": "curve3d", "data": {"segs": segs, "count": len(segs)}}
 
 
 def _ix_sphere_plane(sph, pl):
@@ -2481,6 +2546,27 @@ def _incircle_state(a, b, c):
 
 
 def _cmd_centroid(cons, defn, args):
+    """Centroid[多边形] 或 Centroid[点列表]：多边形顶点均值 / 点云质心（三维点列表带 z）。"""
+    if len(args) != 1:
+        raise GeoError("Centroid 需要一个多边形或点列表")
+    txt = args[0].strip()
+    _el = _lookup(cons, txt)
+    if (_el is not None and _el.kind == "list") or txt.startswith("{"):
+        el = _list_arg(cons, txt)
+        if el.itemkind not in ("point", "point3d"):
+            raise GeoError("Centroid 的点列表需要 (x,y) 或 (x,y,z) 元素")
+        three = el.itemkind == "point3d"
+
+        def fn(d):
+            items = d[0].items
+            if not items:
+                raise GeoError("点列表为空")
+            n = len(items)
+            st = {"x": sum(p[0] for p in items) / n, "y": sum(p[1] for p in items) / n}
+            if three:
+                st["z"] = sum(p[2] for p in items) / n
+            return st
+        return _mk(cons, GeoPoint, "point", defn, [el], fn)
     obj = _resolve(cons, args[0], ("polygon",))
     return _mk(cons, GeoPoint, "point", defn, [obj], lambda d: _centroid_state(d[0]))
 
@@ -3343,10 +3429,16 @@ def _list_arg(cons, s):
         parts = _split_brace(tokenize(s))
         if parts and parts[0].startswith("("):
             items = []
+            kind3 = None
             for p in parts:
-                tp = _tuple_parts(p)
-                items.append((eval_number(cons, tp[0]), eval_number(cons, tp[1])))
-            el = GeoList("_hl", s, items, "point")
+                tp = _tuple_parts_any(p)
+                k = "point3d" if len(tp) == 3 else "point"
+                if kind3 is None:
+                    kind3 = k
+                elif kind3 != k:
+                    raise GeoError("列表元素分量数需一致（要么全是 (x,y)，要么全是 (x,y,z)）")
+                items.append(tuple(eval_number(cons, q) for q in tp))
+            el = GeoList("_hl", s, items, kind3)
         else:
             items = [eval_number(cons, p) for p in parts]
             el = GeoList("_hl", s, items, "number")
@@ -6809,6 +6901,7 @@ ALIASES = {
     "曲面": "surface", "拟合平面": "fitplane", "平面拟合": "fitplane",
     "网格": "mesh", "导入网格": "mesh",
     "参数曲面": "surfaceparam", "隐式曲面": "implicitsurface",
+    "质心": "centroid", "拟合球": "fitsphere", "球拟合": "fitsphere",
     "内切圆": "incircle", "内心": "incenter", "重心": "centroid",
     "滑动条": "slider", "文本": "text", "轨迹": "locus", "圆上点": "pointoncircle", "动点": "pointonpath",
     "删除": "delete", "重命名": "rename", "重定义": "redefine",
@@ -6874,6 +6967,7 @@ def _result_kind(name: str) -> str:
         "sphere": "geo3d", "plane": "geo3d", "cube": "geo3d",
         "surface": "geo3d", "fitplane": "geo3d", "mesh": "geo3d",
         "surfaceparam": "geo3d", "implicitsurface": "geo3d",
+        "centroid": "point", "fitsphere": "geo3d",
         "cone": "geo3d", "cylinder": "geo3d", "prism": "geo3d", "pyramid": "geo3d",
         "tetrahedron": "geo3d", "octahedron": "geo3d", "hexahedron": "geo3d", "icosahedron": "geo3d", "dodecahedron": "geo3d",
         "parametric": "parametric", "polar": "polar", "implicit": "implicit",
@@ -6964,6 +7058,7 @@ COMMANDS = {
     "fitexpr": _cmd_fitexpr,
     "sphere": _cmd_sphere, "surface": _cmd_surface, "fitplane": _cmd_fitplane,
     "mesh": _cmd_mesh, "surfaceparam": _cmd_surface_param, "implicitsurface": _cmd_implicit_surface,
+    "fitsphere": _cmd_fitsphere,
     "plane": _cmd_plane,
     "cube": _cmd_cube,
     "cone": _cmd_cone,

@@ -542,6 +542,49 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     && (stlMesh.data.faces || []).length === 4 && (stlMesh.data.edges || []).length === 6,
     stlMesh ? (stlMesh.data.verts.length + '/' + stlMesh.data.faces.length + '/' + stlMesh.data.edges.length) : 'missing');
 
+  // 第九批：球×立体交线渲染 + GLTF 导出按钮
+  await reset(['O=(0,0,0)']);
+  await inp('cu=Cube[(0,0,0),(2,0,0)]');
+  await inp('sA=Sphere[(1,1,1),1.2]');
+  await inp('xA=Intersect[sA,cu]');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+  await open3d();
+  await page.waitForTimeout(700);
+  const els9 = await state3d();
+  const xA9 = els9.filter(e => e.objtype === 'curve3d')[0];
+  check('球×立体交线元素出现（curve3d，段数 > 100）',
+    !!xA9 && (xA9.data.segs || []).length > 100,
+    xA9 ? String((xA9.data.segs || []).length) : 'missing');
+  const px9 = await nonBgPixels();
+  check('交线已渲染（像素 > 500）', px9 > 500, 'non-bg pixels=' + px9);
+  const listTxt9 = await page.evaluate(() => {
+    const el = document.querySelector('#obj-list') || document.querySelector('.obj-list') || document.body;
+    return el ? el.textContent : '';
+  });
+  check('列表显示「交线」', listTxt9.indexOf('交线') !== -1 || listTxt9.indexOf('Intersection curve') !== -1,
+    listTxt9.replace(/\s+/g, ' ').slice(0, 60));
+  // GLTF 按钮真实下载
+  const gltfBtn = await page.$('#btn-gltf');
+  check('GLTF 导出按钮存在', !!gltfBtn, gltfBtn ? 'ok' : 'missing');
+  if (gltfBtn) {
+    const [dlG] = await Promise.all([
+      page.waitForEvent('download', { timeout: 20000 }).catch(() => null),
+      page.click('#btn-gltf'),
+    ]);
+    check('GLTF 按钮触发下载 .gltf', !!dlG && /\.gltf$/.test(dlG.suggestedFilename()),
+      dlG ? dlG.suggestedFilename() : 'no download');
+    if (dlG) {
+      const pg = await dlG.path();
+      const txtG = pg ? fs.readFileSync(pg, 'utf8') : '';
+      let gg = null;
+      try { gg = JSON.parse(txtG); } catch (e) { gg = null; }
+      check('下载的 glTF 是合法 JSON 且含 mesh 数据',
+        !!gg && gg.asset && gg.asset.version === '2.0' && Array.isArray(gg.meshes) && gg.meshes.length >= 1,
+        gg ? ('meshes=' + gg.meshes.length) : ('bytes=' + txtG.length));
+    }
+  }
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));

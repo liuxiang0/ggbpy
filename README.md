@@ -92,10 +92,14 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **参数曲面 `SurfaceParam[x(s,t), y(s,t), z(s,t), s, t, smin, smax, tmin, tmax, 网格数?]`**：任意双参数曲面网格（默认 24×24），表达式可引用滑块；示例：环面 `SurfaceParam[(2+cos(s))*cos(t),(2+cos(s))*sin(t),sin(s),s,t,0,2*pi,0,2*pi,32]`（面积 78.51 vs 解析 4π²Rr=78.96，误差 0.56%）、圆柱面、螺旋面；参数范围退化/参数名相同/奇点都有明确错误
   - **隐式曲面 `ImplicitSurface[f(x,y,z)=0, xmin, xmax, ymin, ymax, zmin, zmax, 分辨率?]`**：**marching tetrahedra** 抽取等值面（立方体按 Kuhn 分解成 6 个四面体，逐四面体插值三角化 + 法向朝 f 增大方向定向），输出三角网格可渲染/求面积/导出；示例：球面 `x^2+y^2+z^2-4=0`（面积误差 4.3%）、圆环 `(√(x²+y²)−2)²+z²−1=0`（误差 3.3%）；无等值面、取值非有限、范围退化都有明确错误
   - **STL 导入**：`📥 OBJ` 按钮现在同时支持 **OBJ / ASCII STL / 二进制 STL**（自动嗅探格式，二进制按 50 字节面记录解析），导入后同样是 `Mesh[网格id]` 元素并随 .ggk 持久化；实测导出→导入往返：立方体 STL 12 三角 → 网格 8/6/12、体积精确为 8
+- **第九批（2026-09-29）**：
+  - **3D 统计**：`Centroid[点列表]` 扩展为兼容多边形与点列表（三维点列表给出带 z 的质心，二维点列表给二维点，内联 `{(x,y,z),…}` 也可）；新增 **`FitSphere[点列表]`** 最小二乘球拟合（代数拟合，≥4 点；点云明显不共球时给出最大偏差并报错）
+  - **球面×立体 → 交线**：`Intersect[球, 凸立体]` 返回 `objtype=curve3d` 的交线折线（按立体各面与球的交圆采样、保留落在体内者并按序连段），3D 视图渲染为橙色曲线；实测球心 (1,1,1) 半径 1.2 与立方体 [0,2]³ → 1074 段，所有点 **|到球心距离−r| < 1e-12** 且都在立方体表面；球在体内/包住立体/相切（过 8 顶点）都明确报错
+  - **glTF 2.0 导出**：新增 **GLTF** 按钮与 `/api/export/gltf`（单文件 `.gltf`，POSITION/indices 内嵌 base64 buffer，含 min/max 包围盒），可直接导入 Blender/Three.js 等；导出字段与源网格逐项对齐（顶点总数、三角索引数 = 3×Σ(n−2)）
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
-- **3D 求交边界**：支持 面×面（交线）、直线/线段×面、平面×立体（截面）、球×平面、球×球、**球×空间圆**、空间圆×平面、**空间圆×空间圆**、空间圆×立体、立体×立体（凸交）、立体×直线/线段、球×直线/线段；**球×立体、球面×曲面、体×空间圆（曲线输出）尚未支持**，会明确报错；平行/重合平面、超出线段的交点、相切球面会产出元素并带 `error`
+- **3D 求交边界**：支持 面×面（交线）、直线/线段×面、平面×立体（截面）、球×平面、球×球、球×空间圆、空间圆×平面、空间圆×空间圆、空间圆×立体、**球×立体（交线 curve3d）**、立体×立体（凸交）、立体×直线/线段、球×直线/线段；**球面×曲面、体×空间圆（作为曲线输出）尚未支持**，会明确报错；平行/重合平面、超出线段的交点、相切球面/球过立体顶点会产出元素并带 `error`
 - **`.ggb` 导出跳过 3D**：GeoGebra XML 子集不支持 3D，导出时跳过 3D 元素及其级联引用，并在 XML 首部写入警告注释、响应头 `X-GGB-Warnings`（percent-encoded）给出提示 —— **3D 内容请用 .ggk 保存**
 - **SVG 导出只含 2D 视图**（3D 对象按设计跳过）
 - **曲面三类均已支持**：显式 `Surface[z=f(x,y)]`、参数 `SurfaceParam[x(s,t),…]`、隐式 `ImplicitSurface[f(x,y,z)=0]`（marching **tetrahedra**，属线性插值近似：网格越细越准，粗网格下面积误差约 0.1%–8%）；曲面网格用于显示/面积/导出，`Volume` 无定义（明确报错）
@@ -105,7 +109,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_3d_detection.sh       # 内核 365 + API 122 + 浏览器 87 项断言（需服务运行）
+bash devtools/run_3d_detection.sh       # 内核 390 + API 129 + 浏览器 93 项断言（需服务运行）
 ```
 
 - `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 显式/参数/隐式曲面 × FitPlane × OBJ·STL 导入 × 样式快照 × 序列化 × 3D 度量语义）
@@ -117,7 +121,7 @@ bash devtools/run_3d_detection.sh       # 内核 365 + API 122 + 浏览器 87 �
 - `AreParallel/ArePerpendicular/AreCollinear/AreConcyclic/AreCongruent/AreConcurrent` + `Prove`（Botana 坐标法 + SymPy 符号归约；区分「恒假（存在反例）」与「退化敏感」）
 - `SetCoords/SetValue/SetColor/SetVisible/SetLocked/SetWire/Rename/Delete` 等脚本命令
 - 自定义宏（Macro，GUI 点选输入/输出）、命令脚本面板（.ggs 批量执行）
-- **保存/加载**：自有 .ggk（JSON，含视口/样式/宏/导入网格），兼容 .ggb XML 导入导出、SVG/PNG 导出、**3D 网格 OBJ/STL 导出与 OBJ/STL 导入**（3D 视图工具条 📥OBJ / OBJ / STL 按钮）
+- **保存/加载**：自有 .ggk（JSON，含视口/样式/宏/导入网格），兼容 .ggb XML 导入导出、SVG/PNG 导出、**3D 网格 OBJ/STL/glTF 导出与 OBJ/STL 导入**（3D 视图工具条 📥OBJ / OBJ / STL / GLTF 按钮）
 - **插入图片**：工具栏 🖼 选择图片 → 点击两个基点放置；拖动第二基点缩放，**保持原始长宽比**（图片随 .ggk 保存/加载）
 - 一键生成**试卷 HTML**（题目截图 + 题干/答案编辑，A4 打印即 PDF）；**短链接分享**
 
