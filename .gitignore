@@ -1,0 +1,49 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# --- 开发过程产物（不上传） ---
+*.log
+audit*.js
+audit*.png
+verify*.js
+verify_*.js
+diag*.js
+probe*.js
+test_*.js
+_shared.js
+cleanup.js
+restore.js
+checkpoint*.js
+*.run.log
+screenshot_*.png
+shot_*.png
+shot3d*.png
+audit_*.png
+# 开发期截图整目录排除（98 张 / 11MB）
+screenshots/
+ggbpy全面检测报告*.md
+ggbpy-2026*.md
+GAP_ANALYSIS.md
+PROJECT_SUMMARY.md
+DSH工作阶段记录.md
+.audit_cmds.txt
+GITEE*.md
+
+# --- 运行期生成 ---
+share/*.ggk
+!share/.gitkeep
+
+# --- OS / 编辑器 ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- 服务器 PID / 临时 ---
+.server.pid
+tmp_*

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ggbpy · Python 动态几何</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <div id="cmd-wrap">
+      <input id="cmd" list="cmd-list" data-i18n-ph="cmd_ph" autocomplete="off" spellcheck="false">
+      <div id="math-preview"></div>
+    </div>
+    <datalist id="cmd-list"></datalist>
+    <button id="btn-help" data-i18n-title="help_t" title="命令帮助">?</button>
+    <button id="btn-undo" data-i18n="undo">↶ 撤销</button>
+    <button id="btn-redo" data-i18n="redo">↷ 重做</button>
+    <button id="btn-snap" data-i18n="snap">吸附</button>
+    <button id="btn-demo" data-i18n="demo">示例</button>
+    <button id="btn-grid" class="active" data-i18n="grid">网格</button>
+    <button id="btn-axes" class="active" data-i18n="axes">坐标轴</button>
+    <button id="btn-clear" data-i18n="clear">清空</button>
+    <button id="btn-save" data-i18n="save" data-i18n-title="save_t">保存</button>
+    <button id="btn-share" data-i18n="share" data-i18n-title="share_t">分享</button>
+    <button id="btn-svg" data-i18n="svg" title="SVG">SVG</button>
+    <button id="btn-png" data-i18n="png" title="PNG">PNG</button>
+    <button id="btn-load" data-i18n="load">加载</button>
+    <button id="btn-cas" data-i18n="cas" data-i18n-title="cas_t">CAS</button>
+    <button id="btn-exam" data-i18n="exam" data-i18n-title="exam_btn_t">试卷</button>
+    <button id="btn-3d" data-i18n="d3">3D</button>
+    <button id="btn-angunit" title="角度单位：度/弧度 π / Angle unit">°</button>
+    <button id="btn-lang" title="切换语言 / Language">中/EN</button>
+    <button id="btn-kbd" data-i18n="kbd" data-i18n-title="kbd_t" title="数学键盘">⌨</button>
+    <button id="btn-theme" data-i18n-title="theme_t" title="主题/Theme">🌙</button>
+    <button id="btn-tools" data-i18n="tools" data-i18n-title="tools_t" title="几何工具">✏</button>
+    <button id="btn-select" data-i18n="select" data-i18n-title="select_t" title="选择工具">🖱 选择</button>
+    <button id="btn-image" title="插入图片 / Insert image">🖼</button>
+    <button id="btn-script" data-i18n="script" data-i18n-title="script_t" title="命令脚本">📜</button>
+    <button id="btn-macro" data-i18n="macro" data-i18n-title="macro_t" title="自定义宏">🧩</button>
+    <input type="file" id="file" accept=".ggk,.ggb,.xml,.json,application/xml,application/json" style="display:none">
+    <input type="file" id="imgfile" accept="image/*" style="display:none">
+    <span id="msg"></span>
+  </div>
+  <div id="catbar"></div>
+  <div id="cat-tools"></div>
+  <div id="mathkb" style="display:none">
+    <div class="kb-row">
+      <button class="kb-key" data-k="(">(</button>
+      <button class="kb-key" data-k=")">)</button>
+      <button class="kb-key" data-k="[">[</button>
+      <button class="kb-key" data-k="]">]</button>
+      <button class="kb-key" data-k="{">{</button>
+      <button class="kb-key" data-k="}">}</button>
+      <button class="kb-key" data-k=",">,</button>
+      <button class="kb-key" data-k="pi">π</button>
+      <button class="kb-key" data-k="e">e</button>
+    </div>
+    <div class="kb-row">
+      <button class="kb-key" data-k="7">7</button>
+      <button class="kb-key" data-k="8">8</button>
+      <button class="kb-key" data-k="9">9</button>
+      <button class="kb-key" data-k="/">÷</button>
+      <button class="kb-key" data-k="^">xʸ</button>
+      <button class="kb-key" data-k="sqrt(">√( )</button>
+      <button class="kb-key kb-bs" data-k="bs">⌫</button>
+    </div>
+    <div class="kb-row">
+      <button class="kb-key" data-k="4">4</button>
+      <button class="kb-key" data-k="5">5</button>
+      <button class="kb-key" data-k="6">6</button>
+      <button class="kb-key" data-k="*">×</button>
+      <button class="kb-key" data-k="abs(">| |</button>
+      <button class="kb-key" data-k="<">&lt;</button>
+      <button class="kb-key" data-k="<=">≤</button>
+    </div>
+    <div class="kb-row">
+      <button class="kb-key" data-k="1">1</button>
+      <button class="kb-key" data-k="2">2</button>
+      <button class="kb-key" data-k="3">3</button>
+      <button class="kb-key" data-k="-">−</button>
+      <button class="kb-key" data-k="=">=</button>
+      <button class="kb-key" data-k=">">&gt;</button>
+      <button class="kb-key" data-k=">=">≥</button>
+    </div>
+    <div class="kb-row">
+      <button class="kb-key" data-k="0">0</button>
+      <button class="kb-key" data-k=".">.</button>
+      <button class="kb-key" data-k="clear">C</button>
+      <button class="kb-key kb-enter" data-k="enter">↵</button>
+    </div>
+    <div class="kb-row kb-fn">
+      <button class="kb-key" data-k="sin(">sin(</button>
+      <button class="kb-key" data-k="cos(">cos(</button>
+      <button class="kb-key" data-k="tan(">tan(</button>
+      <button class="kb-key" data-k="asin(">asin(</button>
+      <button class="kb-key" data-k="acos(">acos(</button>
+      <button class="kb-key" data-k="atan(">atan(</button>
+      <button class="kb-key" data-k="ln(">ln(</button>
+      <button class="kb-key" data-k="log(">log(</button>
+      <button class="kb-key" data-k="exp(">exp(</button>
+      <button class="kb-key" data-k="floor(">floor(</button>
+      <button class="kb-key" data-k="ceil(">ceil(</button>
+      <button class="kb-key" data-k="min(">min(</button>
+      <button class="kb-key" data-k="max(">max(</button>
+      <button class="kb-key" data-k="gcd(">gcd(</button>
+      <button class="kb-key" data-k="lcm(">lcm(</button>
+    </div>
+  </div>
+  <div id="stage-wrap">
+    <canvas id="cv"></canvas>
+    <canvas id="cv3d" style="display:none"></canvas>
+    <div id="zplane-box" style="display:none"><label data-i18n="zplane">基准平面 z=</label><input id="zplane-input" type="number" step="0.5" value="0" data-i18n-title="zplane_t"><span id="zplane-hint" data-i18n="zplane_hint"></span>
+      <span class="view3d-sep"></span>
+      <label class="tick-ctl" title="刻度显示"><input type="checkbox" id="axisticks-toggle" checked> <span data-i18n="tick_show">刻度</span></label>
+      <input type="color" id="tick-color" value="#64748b" title="刻度/数字颜色" style="width:22px;height:18px;padding:0;border:1px solid var(--border2);border-radius:3px;background:none">
+      <button class="view3d-btn active" data-view="oblique" data-i18n="view_oblique" title="标准 3D 斜二测画法（x 水平、y 右上 45° 减半、z 竖直）">3D</button>
+      <button class="view3d-btn" data-view="top" data-i18n="view_top" title="俯视图">俯</button>
+      <button class="view3d-btn" data-view="front" data-i18n="view_front" title="前视图">前</button>
+      <button class="view3d-btn" data-view="right" data-i18n="view_right" title="右视图">右</button>
+    </div>
+    <div id="hint" data-i18n="hint"></div>
+    <div id="cas-panel" style="display:none">
+      <div id="cas-head"><span data-i18n="cas_head">CAS 单元表</span> <span class="cas-tip" data-i18n="cas_tip"></span></div>
+      <div id="cas-cmds"></div>
+      <div id="cas-input-row">
+        <input id="cas-cmd" data-i18n-ph="cas_ph" autocomplete="off" spellcheck="false">
+        <button id="cas-go" data-i18n="cas_go">执行</button>
+      </div>
+      <div id="cas-cells"></div>
+    </div>
+    <div id="tools-panel" style="display:none">
+      <div id="tools-head"><span data-i18n="tools_head">几何工具</span>
+        <button id="tools-close" class="x" title="关闭">✕</button></div>
+      <div id="tools-grid">
+        <button class="tool-btn" data-tool="point" data-i18n="tool_point">点</button>
+        <button class="tool-btn" data-tool="segment" data-i18n="tool_segment">线段</button>
+        <button class="tool-btn" data-tool="circle" data-i18n="tool_circle">圆(两点)</button>
+        <button class="tool-btn" data-tool="midpoint" data-i18n="tool_midpoint">中点</button>
+        <button class="tool-btn" data-tool="perp" data-i18n="tool_perp">垂线</button>
+        <button class="tool-btn" data-tool="parallel" data-i18n="tool_parallel">平行线</button>
+        <button class="tool-btn" data-tool="tangent" data-i18n="tool_tangent">切线</button>
+        <button class="tool-btn" data-tool="polygon" data-i18n="tool_polygon">多边形</button>
+        <button class="tool-btn" data-tool="text" data-i18n="tool_text">文本</button>
+        <button class="tool-btn" data-tool="intersect" data-i18n="tool_intersect">交点</button>
+        <button class="tool-btn" data-tool="line" data-i18n="tool_line">直线</button>
+        <button class="tool-btn" data-tool="semicircle" data-i18n="tool_semicircle">半圆</button>
+        <button class="tool-btn" data-tool="arc" data-i18n="tool_arc">圆弧</button>
+        <button class="tool-btn" data-tool="ellipse" data-i18n="tool_ellipse">椭圆</button>
+        <button class="tool-btn" data-tool="hyperbola" data-i18n="tool_hyperbola">双曲线</button>
+        <button class="tool-btn" data-tool="parabola" data-i18n="tool_parabola">抛物线</button>
+        <button class="tool-btn" data-tool="ray" data-i18n="tool_ray">射线</button>
+        <button class="tool-btn" data-tool="vector" data-i18n="tool_vector">向量</button>
+        <button class="tool-btn" data-tool="perpbis" data-i18n="tool_perpbis">中垂线</button>
+        <button class="tool-btn" data-tool="anglebis" data-i18n="tool_anglebis">角平分线</button>
+        <button class="tool-btn" data-tool="regpoly" data-i18n="tool_regpoly">正多边形</button>
+        <button class="tool-btn" data-tool="circumcircle" data-i18n="tool_circumcircle">外接圆</button>
+        <button class="tool-btn" data-tool="foot" data-i18n="tool_foot">垂足</button>
+        <button class="tool-btn" data-tool="incenter" data-i18n="tool_incenter">内心</button>
+        <button class="tool-btn" data-tool="centroid" data-i18n="tool_centroid">重心</button>
+        <button class="tool-btn" data-tool="incircle" data-i18n="tool_incircle">内切圆</button>
+        <button class="tool-btn" data-tool="reflect" data-i18n="tool_reflect">反射</button>
+        <button class="tool-btn" data-tool="rotate" data-i18n="tool_rotate">旋转</button>
+        <button class="tool-btn" data-tool="translate" data-i18n="tool_translate">平移</button>
+        <button class="tool-btn" data-tool="dilate" data-i18n="tool_dilate">位似</button>
+        <button class="tool-btn" data-tool="pointoncircle" data-i18n="tool_pointoncircle">圆上点</button>
+        <button class="tool-btn" data-tool="polyline" data-i18n="tool_polyline">折线</button>
+        <button class="tool-btn" data-tool="function" data-i18n="tool_function">函数</button>
+        <button class="tool-btn" data-tool="slider" data-i18n="tool_slider">滑块</button>
+        <button class="tool-btn" data-tool="locus" data-i18n="tool_locus">轨迹</button>
+        <button class="tool-btn" data-tool="barchart" data-i18n="tool_barchart">直方图</button>
+        <button class="tool-btn" data-tool="pointonpath" data-i18n="tool_pointonpath">动点</button>
+        <button class="tool-btn" data-tool="ineq" data-i18n="tool_ineq">不等式</button>
+        <button class="tool-btn" data-tool="compass" data-i18n="tool_compass">圆规</button>
+        <button id="tool-done" class="eb-del" data-i18n="tool_done" style="display:none">完成</button>
+      </div>
+      <div id="tool-status"></div>
+    </div>
+    <div id="script-panel" style="display:none">
+      <div id="script-head"><span data-i18n="script_head">命令脚本</span>
+        <button id="script-close" class="x" title="关闭">✕</button></div>
+      <textarea id="script-ta" data-i18n-ph="script_ph" spellcheck="false"></textarea>
+      <div class="script-ops">
+        <button id="script-file" data-i18n="script_file">选择文件</button>
+        <button id="script-run" data-i18n="script_run">执行 (Ctrl+Enter)</button>
+        <input type="file" id="script-file-input" accept=".ggs,.txt,.ggk,.json" style="display:none">
+      </div>
+      <div id="script-results"></div>
+    </div>
+    <div id="macro-panel" style="display:none">
+      <div id="macro-head"><span data-i18n="macro_head">自定义宏</span>
+        <button id="macro-close" class="x" title="关闭">✕</button></div>
+      <div class="macro-body">
+        <p class="cas-tip" data-i18n="macro_tip">把一组构造封装为可复用命令：选中输入对象（自由对象）与输出对象，保存后用 宏名[参数...] 调用</p>
+        <div class="macro-row">
+          <input id="macro-name" data-i18n-ph="macro_name_ph" placeholder="宏名，如 MidCircle" autocomplete="off" spellcheck="false" style="flex:1">
+          <button id="macro-create" data-i18n="macro_create">创建宏</button>
+        </div>
+        <div class="macro-row">
+          <span class="macro-lbl" data-i18n="macro_inputs">输入对象</span>
+          <input id="macro-inputs" placeholder="A, B" autocomplete="off" spellcheck="false" style="flex:1">
+          <button id="macro-pick-in" class="macro-pick" data-i18n="macro_pick">点选</button>
+        </div>
+        <div class="macro-row">
+          <span class="macro-lbl" data-i18n="macro_outputs">输出对象</span>
+          <input id="macro-outputs" placeholder="c" autocomplete="off" spellcheck="false" style="flex:1">
+          <button id="macro-pick-out" class="macro-pick" data-i18n="macro_pick">点选</button>
+        </div>
+        <div class="macro-row">
+          <span class="macro-lbl" data-i18n="macro_usage">使用</span>
+          <input id="macro-use-name" placeholder="宏名" autocomplete="off" spellcheck="false" style="flex:1">
+          <input id="macro-use-args" placeholder="参数，如 P, Q" autocomplete="off" spellcheck="false" style="flex:1">
+          <button id="macro-run" data-i18n="macro_run">执行</button>
+        </div>
+        <div id="macro-list"></div>
+        <div id="macro-msg"></div>
+      </div>
+    </div>
+    <div id="exam-panel" style="display:none">
+      <div id="exam-head"><span data-i18n="exam_head">试卷导出</span>
+        <button id="exam-close" class="x" title="关闭">✕</button></div>
+      <div id="exam-body">
+        <p class="cas-tip" data-i18n="exam_tip"></p>
+        <div class="exam-grid">
+          <label data-i18n="exam_t">标题</label><input id="exam-title" class="exam-wide">
+          <label data-i18n="exam_sub">副标题</label><input id="exam-subtitle" class="exam-wide">
+          <label data-i18n="exam_school">学校</label><input id="exam-school">
+          <label data-i18n="exam_klass">班级</label><input id="exam-klass">
+          <label data-i18n="exam_name">姓名</label><input id="exam-name">
+          <label data-i18n="exam_sid">学号</label><input id="exam-sid">
+          <label data-i18n="exam_total">总分</label><input id="exam-total" type="number" min="1" max="500">
+          <label data-i18n="exam_minutes">时长(分)</label><input id="exam-minutes" type="number" min="1" max="300">
+          <label data-i18n="exam_inst">考试说明</label><input id="exam-instructions" class="exam-wide">
+        </div>
+        <div class="exam-ops">
+          <button id="exam-add" data-i18n="exam_add">＋ 当前图形为题目</button>
+          <button id="exam-export" data-i18n="exam_export">导出 HTML</button>
+          <label class="eb-vis"><input type="checkbox" id="exam-answers"> <span data-i18n="exam_answers">含答案</span></label>
+          <button id="exam-clear" class="eb-del" data-i18n="exam_clear">清空</button>
+        </div>
+        <div id="exam-questions"></div>
+      </div>
+    </div>
+  </div>
+  <div id="panel">
+    <div id="editbar" style="display:none">
+      <span class="eb-sel"><span data-i18n="eb_sel">选中</span> <b id="eb-label"></b> (<span id="eb-kind"></span>)</span>
+      <span class="eb-group" data-i18n="eb_color">颜色</span>
+        <button class="sw" data-c="#e11d48" style="background:#e11d48"></button>
+        <button class="sw" data-c="#2563eb" style="background:#2563eb"></button>
+        <button class="sw" data-c="#059669" style="background:#059669"></button>
+        <button class="sw" data-c="#7c3aed" style="background:#7c3aed"></button>
+        <button class="sw" data-c="#ea580c" style="background:#ea580c"></button>
+        <button class="sw" data-c="#ca8a04" style="background:#ca8a04"></button>
+        <button class="sw" data-c="#1a1a1a" style="background:#1a1a1a"></button>
+      <label class="eb-vis"><input type="checkbox" id="eb-vis"> <span data-i18n="eb_show">显示</span></label>
+      <label class="eb-vis"><input type="checkbox" id="eb-lock"> <span data-i18n="eb_lock">锁定</span></label>
+      <label class="eb-vis" id="eb-wire-wrap" style="display:none"><input type="checkbox" id="eb-wire"> <span data-i18n="eb_wire">线框</span></label>
+      <span id="eb-xyz-wrap" style="display:none">
+        <input id="eb-xyz-x" class="eb-xyz" title="x" type="number" step="0.5">
+        <input id="eb-xyz-y" class="eb-xyz" title="y" type="number" step="0.5">
+        <input id="eb-xyz-z" class="eb-xyz" title="z" type="number" step="0.5">
+      </span>
+      <input id="eb-defn" data-i18n-ph="eb_defn_ph" autocomplete="off" spellcheck="false">
+      <button id="eb-redef" data-i18n="eb_set">改</button>
+      <input id="eb-name" data-i18n-ph="eb_name_ph" autocomplete="off" style="width:70px">
+      <button id="eb-rename" data-i18n="eb_rename">改名</button>
+      <button id="eb-del" class="eb-del" data-i18n="eb_del">删除</button>
+    </div>
+    <div id="panel-title"><span data-i18n="panel_title">对象列表（点选编辑）</span>
+      <span class="panel-pos-btns">
+        <button class="ppos" data-pos="left" title="◀ 面板靠左 / Left">◀</button>
+        <button class="ppos" data-pos="right" title="▶ 面板靠右 / Right">▶</button>
+        <button class="ppos" data-pos="bottom" title="▼ 面板靠下 / Bottom">▼</button>
+      </span>
+    </div>
+    <div id="objlist"></div>
+  </div>
+</div>
+<script src="/static/vendor/katex/katex.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
