@@ -19,21 +19,98 @@ from .elements import (
     GeoLocus, GeoMatrix, GeoNumber, GeoPolar, GeoPoint, GeoPolygon, GeoPolyline,
     GeoPie, GeoRay, GeoResult, GeoSegment, GeoSumRect, GeoText, GeoVector,
 )
-from .parser import eval_number, parse_line
+from .parser import _split_commas, eval_number, parse_line
 
 DEG = math.pi / 180.0
 
 # 形如 "Circle[O,2]" / "Plane[A,B,C]" 的嵌套命令调用（不含赋值号）
-_NESTED_CALL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*\[.*\]$")
+_NESTED_CALL_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*\[(.*)\]$", re.S)
+# 嵌套命令最大层数（防御深层递归/自引用）
+_NESTED_MAX_DEPTH = 4
 
 
-def _nested_arg_hint(s: str, what: str = "对象") -> None:
-    """参数写成嵌套命令时给出可操作错误（本内核不支持在实参位置递归求值命令）。"""
-    t = s.strip()
-    if _NESTED_CALL_RE.match(t):
-        raise GeoError(
-            "参数不能是嵌套命令 " + t + "：请先用一条独立语句创建该" + what +
-            "，再用其标签作为参数（例如先 c=Circle[O,2]，再 Cone[c,3]）")
+class _DetachedConstruction:
+    """嵌套命令求值用的影子构造。
+
+    依赖仍从父构造的 elements 查找，但新元素**不注册**（匿名辅助对象：
+    不进对象列表 / 撤销快照 / 序列化），只作为依赖挂在父元素的 deps 上。
+    父元素的 defn 保留用户原始写法（如 `k=Cone[Circle[O,2],3]`），
+    因此撤销、.ggk/.ggb 往返重放时会重新求值出同样的匿名依赖。
+    """
+
+    def __init__(self, cons, depth: int) -> None:
+        self._cons = cons
+        self.elements = cons.elements       # 共享查找表（只读使用）
+        self.created: List = []
+        self._seq = 0
+        self._nested_depth = depth
+
+    def add(self, el):
+        self.created.append(el)
+        if not getattr(el, "free", False):
+            el.compute()
+        return el
+
+    def auto_label(self, kind):
+        self._seq += 1
+        return "_n%d_%s" % (self._seq, kind)
+
+    def _recompute(self, el):
+        return self._cons._recompute(el)
+
+    def get(self, label):
+        return self._cons.get(label)
+
+    def push_history(self):
+        pass
+
+
+def _nested_depth(cons) -> int:
+    return int(getattr(cons, "_nested_depth", 0))
+
+
+def _eval_nested(cons, text: str):
+    """就地求值一个嵌套命令调用，返回匿名辅助元素（不注册）。"""
+    t = text.strip()
+    m = _NESTED_CALL_RE.match(t)
+    if m is None:
+        raise GeoError("无法解析嵌套命令: " + t)
+    depth = _nested_depth(cons)
+    if depth >= _NESTED_MAX_DEPTH:
+        raise GeoError("嵌套命令层数过深（最多 %d 层）: %s" % (_NESTED_MAX_DEPTH, t))
+    name, inner = m.group(1), m.group(2)
+    lname = name.lower()
+    lname = ALIASES.get(lname, lname)          # 中文别名归一化
+    handler = COMMANDS.get(lname)
+    if handler is None:
+        raise GeoError("嵌套命令中不支持命令 " + name + "：请先用一条独立语句创建该对象，再用其标签作为参数")
+    args = [a for a in _split_commas(inner) if a != ""]
+    shadow = _DetachedConstruction(cons, depth + 1)
+    label = shadow.auto_label(_result_kind(lname))
+    defn = label + "=" + t
+    if lname in ("intersect", "extremum", "focus", "tangent"):
+        created = handler(shadow, defn, args, None)
+    else:
+        created = handler(shadow, defn, args)
+    els = created if isinstance(created, list) else [created]
+    els = [e for e in els if e is not None]
+    if not els:
+        raise GeoError("嵌套命令未产生结果: " + t)
+    res = els[0]
+    if getattr(res, "error", None):
+        raise GeoError("嵌套命令失败 " + t + "：" + str(res.error))
+    return res
+
+
+def _lookup(cons, s: str):
+    """按标签查元素；参数是嵌套命令时即时求值（匿名辅助，不注册）。查不到返回 None。"""
+    key = s.strip()
+    el = cons.elements.get(key)
+    if el is not None:
+        return el
+    if _NESTED_CALL_RE.match(key):
+        return _eval_nested(cons, key)
+    return None
 
 
 def _tag3d(el, solid: str):
@@ -64,9 +141,8 @@ def _dist3(a, b) -> float:
 def _resolve(cons, s: str, kinds: Optional[Tuple[str, ...]] = None):
     """把参数字符串解析为元素；kinds 非空时校验类型。"""
     s = s.strip()
-    el = cons.elements.get(s)
+    el = _lookup(cons, s)
     if el is None:
-        _nested_arg_hint(s)
         raise GeoError("找不到对象 " + s)
     if kinds and el.kind not in kinds:
         raise GeoError(s + " 的类型是 " + el.kind + "，这里需要 " + "/".join(kinds))
@@ -76,7 +152,7 @@ def _resolve(cons, s: str, kinds: Optional[Tuple[str, ...]] = None):
 def _point_arg(cons, s: str):
     """命令参数中的点：可以是标签，也可以是 (x,y) 字面量（自动创建隐藏辅助点）。"""
     s = s.strip()
-    el = cons.elements.get(s)
+    el = _lookup(cons, s)
     if el is not None:
         if el.kind != "point":
             raise GeoError(s + " 不是点")
@@ -89,7 +165,6 @@ def _point_arg(cons, s: str):
         el = GeoPoint("_h", s, vals[0], vals[1], True, z)
         el.visible = False
         return el
-    _nested_arg_hint(s, "点")
     raise GeoError("找不到点 " + s)
 
 
@@ -111,9 +186,8 @@ def _resolve_vector3(cons, s: str) -> Tuple[float, float, float]:
         if len(vals) == 2:
             return vals[0], vals[1], 0.0
         return vals[0], vals[1], vals[2]
-    el = cons.elements.get(s)
+    el = _lookup(cons, s)
     if el is None:
-        _nested_arg_hint(s, "向量")
         raise GeoError("找不到对象 " + s)
     if el.kind == "vector":
         return el.dx, el.dy, 0.0
@@ -147,7 +221,7 @@ def _tuple_parts_any(s: str) -> List[str]:
 
 def _number(cons, s: str):
     s = s.strip()
-    el = cons.elements.get(s)
+    el = _lookup(cons, s)
     if el is not None and el.kind in ("number", "angle"):
         return el
     raise GeoError(s + " 不是数值对象")
@@ -296,8 +370,8 @@ def _cmd_midpoint(cons, label, args):
 def _cmd_line(cons, label, args):
     if len(args) == 2:
         # 过点作平行线：Line[A, g]（GGB 语法）
-        e0 = cons.elements.get(args[0].strip())
-        e1 = cons.elements.get(args[1].strip())
+        e0 = _lookup(cons, args[0])
+        e1 = _lookup(cons, args[1])
         if e0 is not None and e0.kind == "point" and e1 is not None and e1.kind in ("line", "segment", "ray"):
             return _mk(cons, GeoLine, "line", label, [e0, e1],
                        lambda d: _parallel_state(d[0], d[1]))
@@ -375,7 +449,7 @@ def _cmd_circle(cons, label, args):
     if len(args) == 2:
         c = _point_arg(cons, args[0])
         s = args[1].strip()
-        el = cons.elements.get(s)
+        el = _lookup(cons, s)
         if el is not None and el.kind == "point":
             return _mk(cons, GeoCircle, "circle", label, [c, el],
                        lambda d: {"cx": d[0].x, "cy": d[0].y, "r": _dist((d[0].x, d[0].y), (d[1].x, d[1].y))})
@@ -494,7 +568,27 @@ def _cmd_intersect(cons, defn, args, idx=None):
         if (t1, t2) in (("segment", "plane"), ("plane", "segment")):
             seg, pl = (o1, o2) if t1 == "segment" else (o2, o1)
             return _mk(cons, GeoPoint, "point", defn, [seg, pl], lambda d: _ix_line_plane(d[0], d[1]))
-        raise GeoError("3D 求交暂支持 面-面（交线）与 线段-面（交点）")
+        if (t1, t2) in (("line3d", "plane"), ("plane", "line3d")):
+            lin, pl = (o1, o2) if t1 == "line3d" else (o2, o1)
+            return _mk(cons, GeoPoint, "point", defn, [lin, pl], lambda d: _ix_line3d_plane(d[0], d[1]))
+        if t1 == "plane" and _is_solid_el(o2):
+            return _mk(cons, Geo3D, "geo3d", defn, [o1, o2], lambda d: _ix_solid_plane(d[1], d[0]))
+        if t2 == "plane" and _is_solid_el(o1):
+            return _mk(cons, Geo3D, "geo3d", defn, [o1, o2], lambda d: _ix_solid_plane(d[0], d[1]))
+        if _is_solid_el(o1) and t2 in ("segment", "line3d"):
+            return _mk(cons, GeoPoint, "point", defn, [o1, o2],
+                       lambda d: _ix_solid_line(d[0], d[1], idx, t2 == "segment"))
+        if _is_solid_el(o2) and t1 in ("segment", "line3d"):
+            return _mk(cons, GeoPoint, "point", defn, [o1, o2],
+                       lambda d: _ix_solid_line(d[1], d[0], idx, t1 == "segment"))
+        if t1 == "sphere" and t2 in ("segment", "line3d"):
+            return _mk(cons, GeoPoint, "point", defn, [o1, o2],
+                       lambda d: _ix_sphere_line(d[0], d[1], idx, t2 == "segment"))
+        if t2 == "sphere" and t1 in ("segment", "line3d"):
+            return _mk(cons, GeoPoint, "point", defn, [o1, o2],
+                       lambda d: _ix_sphere_line(d[1], d[0], idx, t1 == "segment"))
+        raise GeoError("3D 求交暂不支持 " + t1 + " × " + t2 +
+                       "（支持 面×面、直线/线段×面、平面×立体、立体×直线/线段、球×直线/线段）")
     raise GeoError("Intersect 暂不支持 " + k1 + " 与 " + k2 + " 的组合")
 
 
@@ -520,7 +614,7 @@ def _ix_plane_plane(p1, p2):
         px, py, pz = 0.0, y, z
     # 延展成线段（两端）
     L = 15.0
-    return {"objtype": "segment",
+    return {"objtype": "line3d",
             "data": {"x1": px - dx / ln * L, "y1": py - dy / ln * L, "z1": pz - dz / ln * L,
                      "x2": px + dx / ln * L, "y2": py + dy / ln * L, "z2": pz + dz / ln * L}}
 
@@ -547,6 +641,160 @@ def _ix_line_plane(seg, pl):
     if t < -1e-9 or t > 1 + 1e-9:
         raise GeoError("交点不在线段上")
     return {"x": x1 + t * ux, "y": y1 + t * uy, "z": z1 + t * uz}
+
+
+def _is_solid_el(el) -> bool:
+    """网格立体（立方体/多面体/锥/柱：objtype 为 cube 或 polyhedron）。"""
+    return getattr(el, "objtype", "") in ("cube", "polyhedron")
+
+
+def _line_ends(el):
+    d = el.data
+    return ([d["x1"], d["y1"], d["z1"]], [d["x2"], d["y2"], d["z2"]])
+
+
+def _ix_line3d_plane(lin, pl):
+    """三维直线（无限）与平面交点。"""
+    p, q = _line_ends(lin)
+    a, b, c, dd = pl.data["a"], pl.data["b"], pl.data["c"], pl.data["d"]
+    ux, uy, uz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
+    denom = a * ux + b * uy + c * uz
+    if abs(denom) < 1e-12:
+        raise GeoError("直线与平面平行")
+    t = -(a * p[0] + b * p[1] + c * p[2] + dd) / denom
+    return {"x": p[0] + t * ux, "y": p[1] + t * uy, "z": p[2] + t * uz}
+
+
+def _ix_solid_plane(solid, pl):
+    """凸立体与平面相交 → 截面多边形（objtype=section）。
+
+    沿网格边两两求交（端点异号），去重后在平面内按极角排序成环。
+    """
+    vs = solid.data["verts"]
+    edges = solid.data["edges"]
+    a, b, c, dd = pl.data["a"], pl.data["b"], pl.data["c"], pl.data["d"]
+
+    def _val(p):
+        return a * p[0] + b * p[1] + c * p[2] + dd
+
+    pts = []
+    for i, j in edges:
+        p, q = vs[i], vs[j]
+        fp, fq = _val(p), _val(q)
+        if fp == 0.0 and fq == 0.0:
+            continue
+        if (fp > 0) == (fq > 0):
+            continue
+        t = fp / (fp - fq)
+        pts.append([p[k] + t * (q[k] - p[k]) for k in range(3)])
+    uniq = []
+    for p in pts:
+        if not any(math.dist(p, q) < 1e-9 for q in uniq):
+            uniq.append(p)
+    if len(uniq) < 3:
+        raise GeoError("平面与立体的截面不足 3 个顶点（相切或不相交）")
+    ctr = [sum(p[k] for p in uniq) / len(uniq) for k in range(3)]
+    ln = math.sqrt(a * a + b * b + c * c)
+    nx, ny, nz = a / ln, b / ln, c / ln
+    ux = uy = uz = 0.0
+    for p in uniq:
+        dx, dy, dz = p[0] - ctr[0], p[1] - ctr[1], p[2] - ctr[2]
+        d = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if d > 1e-12:
+            ux, uy, uz = dx / d, dy / d, dz / d
+            break
+    wx = ny * uz - nz * uy
+    wy = nz * ux - nx * uz
+    wz = nx * uy - ny * ux
+
+    def _ang(p):
+        dx, dy, dz = p[0] - ctr[0], p[1] - ctr[1], p[2] - ctr[2]
+        return math.atan2(dx * wx + dy * wy + dz * wz, dx * ux + dy * uy + dz * uz)
+
+    uniq.sort(key=_ang)
+    return {"objtype": "section",
+            "data": {"pts": uniq, "normal": [nx, ny, nz], "count": len(uniq)}}
+
+
+def _ray_triangle(orig, dirv, a, b, c):
+    """Möller–Trumbore：射线 orig + t·dirv 与三角形求交，返回 t 或 None。"""
+    e1 = [b[k] - a[k] for k in range(3)]
+    e2 = [c[k] - a[k] for k in range(3)]
+    h = [dirv[1] * e2[2] - dirv[2] * e2[1],
+         dirv[2] * e2[0] - dirv[0] * e2[2],
+         dirv[0] * e2[1] - dirv[1] * e2[0]]
+    det = e1[0] * h[0] + e1[1] * h[1] + e1[2] * h[2]
+    if abs(det) < 1e-12:
+        return None
+    inv = 1.0 / det
+    s = [orig[k] - a[k] for k in range(3)]
+    u = (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]) * inv
+    if u < -1e-9 or u > 1 + 1e-9:
+        return None
+    q = [s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]]
+    v = (dirv[0] * q[0] + dirv[1] * q[1] + dirv[2] * q[2]) * inv
+    if v < -1e-9 or u + v > 1 + 1e-9:
+        return None
+    t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv
+    return t if t > 1e-9 else None
+
+
+def _ix_solid_line(solid, lin, idx, bounded):
+    """凸立体与直线/线段求交 → 按 idx 取第 idx 个交点（1-based，默认第 1 个）。"""
+    vs = solid.data["verts"]
+    p, q = _line_ends(lin)
+    dirv = [q[k] - p[k] for k in range(3)]
+    ts = []
+    for face in solid.data["faces"]:
+        a = vs[face[0]]
+        for i in range(1, len(face) - 1):
+            t = _ray_triangle(p, dirv, a, vs[face[i]], vs[face[i + 1]])
+            if t is None:
+                continue
+            if bounded and t > 1 + 1e-9:
+                continue
+            ts.append(t)
+    if not ts:
+        raise GeoError("直线与立体不相交")
+    ts.sort()
+    uniq = []
+    for t in ts:
+        if not uniq or abs(t - uniq[-1]) > 1e-9:
+            uniq.append(t)
+    k = (idx or 1)
+    if k > len(uniq):
+        raise GeoError("直线与立体只有 " + str(len(uniq)) + " 个交点（请求第 " + str(k) + " 个）")
+    t = uniq[k - 1]
+    return {"x": p[0] + t * dirv[0], "y": p[1] + t * dirv[1], "z": p[2] + t * dirv[2]}
+
+
+def _ix_sphere_line(sph, lin, idx, bounded):
+    """球与直线/线段求交 → 按 idx 取第 idx 个交点。"""
+    d = sph.data
+    cx, cy, cz, r = d["cx"], d["cy"], d["cz"], d["r"]
+    p, q = _line_ends(lin)
+    dx, dy, dz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
+    fx, fy, fz = p[0] - cx, p[1] - cy, p[2] - cz
+    A = dx * dx + dy * dy + dz * dz
+    if A < 1e-18:
+        raise GeoError("直线退化")
+    B = 2 * (fx * dx + fy * dy + fz * dz)
+    C = fx * fx + fy * fy + fz * fz - r * r
+    disc = B * B - 4 * A * C
+    if disc < -1e-12:
+        raise GeoError("直线与球不相交")
+    disc = max(0.0, disc)
+    sq = math.sqrt(disc)
+    ts = [(-B - sq) / (2 * A), (-B + sq) / (2 * A)]
+    ts = [t for t in ts if (not bounded) or (-1e-9 <= t <= 1 + 1e-9)]
+    if not ts:
+        raise GeoError("交点不在线段上")
+    ts.sort()
+    k = (idx or 1)
+    if k > len(ts):
+        raise GeoError("球与线段只有 " + str(len(ts)) + " 个交点（请求第 " + str(k) + " 个）")
+    t = ts[k - 1]
+    return {"x": p[0] + t * dx, "y": p[1] + t * dy, "z": p[2] + t * dz}
 
 
 def _ix_fn_fn(cons, defn, f, g, idx):
@@ -1418,8 +1666,8 @@ def _cmd_integral(cons, defn, args):
         f = _resolve(cons, args[0], ("function",))
         dyn = []
         a_fixed = b_fixed = None
-        a_el = cons.elements.get(args[1].strip())
-        b_el = cons.elements.get(args[2].strip())
+        a_el = _lookup(cons, args[1])
+        b_el = _lookup(cons, args[2])
         if a_el is not None and a_el.kind == "number":
             dyn.append(a_el)
         else:
@@ -1455,7 +1703,7 @@ def _cmd_tangent(cons, defn, args, idx=None):
     first = _resolve(cons, args[0])
     # Tangent[点, 圆]：圆外/圆上点作切线（GGB 顺序）
     if first.kind == "point":
-        second = cons.elements.get(args[1].strip())
+        second = _lookup(cons, args[1])
         if second is not None and second.kind in ("conic", "circle"):
             return _cmd_tangent_conic(cons, defn, [args[1], args[0]], idx)
         raise GeoError("Tangent[点, 圆] 的第二个参数必须是圆或圆锥曲线")
@@ -1468,7 +1716,7 @@ def _cmd_tangent(cons, defn, args, idx=None):
                    lambda d: _tangent_arc_state(d[0], d[1]))
     f = _resolve(cons, args[0], ("function",))
     s = args[1].strip()
-    el = cons.elements.get(s)
+    el = _lookup(cons, s)
     if el is not None and el.kind == "point":
         return _mk(cons, GeoLine, "line", defn, [f, el],
                    lambda d: _tangent_state(d[0], d[1].x))
@@ -1728,7 +1976,21 @@ def _cmd_area(cons, defn, args):
     if obj.kind == "conic" and obj.ctype in ("ellipse", "circle"):
         return _mk(cons, GeoNumber, "number", defn, [obj],
                    lambda d: {"value": math.pi * d[0].semi_a * (d[0].semi_b or d[0].semi_a)})
-    raise GeoError("Area 需要 多边形/圆/椭圆 或 函数+上下限")
+    if obj.kind == "geo3d":
+        return _mk(cons, GeoNumber, "number", defn, [obj],
+                   lambda d: {"value": _solid_area(d[0])})
+    raise GeoError("Area 需要 多边形/圆/椭圆/3D 立体 或 函数+上下限")
+
+
+def _cmd_volume(cons, defn, args):
+    """Volume[立体]：球/圆锥/圆柱解析精确，多面体按网格精确求和。"""
+    if len(args) != 1:
+        raise GeoError("Volume 需要一个立体对象")
+    obj = _resolve(cons, args[0])
+    if obj.kind != "geo3d":
+        raise GeoError("Volume 需要 3D 立体（球/圆锥/圆柱/棱柱/棱锥/正多面体）")
+    return _mk(cons, GeoNumber, "number", defn, [obj],
+               lambda d: {"value": _solid_volume(d[0])})
 
 
 def _cmd_perimeter(cons, defn, args):
@@ -1979,7 +2241,7 @@ def _vec2_arg(cons, s):
     if s.startswith("("):
         parts = _tuple_parts(s)
         return eval_number(cons, parts[0]), eval_number(cons, parts[1])
-    el = cons.elements.get(s)
+    el = _lookup(cons, s)
     if el is None:
         raise GeoError("找不到对象 " + s)
     if el.kind == "vector":
@@ -1995,7 +2257,7 @@ def _vec_arg_objs(cons, args):
     for a in args:
         s = a.strip()
         if not s.startswith("("):
-            e = cons.elements.get(s)
+            e = _lookup(cons, s)
             if e is not None and e.kind in ("vector", "point") and e not in objs:
                 objs.append(e)
     return objs
@@ -2655,7 +2917,7 @@ def _list_defn(items, itemkind):
 
 def _list_arg(cons, s):
     s = s.strip()
-    el = cons.elements.get(s)
+    el = _lookup(cons, s)
     if el is None and s.startswith("{"):
         # 内联列表 → 匿名列表（不注册，仅作依赖）
         from .parser import _split_brace, tokenize
@@ -3223,7 +3485,7 @@ def _cmd_sphere(cons, defn, args):
         raise GeoError("Sphere 需要 球心 和 球面点或半径")
     c = _point_arg(cons, args[0])
     s = args[1].strip()
-    el2 = cons.elements.get(s)
+    el2 = _lookup(cons, s)
     if el2 is not None and el2.kind == "point":
         return _mk(cons, Geo3D, "geo3d", defn, [c, el2], lambda d: _sphere_state(d[0], d[1]))
     if el2 is not None and el2.kind == "number":
@@ -3296,7 +3558,7 @@ def _cube_seg_pts(el):
 def _elem_or_point(cons, s: str):
     """参数解析：优先按已有元素标签；否则尝试 (x,y) / (x,y,z) 字面量点。"""
     txt = s.strip()
-    el = cons.elements.get(txt)
+    el = _lookup(cons, txt)
     if el is not None:
         return el
     if txt.startswith("("):
@@ -3446,7 +3708,8 @@ def _cube_build(base_verts, n, h):
     ]
     edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4],
              [0, 4], [1, 5], [2, 6], [3, 7]]
-    return {"objtype": "cube", "solid": "cube", "data": {"verts": verts, "faces": faces, "edges": edges}}
+    return {"objtype": "cube", "solid": "cube",
+            "data": {"verts": verts, "faces": _normalize_mesh(verts, faces), "edges": edges}}
 
 
 def _cube_state(a, b, c):
@@ -3533,7 +3796,8 @@ def _cube_state2(a, b):
 # ---------------------------------------------------------------------------
 
 def _poly_state(verts, faces, edges):
-    return {"objtype": "polyhedron", "data": {"verts": verts, "faces": faces, "edges": edges}}
+    return {"objtype": "polyhedron",
+            "data": {"verts": verts, "faces": _normalize_mesh(verts, faces), "edges": edges}}
 
 
 def _poly3_points(cons, args, n, name):
@@ -3569,7 +3833,7 @@ def _poly_register(cons, defn, deps, fn, objtype):
 def _number_arg(cons, s):
     """数值参数：已有 数值/角度 元素 → (el, None)；否则字面量 → (None, value)。"""
     txt = s.strip()
-    el = cons.elements.get(txt)
+    el = _lookup(cons, txt)
     if el is not None and el.kind in ("number", "angle"):
         return el, None
     return None, eval_number(cons, txt)
@@ -3578,7 +3842,7 @@ def _number_arg(cons, s):
 def _vector3_arg(cons, s):
     """方向参数：向量元素 → (dx,dy,0)；元组 → (dx,dy,dz)；否则 None。"""
     txt = s.strip()
-    el = cons.elements.get(txt)
+    el = _lookup(cons, txt)
     if el is not None:
         if el.kind == "vector":
             return (el.dx, el.dy, 0.0)
@@ -3615,6 +3879,171 @@ def _frame_from_axis(d):
     return u, v, n
 
 
+# ---- 立体体积 / 表面积（网格散度定理 + 解析优先）----
+
+def _with_analytic(state, **kw):
+    """给网格状态附加解析参数，供 Volume/Area 取精确值（锥/柱为旋转体）。"""
+    st = dict(state)
+    data = dict(st.get("data", {}))
+    data["analytic"] = kw
+    st["data"] = data
+    return st
+
+
+def _newell_normal(vs, face):
+    """Newell 法向（模长 = 2×面积）；对面顶点环序不敏感程度优于简单叉积。"""
+    nx = ny = nz = 0.0
+    n = len(face)
+    for i in range(n):
+        a = vs[face[i]]
+        b = vs[face[(i + 1) % n]]
+        nx += (a[1] - b[1]) * (a[2] + b[2])
+        ny += (a[2] - b[2]) * (a[0] + b[0])
+        nz += (a[0] - b[0]) * (a[1] + b[1])
+    return nx, ny, nz
+
+
+def _normalize_mesh(verts, faces):
+    """把网格面统一为「平面内正确环序（凸多边形）+ 外向法向」。
+
+    历史构造器的面顶点顺序/朝向并不一致（例如立方体顶面是 [4,6,7,5] 的蝴蝶结序、
+    二十面体 20 个面里 10 个朝内），会导致体积计算相互抵消、遮挡判断异常。
+    这里以顶点质心为内点统一修正——所有立体都是凸体，此规则成立。
+    """
+    if not verts or not faces:
+        return faces
+    cx = sum(v[0] for v in verts) / len(verts)
+    cy = sum(v[1] for v in verts) / len(verts)
+    cz = sum(v[2] for v in verts) / len(verts)
+    out = []
+    for f in faces:
+        idx = list(f)
+        if len(idx) < 3:
+            out.append(idx)
+            continue
+        nx, ny, nz = _newell_normal(verts, idx)
+        ln = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if ln < 1e-12:
+            # 蝴蝶结/乱序面（如立方体顶面 [4,6,7,5]）Newell 法向会抵消为 0：
+            # 改用「最大面积三角形」的叉积作平面法向，再走同一套排序 + 外向判定。
+            best = (0.0, 0.0, 0.0, 0.0)
+            n = len(idx)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    for k in range(j + 1, n):
+                        ax, ay, az = verts[idx[i]]
+                        bx, by, bz = verts[idx[j]]
+                        qx, qy, qz = verts[idx[k]]
+                        ux_, uy_, uz_ = bx - ax, by - ay, bz - az
+                        vx_, vy_, vz_ = qx - ax, qy - ay, qz - az
+                        mx = uy_ * vz_ - uz_ * vy_
+                        my = uz_ * vx_ - ux_ * vz_
+                        mz = ux_ * vy_ - uy_ * vx_
+                        area = 0.5 * math.sqrt(mx * mx + my * my + mz * mz)
+                        if area > best[0]:
+                            best = (area, mx, my, mz)
+            if best[0] < 1e-12:
+                out.append(idx)
+                continue
+            nx, ny, nz = best[1], best[2], best[3]
+            ln = math.sqrt(nx * nx + ny * ny + nz * nz)
+        hx, hy, hz = nx / ln, ny / ln, nz / ln
+        fx = sum(verts[i][0] for i in idx) / len(idx)
+        fy = sum(verts[i][1] for i in idx) / len(idx)
+        fz = sum(verts[i][2] for i in idx) / len(idx)
+        # 面内正交基：u 指向第一个不重合顶点，w = n × u
+        ux = uy = uz = 0.0
+        for i in idx:
+            dx, dy, dz = verts[i][0] - fx, verts[i][1] - fy, verts[i][2] - fz
+            if math.sqrt(dx * dx + dy * dy + dz * dz) > 1e-12:
+                d = math.sqrt(dx * dx + dy * dy + dz * dz)
+                ux, uy, uz = dx / d, dy / d, dz / d
+                break
+        wx = hy * uz - hz * uy
+        wy = hz * ux - hx * uz
+        wz = hx * uy - hy * ux
+        # 按面内极角排序 → 正确环序（凸多边形）
+        def _ang(i):
+            dx, dy, dz = verts[i][0] - fx, verts[i][1] - fy, verts[i][2] - fz
+            return math.atan2(dx * wx + dy * wy + dz * wz, dx * ux + dy * uy + dz * uz)
+        idx = sorted(idx, key=_ang)
+        # 外向：法向应背离体内一点（顶点质心）
+        nx2, ny2, nz2 = _newell_normal(verts, idx)
+        if nx2 * (fx - cx) + ny2 * (fy - cy) + nz2 * (fz - cz) < 0:
+            idx.reverse()
+        out.append(idx)
+    return out
+
+
+def _mesh_volume(data) -> float:
+    """闭合三角网格体积：Σ det(a,b,c)/6（面片环绕一致，取绝对值兜底）。"""
+    vs = data.get("verts") or []
+    V = 0.0
+    for face in data.get("faces") or []:
+        if len(face) < 3:
+            continue
+        a = vs[face[0]]
+        for i in range(1, len(face) - 1):
+            b, c = vs[face[i]], vs[face[i + 1]]
+            V += (a[0] * (b[1] * c[2] - b[2] * c[1])
+                  - a[1] * (b[0] * c[2] - b[2] * c[0])
+                  + a[2] * (b[0] * c[1] - b[1] * c[0]))
+    return abs(V) / 6.0
+
+
+def _mesh_area(data) -> float:
+    """闭合网格表面积：各面三角扇面积之和。"""
+    vs = data.get("verts") or []
+    A = 0.0
+    for face in data.get("faces") or []:
+        if len(face) < 3:
+            continue
+        a = vs[face[0]]
+        for i in range(1, len(face) - 1):
+            b, c = vs[face[i]], vs[face[i + 1]]
+            ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+            vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
+            nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+            A += 0.5 * math.sqrt(nx * nx + ny * ny + nz * nz)
+    return A
+
+
+def _solid_volume(el) -> float:
+    d = getattr(el, "data", None) or {}
+    an = d.get("analytic") or {}
+    t = an.get("type")
+    if t == "cone":
+        return math.pi * an["r"] ** 2 * an["h"] / 3.0
+    if t == "cylinder":
+        return math.pi * an["r"] ** 2 * an["h"]
+    if t == "infinite_cone":
+        raise GeoError("无限圆锥没有有限体积")
+    if getattr(el, "objtype", "") == "sphere":
+        return 4.0 / 3.0 * math.pi * d["r"] ** 3
+    if "verts" in d:
+        return _mesh_volume(d)
+    raise GeoError("Volume 不支持该对象（需要球/圆锥/圆柱/棱柱/棱锥/正多面体）")
+
+
+def _solid_area(el) -> float:
+    d = getattr(el, "data", None) or {}
+    an = d.get("analytic") or {}
+    t = an.get("type")
+    if t == "cone":
+        r, h = an["r"], an["h"]
+        return math.pi * r * (r + math.sqrt(r * r + h * h))     # 底 + 侧
+    if t == "cylinder":
+        r, h = an["r"], an["h"]
+        return 2.0 * math.pi * r * (r + h)                      # 两侧盖 + 侧面
+    if t == "infinite_cone":
+        raise GeoError("无限圆锥没有有限表面积")
+    if getattr(el, "objtype", "") == "sphere":
+        return 4.0 * math.pi * d["r"] ** 2
+    if "verts" in d:
+        return _mesh_area(d)
+    raise GeoError("Area 不支持该对象（需要多边形/圆/椭圆/函数或 3D 立体）")
+
+
 def _cone_mesh_axis(apex, base_center, radius, N=48, cap=True):
     """由 顶点 / 底面中心 / 半径 构造有限圆锥网格（底面垂直于 顶点-底心 轴）。"""
     if radius <= 1e-12:
@@ -3635,18 +4064,21 @@ def _cone_mesh_axis(apex, base_center, radius, N=48, cap=True):
 
 def _cone_from_circle_state(cir, h):
     """Cone[圆, 高]：底面为该圆（xy 平面），沿 +z 方向高度 h。"""
+    if getattr(cir, "error", None):
+        raise GeoError("底面圆无效：" + str(cir.error))
     if cir.kind == "conic":
         cx, cy, r = cir.cx, cir.cy, cir.semi_a
     else:
         cx, cy, r = cir.cx, cir.cy, cir.r
     if h <= 1e-12:
         raise GeoError("高度需为正")
-    return _cone_mesh_axis([cx, cy, h], [cx, cy, 0.0], r)
+    return _with_analytic(_cone_mesh_axis([cx, cy, h], [cx, cy, 0.0], r), type="cone", r=r, h=h)
 
 
 def _cone_apex_center_radius_state(apex, base_center, radius):
     """Cone[顶点, 底心, 半径]。"""
-    return _cone_mesh_axis(apex, base_center, radius)
+    h = math.sqrt(sum((apex[i] - base_center[i]) ** 2 for i in range(3)))
+    return _with_analytic(_cone_mesh_axis(apex, base_center, radius), type="cone", r=radius, h=h)
 
 
 def _infinite_cone_state(apex, dirv, ang_deg, N=36):
@@ -3683,7 +4115,7 @@ def _infinite_cone_state(apex, dirv, ang_deg, N=36):
         step = max(1, N // 12)
         for i in range(0, N, step):
             edges.append([0, prev[i]])
-    return _poly_state(verts, faces, edges)
+    return _with_analytic(_poly_state(verts, faces, edges), type="infinite_cone")
 
 
 def _cmd_cone(cons, defn, args):
@@ -3692,7 +4124,7 @@ def _cmd_cone(cons, defn, args):
     三点（兼容原语义）：A 底面中心、B 底面半径点、C 顶点。
     """
     if len(args) == 2:
-        first = cons.elements.get(args[0].strip())
+        first = _lookup(cons, args[0])
         if first is not None and (first.kind == "circle" or
                                   (first.kind == "conic" and getattr(first, "ctype", "") == "circle")):
             h_el, h_val = _number_arg(cons, args[1])
@@ -3702,10 +4134,9 @@ def _cmd_cone(cons, defn, args):
                 hv = d[1].value if h_el is not None else h_val
                 return _cone_from_circle_state(d[0], hv)
             return _tag3d(_mk(cons, Geo3D, "geo3d", defn, deps, fn_h), "cone")
-        _nested_arg_hint(args[0], "圆")
         raise GeoError("Cone[圆, 高] 需要 圆 与高度")
     if len(args) == 3:
-        a_el = cons.elements.get(args[0].strip())
+        a_el = _lookup(cons, args[0])
         if a_el is not None and a_el.kind == "point":
             # 顶点 + 方向向量 + 半角
             vec = _vector3_arg(cons, args[1])
@@ -3718,9 +4149,9 @@ def _cmd_cone(cons, defn, args):
                     apex = [d[0].x, d[0].y, d[0].z or 0]
                     return _infinite_cone_state(apex, [vec[0], vec[1], vec[2]], av)
                 return _tag3d(_mk(cons, Geo3D, "geo3d", defn, deps, fn_v), "cone")
-            b_el = cons.elements.get(args[1].strip())
+            b_el = _lookup(cons, args[1])
             if b_el is not None and b_el.kind == "point":
-                c_el = cons.elements.get(args[2].strip())
+                c_el = _lookup(cons, args[2])
                 if c_el is None or c_el.kind in ("number", "angle"):
                     r_el, r_val = _number_arg(cons, args[2])
                     deps = [a_el, b_el] + ([r_el] if r_el is not None else [])
@@ -3740,7 +4171,9 @@ def _cmd_cone(cons, defn, args):
 def _cone_state(a, b, c):
     """A 底面中心、B 底面半径点（半径 = |AB|）、C 顶点；底面垂直于轴 AC。"""
     r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    return _cone_mesh_axis([c.x, c.y, c.z or 0], [a.x, a.y, a.z or 0], r)
+    h = math.sqrt((c.x - a.x) ** 2 + (c.y - a.y) ** 2 + ((c.z or 0) - (a.z or 0)) ** 2)
+    return _with_analytic(_cone_mesh_axis([c.x, c.y, c.z or 0], [a.x, a.y, a.z or 0], r),
+                          type="cone", r=r, h=h)
 
 
 def _cyl_mesh_axis(base_center, axis, radius, N=48):
@@ -3774,19 +4207,22 @@ def _cyl_mesh_axis(base_center, axis, radius, N=48):
 
 def _cylinder_from_circle_state(cir, h):
     """Cylinder[圆, 高]：底面为该圆（z=0 平面），沿 +z 方向高 h。"""
+    if getattr(cir, "error", None):
+        raise GeoError("底面圆无效：" + str(cir.error))
     if cir.kind == "conic":
         cx, cy, r = cir.cx, cir.cy, cir.semi_a
     else:
         cx, cy, r = cir.cx, cir.cy, cir.r
     if h <= 1e-12:
         raise GeoError("高度需为正")
-    return _cyl_mesh_axis([cx, cy, 0.0], [0.0, 0.0, h], r)
+    return _with_analytic(_cyl_mesh_axis([cx, cy, 0.0], [0.0, 0.0, h], r), type="cylinder", r=r, h=h)
 
 
 def _cylinder_centers_radius_state(base_center, top_center, radius):
     """Cylinder[底心, 顶心, 半径]。"""
     axis = [top_center[0] - base_center[0], top_center[1] - base_center[1], top_center[2] - base_center[2]]
-    return _cyl_mesh_axis(base_center, axis, radius)
+    h = math.sqrt(sum(v * v for v in axis))
+    return _with_analytic(_cyl_mesh_axis(base_center, axis, radius), type="cylinder", r=radius, h=h)
 
 
 def _cmd_cylinder(cons, defn, args):
@@ -3795,7 +4231,7 @@ def _cmd_cylinder(cons, defn, args):
     三点（兼容原语义）：A 底面中心、B 底面半径点、C 顶面中心。
     """
     if len(args) == 2:
-        first = cons.elements.get(args[0].strip())
+        first = _lookup(cons, args[0])
         if first is not None and (first.kind == "circle" or
                                   (first.kind == "conic" and getattr(first, "ctype", "") == "circle")):
             h_el, h_val = _number_arg(cons, args[1])
@@ -3805,12 +4241,11 @@ def _cmd_cylinder(cons, defn, args):
                 hv = d[1].value if h_el is not None else h_val
                 return _cylinder_from_circle_state(d[0], hv)
             return _tag3d(_mk(cons, Geo3D, "geo3d", defn, deps, fn_h), "cylinder")
-        _nested_arg_hint(args[0], "圆")
         raise GeoError("Cylinder[圆, 高] 需要 圆 与高度")
     if len(args) == 3:
-        a_el = cons.elements.get(args[0].strip())
-        b_el = cons.elements.get(args[1].strip())
-        c_el = cons.elements.get(args[2].strip())
+        a_el = _lookup(cons, args[0])
+        b_el = _lookup(cons, args[1])
+        c_el = _lookup(cons, args[2])
         if (a_el is not None and a_el.kind == "point" and
                 b_el is not None and b_el.kind == "point" and
                 (c_el is None or c_el.kind in ("number", "angle"))):
@@ -3832,7 +4267,8 @@ def _cylinder_state(a, b, c):
     """A 底面中心、B 底面半径点（半径 = |AB|）、C 顶面中心；底面垂直于轴 AC。"""
     r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
     axis = [c.x - a.x, c.y - a.y, (c.z or 0) - (a.z or 0)]
-    return _cyl_mesh_axis([a.x, a.y, a.z or 0], axis, r)
+    h = math.sqrt(sum(v * v for v in axis))
+    return _with_analytic(_cyl_mesh_axis([a.x, a.y, a.z or 0], axis, r), type="cylinder", r=r, h=h)
 
 
 def _cmd_prism(cons, defn, args):
@@ -4776,7 +5212,7 @@ def _cmd_normal(cons, defn, args):
     sigma = eval_number(cons, args[1])
     if sigma <= 0:
         raise GeoError("标准差必须 > 0")
-    x_el = cons.elements.get(args[2].strip())
+    x_el = _lookup(cons, args[2])
     if x_el is not None and x_el.kind in ("number", "angle"):
         deps = [x_el]
         fixed = None
@@ -5617,7 +6053,7 @@ ALIASES = {
     "求根": "root", "极值": "extremum",
     "平行线": "perpendicularline", "垂线": "perpendicularline", "垂足": "foot",
     "角平分线": "anglebisector", "中垂线": "perpendicularbisector", "正多边形": "regularpolygon",
-    "面积": "area", "周长": "perimeter",
+    "面积": "area", "体积": "volume", "表面积": "area", "周长": "perimeter",
     "内切圆": "incircle", "内心": "incenter", "重心": "centroid",
     "滑动条": "slider", "文本": "text", "轨迹": "locus", "圆上点": "pointoncircle", "动点": "pointonpath",
     "删除": "delete", "重命名": "rename", "重定义": "redefine",
@@ -5696,7 +6132,7 @@ def _result_kind(name: str) -> str:
         "setcolor": "point", "setvisible": "point", "setwire": "point",
         "polyline": "polyline", "dilate": "point",
         "perpendicularline": "line", "foot": "point", "anglebisector": "line",
-        "area": "number", "perimeter": "number", "circumference": "number",
+        "area": "number", "volume": "number", "perimeter": "number", "circumference": "number",
         "incenter": "point", "incircle": "circle", "centroid": "point",
         "rigidpolygon": "polygon",
         "slider": "number", "angle": "angle",
@@ -5812,6 +6248,7 @@ COMMANDS = {
     "perpendicularbisector": _cmd_perpbis,
     "regularpolygon": _cmd_regularpolygon,
     "area": _cmd_area,
+    "volume": _cmd_volume,
     "perimeter": _cmd_perimeter,
     "circumference": _cmd_circumference,
     "incenter": _cmd_incenter,

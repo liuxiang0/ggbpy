@@ -80,7 +80,7 @@
       solid: { sphere: '球', plane: '平面', cube: '立方体', cone: '圆锥', cylinder: '圆柱',
                prism: '棱柱', pyramid: '棱锥', tetrahedron: '正四面体', octahedron: '正八面体',
                hexahedron: '正六面体', icosahedron: '正二十面体', dodecahedron: '正十二面体',
-               segment: '线段', line3d: '直线' }
+               segment: '线段', line3d: '直线', section: '截面' }
     },
     en: {
       undo: '↶ Undo', redo: '↷ Redo', snap: 'Snap', demo: 'Demo', grid: 'Grid', axes: 'Axes',
@@ -151,7 +151,7 @@
       solid: { sphere: 'Sphere', plane: 'Plane', cube: 'Cube', cone: 'Cone', cylinder: 'Cylinder',
                prism: 'Prism', pyramid: 'Pyramid', tetrahedron: 'Tetrahedron', octahedron: 'Octahedron',
                hexahedron: 'Hexahedron', icosahedron: 'Icosahedron', dodecahedron: 'Dodecahedron',
-               segment: 'Segment', line3d: 'Line' }
+               segment: 'Segment', line3d: 'Line', section: 'Section' }
     }
   };
   var MSG_MAP_EN = {
@@ -2133,6 +2133,21 @@
           }
           faces.push({ poly: ringPts, z: zr / ringPts.length, color: 'rgba(217,70,239,.06)', stroke: 'rgba(217,70,239,.55)', wire: e.wire });
         }
+      } else if (e.objtype === 'section') {
+        // 平面截立体得到的截面多边形（任意空间平面）：填充 + 闭合边
+        var sPts = dt.pts || [];
+        if (sPts.length >= 3) {
+          var sPoly = [], zSs = 0;
+          for (var sPi = 0; sPi < sPts.length; sPi++) {
+            var sPr = proj3(sPts[sPi]);
+            sPoly.push(sPr);
+            zSs += sPr.z;
+          }
+          faces.push({ poly: sPoly, z: zSs / sPts.length, color: 'rgba(245,158,11,.22)', stroke: '#d97706', wire: false });
+        }
+        for (var sPe = 0; sPe < sPts.length; sPe++) {
+          segs.push([sPts[sPe], sPts[(sPe + 1) % sPts.length]]);
+        }
       } else if (e.objtype === 'segment' || e.objtype === 'line2d' || e.objtype === 'line3d') {
         segs.push([[dt.x1, dt.y1, dt.z1], [dt.x2, dt.y2, dt.z2]]);
       } else if (e.objtype === 'circle2d') {
@@ -2421,6 +2436,13 @@
     }
     if (el.objtype === 'plane') return dt.az || 0;
     if (el.objtype === 'sphere') return dt.cz || 0;
+    if (el.objtype === 'section') {
+      var sp = dt.pts || [];
+      if (!sp.length) return planeZ;
+      var sz = 0;
+      for (var si = 0; si < sp.length; si++) sz += sp[si][2];
+      return sz / sp.length;
+    }
     if (el.kind === 'point') return (el.z != null ? el.z : 0);
     return planeZ;
   }

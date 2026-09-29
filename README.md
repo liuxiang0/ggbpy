@@ -64,25 +64,27 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - 画家算法排序、hidden-line 遮挡虚线、逐对象线框/实体切换、坐标轴刻度
 - **3D 度量与变换（2026-09-29 修正）**：`Translate[三维点,(dx,dy,dz)]` 的 z 分量参与运算；`Rotate[三维点,角度,中心]` 绕「过中心、平行 z 轴」的轴旋转、z 不变；`Distance[三维点,三维点]` 用真三维距离；`Angle[A,B,C]` 三点含 z 时用真三维夹角（**单位仍为度**，与 2D 一致；绘制的弧仍为 xy 投影示意）。纯 2D 对象行为不变
 - **对象类型可读化**：`/api/state3d` 为每个 3D 对象附带 `solid` 字段（sphere/plane/cube/cone/cylinder/prism/pyramid/tetrahedron/octahedron/hexahedron/icosahedron/dodecahedron），3D 对象列表据此显示「球/圆锥/圆柱/正十二面体」等；`objtype` 保持历史值（多面体统一为 `polyhedron`）不变，旧脚本不受影响
+- **嵌套命令参数（2026-09-29 新增）**：实参位置可以直接写命令调用，如 `Cone[Circle[O,2],3]`、`Cube[Polygon[(0,0,0),(2,0,0),(2,2,0),(0,2,0)]]`、`Sphere[O,Distance[A,B]]`、`Intersect[Plane[O,(1,0,0),(0,1,0)],Plane[O,(0,1,0),(0,0,1)]]`。内层命令**就地求值成匿名辅助对象**（不进对象列表 / 撤销快照 / 序列化），父对象保留你输入的原始定义，撤销重做与 .ggk/.ggb 往返都会重新求值；最多嵌套 4 层，内层失败会带原文报错（如「嵌套命令失败 Circle[O,-1]：半径必须大于 0」）
+- **`Volume[立体]` 与 `Area[立体]`（2026-09-29 新增）**：`Volume[球/圆锥/圆柱]` 与 `Area[立体]` 走解析公式（精确），`Volume[棱柱/棱锥/立方体/五种正多面体]` 按闭合网格精确积分；中文别名 体积 / 表面积。示例：`V=Volume[Cylinder[c,4]]`、`A=Area[Sphere[O,2]]`、`Volume[Cone[Circle[O,2],3]]`。无限圆锥（`Cone[顶点,轴,半顶角]`）没有有限体积/表面积，会给出明确错误
+- **网格规范化（2026-09-29）**：所有立体在构造出口统一为「面内正确环序 + 外向法向」（历史上面序/朝向不一致，例如立方体顶面是蝴蝶结序 `[4,6,7,5]`、二十面体 20 个面里 10 个朝内）——体积积分、遮挡判断与外部工具消费网格因此可靠；检测矩阵断言每个立体 Euler 特征数 `V-E+F=2`、面全部外向、多面体体积等于棱长解析式
+- **3D 求交扩展（2026-09-29）**：新增 直线×平面 → 交点、平面×立体 → **截面多边形**（`objtype=section`，3D 视图橙色填充渲染，对象列表显示「截面」）、立体×直线/线段 → 交点（多交点用第 3 参数取第 n 个：`Intersect[cu,ln,2]`）、球×直线/线段 → 交点
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
-- **参数不能是嵌套命令**：`Cone[Circle[O,2],3]`、`Intersect[pl,Plane[...]]` 会报「参数不能是嵌套命令」，请先 `c=Circle[O,2]` 再 `Cone[c,3]`；顶层字面量形式（`Sphere[(1,1,1),2]`、`Segment[A,(0,0,0)]`、`Cube[正方形多边形]`）不受影响
-- **3D 求交仅两种**：面×面 → 交线、线段×面 → 交点；直线×面、体×面、体×线不支持（明确报错）；平行/重合平面会产出元素并带 `error`
-- **没有 `Volume`**；`Area`/`Perimeter` 只接受多边形/圆/圆锥曲线，不接受立体
+- **3D 求交边界**：支持 面×面（交线）、直线/线段×面、平面×立体（截面）、立体×直线/线段、球×直线/线段；**面×球（3D 圆）与 立体×立体尚未支持**，会明确报错；平行/重合平面、超出线段的交点会产出元素并带 `error`
 - **`.ggb` 导出跳过 3D**：GeoGebra XML 子集不支持 3D，导出时跳过 3D 元素及其级联引用，并在 XML 首部写入警告注释、响应头 `X-GGB-Warnings`（percent-encoded）给出提示 —— **3D 内容请用 .ggk 保存**
 - **SVG 导出只含 2D 视图**（3D 对象按设计跳过）
+- `Perimeter` 仍只接受多边形/圆（不接受立体；立体的周长无定义）
 
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-PORT=8091 ./run.sh &                    # 改动内核后必须重启服务，否则测的是旧代码
-bash devtools/run_3d_detection.sh       # 内核 142 + API 82 + 浏览器 56 项断言
+bash devtools/run_3d_detection.sh       # 内核 222 + API 89 + 浏览器 64 项断言（需服务运行）
 ```
 
-- `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 序列化 × 3D 度量语义）
-- `devtools/test_3d_api.py` —— API 层（`/api/state3d` schema、错误传播、undo/redo、`.ggb` 警告、`.ggk` 载入）
-- `devtools/verify_3d_ui_matrix.js` —— 浏览器层（15 个工具全部路径、退化与取消、工具切换、滑块驱动、像素校验、零 JS 错误）
+- `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交 × 序列化 × 3D 度量语义）
+- `devtools/test_3d_api.py` —— API 层（`/api/state3d` schema（含 section）、错误传播、undo/redo、`.ggb` 警告、`.ggk` 载入、功能验收）
+- `devtools/verify_3d_ui_matrix.js` —— 浏览器层（15 个工具全部路径、退化与取消、工具切换、滑块驱动、嵌套输入、截面渲染、像素校验、零 JS 错误）
 
 ### 定理证明器 / 脚本 / 导出 / 协作
 

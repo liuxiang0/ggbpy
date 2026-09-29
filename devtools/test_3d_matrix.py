@@ -262,15 +262,189 @@ if e13 is None:
           "%.6f" % c13.elements["an2"].value)
 
 # ---------------------------------------------------------------------------
-section("J. 嵌套命令参数 → 可操作错误提示")
-nested = [
-    ("Cone[Circle[O,2],3]", ["O=(0,0,0)"]),
-    ("Cylinder[Circle[O,2],3]", ["O=(0,0,0)"]),
-    ("P=Intersect[Plane[O,(1,0,0),(0,1,0)],Plane[O,(0,1,0),(0,0,1)]]", ["O=(0,0,0)"]),
-]
-for cmd, pre in nested:
-    c14, e14 = build(pre + [cmd])
-    check(cmd.split("=")[-1][:28] + " 提示明确", e14 is not None and "嵌套命令" in e14[1], str(e14))
+section("J. 嵌套命令参数（就地求值，匿名辅助不注册）")
+c14, e14 = build([
+    "O=(0,0,0)", "A3=(1,2,3)", "B3=(4,5,6)", "E1=(1,0,0)", "E2=(0,1,0)",
+    "k1=Cone[Circle[O,2],3]",
+    "k2=Cylinder[Circle[O,2],4]",
+    "k3=Sphere[Midpoint[(0,0,0),(2,2,0)],1]",
+    "k4=Sphere[O,Distance[A3,B3]]",
+    "x1=Intersect[Plane[O,E1,E2],Plane[O,(0,1,0),(0,0,1)]]",
+    "cu=Cube[Polygon[(0,0,0),(2,0,0),(2,2,0),(0,2,0)]]",
+])
+check("嵌套命令构造", e14 is None, str(e14))
+if e14 is None:
+    check("Cone[Circle[O,2],3] 底半径 2 / 高 3",
+          close(max(math.hypot(v[0], v[1]) for v in c14.elements["k1"].data["verts"]), 2.0, 1e-9)
+          and close(max(v[2] for v in c14.elements["k1"].data["verts"]), 3.0, 1e-9))
+    check("Cylinder[Circle[O,2],4] 顶点 96", len(c14.elements["k2"].data["verts"]) == 96)
+    mid = c14.elements["k3"]
+    check("Sphere[Midpoint[...],1] 球心 (1,1,0)", close(mid.data["cx"], 1.0) and close(mid.data["cy"], 1.0),
+          "(%s,%s)" % (mid.data["cx"], mid.data["cy"]))
+    check("Sphere[O,Distance[A3,B3]] r=√27", close(c14.elements["k4"].data["r"], math.sqrt(27), 1e-9),
+          "%.6f" % c14.elements["k4"].data["r"])
+    check("嵌套 Intersect[Plane[...],Plane[...]] 得交线", not c14.elements["x1"].error, str(c14.elements["x1"].error))
+    check("Cube[Polygon[...]] 8/6/12",
+          (len(c14.elements["cu"].data["verts"]), len(c14.elements["cu"].data["faces"]),
+           len(c14.elements["cu"].data["edges"])) == (8, 6, 12))
+    check("匿名辅助不进对象列表（11 条语句 = 11 个对象）", len(c14.order) == 11, "order=" + str(len(c14.order)))
+    check("匿名辅助不进 elements（无 _n 前缀）", not any(str(l).startswith("_n") for l in c14.order))
+    # 撤销 / 重做 / 序列化都不丢嵌套语义
+    c14.process("k5=Cone[Circle[O,1],2]")
+    n_a = len(c14.order)
+    c14.undo()
+    check("嵌套对象可撤销", "k5" not in c14.elements and len(c14.order) == n_a - 1)
+    c14.redo()
+    check("嵌套对象可重做且 solid 保留",
+          "k5" in c14.elements and c14.elements["k5"].solid == "cone")
+    txt14 = c14.save_json()
+    c17 = Construction()
+    c17.load_json(txt14)
+    check(".ggk 往返保留嵌套 defn", c17.elements["k1"].defn == "k1=Cone[Circle[O,2],3]", c17.elements["k1"].defn)
+    check(".ggk 往返嵌套对象有效", not c17.elements["k1"].error and not c17.elements["k3"].error)
+    # 错误路径（命令级错误 → 消息；元素级错误 → error 字段）
+    for bad, expect in [("Sphere[O,NoSuchCmd[1]]", "嵌套命令中不支持命令"),
+                        ("Midpoint[Sphere[O,1],1]", "不是点"),
+                        ("Cone[Circle[O,-1],3]", "嵌套命令失败")]:
+        c18 = Construction()
+        c18.process("O=(0,0,0)")
+        msg = c18.process("bad=" + bad)
+        el = c18.elements.get("bad")
+        hit = expect in msg or (el is not None and el.error and expect in el.error)
+        check("嵌套错误提示: " + bad, hit, msg[:70])
+    # 非嵌套路径同样不应静默使用无效底面圆
+    c18b = Construction()
+    c18b.process("O=(0,0,0)")
+    c18b.process("cc=Circle[O,-1]")
+    c18b.process("k=Cone[cc,3]")
+    el = c18b.elements.get("k")
+    check("无效底面圆 → 锥体带 error（不静默生成）",
+          el is not None and el.error and "底面圆无效" in el.error, str(getattr(el, "error", None)))
+
+# ---------------------------------------------------------------------------
+section("M. 网格完整性（面序 / 外向 / Euler / 体积）")
+def _newell_vol(vs, faces):
+    V = 0.0
+    for f in faces:
+        a = vs[f[0]]
+        for i in range(1, len(f) - 1):
+            b, cc = vs[f[i]], vs[f[i + 1]]
+            V += (a[0] * (b[1] * cc[2] - b[2] * cc[1]) - a[1] * (b[0] * cc[2] - b[2] * cc[0])
+                  + a[2] * (b[0] * cc[1] - b[1] * cc[0]))
+    return V / 6.0
+
+
+def _outward(vs, faces):
+    ctr = [sum(v[i] for v in vs) / len(vs) for i in range(3)]
+    for f in faces:
+        nx = ny = nz = 0.0
+        for i in range(len(f)):
+            a, b = vs[f[i]], vs[f[(i + 1) % len(f)]]
+            nx += (a[1] - b[1]) * (a[2] + b[2])
+            ny += (a[2] - b[2]) * (a[0] + b[0])
+            nz += (a[0] - b[0]) * (a[1] + b[1])
+        fc = [sum(vs[i][k] for i in f) / len(f) for k in range(3)]
+        if nx * (fc[0] - ctr[0]) + ny * (fc[1] - ctr[1]) + nz * (fc[2] - ctr[2]) <= 1e-12:
+            return False, f
+    return True, None
+
+
+c19, e19 = build(["O=(0,0,0)", "c=Circle[O,2]", "cu=Cube[O,(2,0,0)]", "co=Cone[c,3]",
+                  "cy=Cylinder[c,4]", "pr=Prism[O,(2,0,0),(0,2,0)]", "py=Pyramid[O,(2,0,0),(0,2,0)]",
+                  "te=Tetrahedron[O,(2,0,0),(0,2,0)]", "oc=Octahedron[O,(2,0,0),(0,2,0)]",
+                  "he=Hexahedron[O,(2,0,0),(0,2,0)]", "ic=Icosahedron[O,(2,0,0),(0,2,0)]",
+                  "do=Dodecahedron[O,(2,0,0),(0,2,0)]"])
+check("网格用例构造", e19 is None, str(e19))
+if e19 is None:
+    for lbl in ["cu", "co", "cy", "pr", "py", "te", "oc", "he", "ic", "do"]:
+        d = c19.elements[lbl].data
+        vs, faces = d["verts"], d["faces"]
+        check(lbl + " Euler V-E+F=2", len(vs) - len(d["edges"]) + len(faces) == 2,
+              "%d-%d+%d" % (len(vs), len(d["edges"]), len(faces)))
+        ok, badf = _outward(vs, faces)
+        check(lbl + " 面全部外向", ok, str(badf))
+        check(lbl + " 散度体积 > 0", _newell_vol(vs, faces) > 1e-9, "%.6f" % _newell_vol(vs, faces))
+    # 多面体体积 = 棱长解析式（棱全等的正多面体）
+    for lbl, form in [("cu", lambda e: e ** 3), ("te", lambda e: e ** 3 / (6 * math.sqrt(2))),
+                      ("oc", lambda e: math.sqrt(2) / 3 * e ** 3),
+                      ("ic", lambda e: 5 / 12 * (3 + math.sqrt(5)) * e ** 3),
+                      ("do", lambda e: (15 + 7 * math.sqrt(5)) / 4 * e ** 3)]:
+        d = c19.elements[lbl].data
+        vs = d["verts"]
+        vv = abs(_newell_vol(vs, d["faces"]))
+        e = min(math.dist(vs[a], vs[b]) for a, b in d["edges"])
+        check(lbl + " 网格体积 = 棱长解析式", close(vv, form(e), 1e-6 * max(1.0, abs(form(e)))),
+              "mesh=%.6f analytic=%.6f" % (vv, form(e)))
+
+# ---------------------------------------------------------------------------
+section("N. Volume / Area 立体")
+c20, e20 = build(["O=(0,0,0)", "c=Circle[O,2]", "cu=Cube[O,(2,0,0)]", "sp=Sphere[O,2]",
+                  "co=Cone[c,3]", "cy=Cylinder[c,4]", "co3=Cone[O,(0,0,1),30]",
+                  "sq=Polygon[(0,0,0),(2,0,0),(2,2,0),(0,2,0)]"])
+check("体积/表面积用例构造", e20 is None, str(e20))
+if e20 is None:
+    vol_area = [
+        ("V_cu", "Volume[cu]", 8.0), ("V_sp", "Volume[sp]", 4 / 3 * math.pi * 8),
+        ("V_co", "Volume[co]", math.pi * 4), ("V_cy", "Volume[cy]", math.pi * 16),
+        ("V_nest", "Volume[Cube[sq]]", 8.0),
+        ("A_cu", "Area[cu]", 24.0), ("A_sp", "Area[sp]", 4 * math.pi * 4),
+        ("A_co", "Area[co]", math.pi * 2 * (2 + math.sqrt(13))),
+        ("A_cy", "Area[cy]", 2 * math.pi * 2 * 6),
+        ("V_alias", "体积[cy]", math.pi * 16), ("A_alias", "表面积[sp]", 4 * math.pi * 4),
+    ]
+    for lbl, cmd, exp in vol_area:
+        c20.process(lbl + "=" + cmd)
+        el = c20.elements.get(lbl)
+        got = getattr(el, "value", None)
+        check("%s = %.6f" % (cmd, exp), got is not None and close(got, exp, 1e-9),
+              "None" if got is None else "%.6f" % got)
+    c20.process("V_te=Volume[Tetrahedron[O,(2,0,0),(0,2,0)]]")
+    check("Volume[嵌套 Tetrahedron] > 0", c20.elements["V_te"].value > 0, "%.6f" % c20.elements["V_te"].value)
+    # 无限圆锥：报错（元素 error）
+    c20.process("bad_v=Volume[co3]")
+    c20.process("bad_a=Area[co3]")
+    check("无限圆锥 Volume 报错", bool(c20.elements["bad_v"].error), str(c20.elements["bad_v"].error))
+    check("无限圆锥 Area 报错", bool(c20.elements["bad_a"].error), str(c20.elements["bad_a"].error))
+    r = c20.process("bad2=Volume[O]")
+    check("Volume 非立体报错", "需要 3D 立体" in r, r)
+    check("2D 多边形 Area 不变", close(c20.process("A_sq=Area[sq]") and c20.elements["A_sq"].value, 4.0))
+
+# ---------------------------------------------------------------------------
+section("O. 3D 求交扩展")
+c21, e21 = build(["O=(0,0,0)", "A3=(1,2,3)", "B3=(4,5,6)", "c=Circle[O,2]",
+                  "pl=Plane[O,(1,0,0),(0,1,0)]", "cu=Cube[O,(2,0,0)]", "sp=Sphere[O,2]",
+                  "ln=Line[A3,B3]", "sg=Segment[(0,0,2),(0,0,6)]",
+                  "ix1=Intersect[ln,pl]", "ix2=Intersect[pl,ln]",
+                  "sec=Intersect[pl,cu]", "ix3=Intersect[cu,ln]", "ix4=Intersect[ln,sp,2]",
+                  "ix5=Intersect[sp,sg]"])
+check("求交用例构造", e21 is None, str(e21))
+if e21 is None:
+    p1 = c21.elements["ix1"]
+    check("直线×面 → 交点 (-2,-1,0)", p1.kind == "point" and close(p1.x, -2.0) and close(p1.y, -1.0) and close(p1.z, 0.0),
+          "(%s,%s,%s)" % (p1.x, p1.y, p1.z))
+    check("面×直线 交换顺序一致", c21.elements["ix2"].kind == "point" and close(c21.elements["ix2"].x, -2.0))
+    sec = c21.elements["sec"]
+    check("平面×立体 → 截面 section", getattr(sec, "objtype", "") == "section" and sec.data["count"] >= 3,
+          str(getattr(sec, "objtype", None)))
+    if getattr(sec, "objtype", "") == "section":
+        zs = set(round(p[2], 6) for p in sec.data["pts"])
+        check("截面点共面（z=0）", zs == {0.0}, str(zs))
+    check("立体×直线 → 交点", c21.elements["ix3"].kind == "point" and not c21.elements["ix3"].error,
+          str(c21.elements["ix3"].error))
+    check("球×直线 第 2 交点（idx=2）", c21.elements["ix4"].kind == "point" and not c21.elements["ix4"].error,
+          str(c21.elements["ix4"].error))
+    check("球×线段 → 交点", c21.elements["ix5"].kind == "point" and not c21.elements["ix5"].error,
+          str(c21.elements["ix5"].error))
+    # 范围与不支持的组合
+    c21.process("oob=Intersect[sg,pl]")
+    check("线段×面 超出线段 → error", bool(c21.elements["oob"].error), str(c21.elements["oob"].error))
+    c21.process("pl2=Plane[(0,0,5),(1,0,5),(0,1,5)]")
+    c21.process("par=Intersect[pl,pl2]")
+    check("平行平面 → error", bool(c21.elements["par"].error), str(c21.elements["par"].error))
+    r = c21.process("bad=Intersect[cu,sp]")
+    check("立体×球 明确不支持", "3D 求交暂不支持" in r, r[:80])
+    r = c21.process("bad2=Intersect[pl,sp]")
+    check("面×球 明确不支持（圆暂缺）", "3D 求交暂不支持" in r, r[:80])
 
 # ---------------------------------------------------------------------------
 section("K. 序列化（.ggk 往返 / undo-redo / .ggb 跳过 3D）")
@@ -317,22 +491,25 @@ if e15 is None:
     check(".ggb 跳过级联引用", 'name="Distance"' not in xml)
 
 # ---------------------------------------------------------------------------
-section("L. 3D 求交的既有限制（锁定当前行为，超出即为变化）")
+section("L. 3D 求交的既定边界（锁定当前行为，超出即为变化）")
 c17, e17 = build([
-    "O=(0,0,0)", "Z=(0,0,0)", "A3=(1,2,3)", "B3=(4,5,6)",
+    "O=(0,0,0)", "A3=(1,2,3)", "B3=(4,5,6)",
     "pl1=Plane[O,(1,0,0),(0,1,0)]", "pl2=Plane[(0,0,5),(1,0,5),(0,1,5)]",
-    "sg=Segment[A3,B3]", "ln=Line[A3,B3]", "sp=Sphere[O,2]",
+    "sg=Segment[A3,B3]", "cu=Cube[O,(2,0,0)]", "sp=Sphere[O,2]",
 ])
-check("求交用例构造", e17 is None, str(e17))
+check("边界用例构造", e17 is None, str(e17))
 if e17 is None:
     c17.process("ix1=Intersect[pl1,pl2]")
     check("面×面（平行）产出元素并带 error", c17.elements["ix1"].error is not None, str(c17.elements["ix1"].error))
     c17.process("ix2=Intersect[sg,pl1]")
     check("线段×面超出线段 → 带 error", c17.elements["ix2"].error is not None, str(c17.elements["ix2"].error))
-    r3 = c17.process("ix3=Intersect[ln,pl1]")
-    check("直线×面暂不支持（明确报错）", not r3.startswith("OK") and "3D 求交" in r3, r3)
-    r4 = c17.process("ix4=Intersect[sp,ln]")
-    check("球×直线暂不支持（明确报错）", not r4.startswith("OK") and "3D 求交" in r4, r4)
+    c17.process("ix5=Intersect[pl1,cu]")
+    check("平面×立体仍然可用（回归）", getattr(c17.elements["ix5"], "objtype", "") == "section",
+          str(getattr(c17.elements["ix5"], "objtype", None)))
+    r6 = c17.process("ix6=Intersect[cu,cu]")
+    check("立体×立体明确不支持", not r6.startswith("OK") and "3D 求交暂不支持" in r6, r6[:70])
+    r7 = c17.process("ix7=Intersect[pl1,sp]")
+    check("面×球明确不支持（3D 圆暂缺）", not r7.startswith("OK") and "3D 求交暂不支持" in r7, r7[:70])
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

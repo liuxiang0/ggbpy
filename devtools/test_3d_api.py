@@ -128,6 +128,7 @@ SETUP = [
     "O=(0,0,0)", "A3=(1,2,3)", "B3=(4,5,6)", "cc=Circle[O,2]",
     "sg=Segment[A3,B3]", "ln=Line[A3,B3]", "pl=Plane[O,(1,0,0),(0,1,0)]",
     "sp=Sphere[O,2]", "cu=Cube[O,(2,0,0)]", "co=Cone[cc,3]", "cy=Cylinder[cc,3]",
+    "sec=Intersect[pl,cu]",
     "pr=Prism[O,(2,0,0),(0,2,0)]", "py=Pyramid[O,(2,0,0),(0,2,0)]",
     "te=Tetrahedron[O,(2,0,0),(0,2,0)]", "oc=Octahedron[O,(2,0,0),(0,2,0)]",
     "he=Hexahedron[O,(2,0,0),(0,2,0)]", "ic=Icosahedron[O,(2,0,0),(0,2,0)]",
@@ -141,7 +142,7 @@ for t in SETUP:
         check("API 创建 " + t, False, json.dumps(r1, ensure_ascii=False)[:120])
 check("全部 3D 用例已创建", ok_all)
 els = state3d()
-check("state3d 元素数 = 18", len(els) == 18, str(len(els)))
+check("state3d 元素数 = 19", len(els) == 19, str(len(els)))
 
 tbl = [
     # label, kind, objtype, solid, 必需 data 键
@@ -160,6 +161,7 @@ tbl = [
     ("he", "geo3d", "polyhedron", "hexahedron", ["verts", "faces", "edges"]),
     ("ic", "geo3d", "polyhedron", "icosahedron", ["verts", "faces", "edges"]),
     ("do", "geo3d", "polyhedron", "dodecahedron", ["verts", "faces", "edges"]),
+    ("sec", "geo3d", "section", None, ["pts", "normal", "count"]),
 ]
 for lbl, kind, objtype, solid, keys in tbl:
     e = find(els, lbl)
@@ -209,10 +211,10 @@ els = state3d()
 for lbl in ("bad1", "bad2", "bad3"):
     e = find(els, lbl)
     check("错误元素 " + lbl + " 带 error", e is not None and e.get("error"), str(e.get("error") if e else None))
-st, r = put("bad5=Cone[Cone[O,2],1]")
+st, r = put("bad5=Sphere[O,NoSuchCmd[1]]")
 check("命令级错误 HTTP 200", st == 200, "HTTP %s" % st)
 check("命令级错误 ok=false + 可操作消息",
-      (r or {}).get("ok") is False and "嵌套命令" in str((r or {}).get("message")),
+      (r or {}).get("ok") is False and "嵌套命令中不支持命令" in str((r or {}).get("message")),
       str((r or {}).get("message"))[:80])
 st, r = put("bad6=Sphere[O,-1]")
 els = state3d()
@@ -287,6 +289,31 @@ check(".ggk 载入后 3D 元素齐全", find(els, "co") is not None and find(els
 e = find(els, "co")
 check(".ggk 载入后 solid 保留", e is not None and e.get("solid") == "cone", str(e.get("solid") if e else None))
 check(".ggk 载入后 z 保留", close((find(els, "A3") or {}).get("z", 0), 3.0), str((find(els, "A3") or {}).get("z")))
+
+# ---------------------------------------------------------------------------
+section("G. 功能验收：嵌套命令 / Volume·Area / 3D 求交截面")
+clear()
+for t in ["O=(0,0,0)", "c=Circle[O,2]", "pl=Plane[O,(1,0,0),(0,1,0)]",
+          "cu=Cube[O,(2,0,0)]", "sp=Sphere[O,2]", "ln=Line[(1,2,3),(4,5,6)]",
+          "k=Cone[Circle[O,2],3]", "V=Volume[k]", "A=Area[sp]",
+          "sec=Intersect[pl,cu]", "ix=Intersect[ln,pl]"]:
+    put(t)
+els = state3d()
+k = find(els, "k")
+check("嵌套命令经 API 生效（solid=cone / 49 顶点）",
+      k is not None and k.get("solid") == "cone" and len((k.get("data") or {}).get("verts", [])) == 49,
+      "%s/%s" % (k.get("solid") if k else None, len((k.get("data") or {}).get("verts", [])) if k else None))
+sec = find(els, "sec")
+check("平面×立体 → section 元素", sec is not None and sec.get("objtype") == "section"
+      and (sec.get("data") or {}).get("count", 0) >= 3,
+      "%s/%s" % (sec.get("objtype") if sec else None, (sec.get("data") or {}).get("count") if sec else None))
+ix = find(els, "ix")
+check("直线×面 → 带 z 的交点", ix is not None and ix.get("kind") == "point" and abs(ix.get("z", 0)) < 1e-9,
+      "z=%s" % (ix.get("z") if ix else None))
+st, d = jget("/api/state")
+vals = {e.get("label"): e.get("value") for e in (d or {}).get("elements", [])}
+check("API Volume[Cone[Circle[O,2],3]] = 4π", "12.566371" in str(vals.get("V")), str(vals.get("V")))
+check("API Area[Sphere[O,2]] = 16π", "50.265482" in str(vals.get("A")), str(vals.get("A")))
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

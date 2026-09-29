@@ -328,8 +328,65 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   check('.ggk 往返后圆锥恢复', after.length === 1 && !after[0].error && after[0].solid === 'cone',
     JSON.stringify(after.map(e => e.solid + ':' + e.error)));
 
-  // ---- G. JS 错误 ----
-  section('G. JS 错误');
+  // ---- G. 功能验收：嵌套输入 / 截面渲染 / 体积 ----
+  section('G. 嵌套命令输入 / 截面渲染 / Volume·Area');
+  await reset(['O=(0,0,0)']);
+  // 通过真实输入框提交嵌套命令
+  const cmdBox = await page.$('#cmd');
+  check('主输入框存在', !!cmdBox, cmdBox ? 'ok' : '未找到 #cmd');
+  if (cmdBox) {
+    await page.fill('#cmd', 'k=Cone[Circle[O,2],3]');
+    await page.press('#cmd', 'Enter');
+    await page.waitForTimeout(900);
+    let ks = (await state3d()).filter(e => /Cone\[/.test(e.defn || ''));
+    check('UI 输入嵌套命令 → 圆锥生成', ks.length === 1 && !ks[0].error && ks[0].solid === 'cone',
+      JSON.stringify(ks.map(e => e.defn + ':' + e.error)));
+    check('UI 状态栏无错误提示', await page.evaluate(() => {
+      const el = document.querySelector('#msg') || document.querySelector('#status');
+      return !el || el.textContent.indexOf('错误') === -1;
+    }), await page.evaluate(() => { const el = document.querySelector('#msg') || document.querySelector('#status'); return el ? el.textContent.slice(0, 60) : ''; }));
+  }
+  // 平面截立体 → 截面元素 + 画布确实画出
+  await reset(['O=(0,0,0)', 'pl=Plane[O,(1,0,0),(0,1,0)]', 'cu=Cube[O,(2,0,0)]']);
+  await inp('sec=Intersect[pl,cu]');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+  await open3d();
+  await page.waitForTimeout(600);
+  const secs = (await state3d()).filter(e => e.objtype === 'section');
+  check('截面元素出现在 state3d', secs.length === 1 && secs[0].data.count >= 3,
+    JSON.stringify(secs.map(e => e.data && e.data.count)));
+  const secPx = await nonBgPixels();
+  check('截面已渲染（像素 > 500）', secPx > 500, 'non-bg pixels=' + secPx);
+  // 3D 对象列表应显示「截面」类型名
+  const listTxt = await page.evaluate(() => {
+    const el = document.querySelector('#obj-list') || document.querySelector('.obj-list') || document.body;
+    return el ? el.textContent : '';
+  });
+  check('3D 列表显示截面类型名', listTxt.indexOf('截面') !== -1 || listTxt.indexOf('Section') !== -1,
+    listTxt.replace(/\s+/g, ' ').slice(0, 80));
+  // Volume / Area 经 UI 输入
+  await page.fill('#cmd', 'V=Volume[cu]');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(700);
+  const vEl = await page.evaluate(async () => {
+    const st = await (await fetch('/api/state')).json();
+    const e = st.elements.filter(x => x.label === 'V')[0];
+    return e ? e.value : null;
+  });
+  check('UI 输入 Volume[cu] = 8', vEl && vEl.indexOf('8') !== -1, String(vEl));
+  await page.fill('#cmd', 'A=Area[cu]');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(700);
+  const aEl = await page.evaluate(async () => {
+    const st = await (await fetch('/api/state')).json();
+    const e = st.elements.filter(x => x.label === 'A')[0];
+    return e ? e.value : null;
+  });
+  check('UI 输入 Area[cu] = 24', aEl && aEl.indexOf('24') !== -1, String(aEl));
+
+  // ---- H. JS 错误 ----
+  section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));
 
   console.log('\n' + '='.repeat(60));
