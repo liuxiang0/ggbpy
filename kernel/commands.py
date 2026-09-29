@@ -3329,6 +3329,8 @@ def _make_ineq_general(cons, label, op, lhs, rhs):
 def _list_defn(items, itemkind):
     if itemkind == "point":
         return "{" + ", ".join("(" + _fmt(a) + "," + _fmt(b) + ")" for a, b in items) + "}"
+    if itemkind == "point3d":
+        return "{" + ", ".join("(" + _fmt(a) + "," + _fmt(b) + "," + _fmt(c) + ")" for a, b, c in items) + "}"
     return "{" + ", ".join(_fmt(v) for v in items) + "}"
 
 
@@ -3897,6 +3899,136 @@ def _ix_lin_conic(cons, defn, lin, conic, idx):
 
 # ---- 3D ----
 
+def _cmd_surface(cons, defn, args):
+    """Surface[z=f(x,y), xmin, xmax, ymin, ymax, 网格数?]：显式曲面网格。
+
+    网格元素复用 polyhedron 渲染/导出/求交链路，solid="surface" 区分类型；
+    表达式可引用既有滑块（重算时取当前值），开放式曲面不做外向规范化。
+    """
+    if len(args) not in (5, 6):
+        raise GeoError("Surface 需要 z=f(x,y), xmin, xmax, ymin, ymax[, 网格数]")
+    expr = args[0]
+    xmin, xmax = eval_number(cons, args[1]), eval_number(cons, args[2])
+    ymin, ymax = eval_number(cons, args[3]), eval_number(cons, args[4])
+    n = int(eval_number(cons, args[5])) if len(args) == 6 else 24
+    if xmax <= xmin or ymax <= ymin:
+        raise GeoError("Surface 的范围需满足 xmax > xmin 且 ymax > ymin")
+    n = max(2, min(n, 96))
+    el = Geo3D(label_of(defn), defn)
+    el.objtype = "polyhedron"
+    el.solid = "surface"
+    deps = _num_deps(cons, defn)
+    el.set_deps(deps, _surface_compute(expr, xmin, xmax, ymin, ymax, n))
+    return cons.add(el)
+
+
+def _surface_compute(expr, xmin, xmax, ymin, ymax, n):
+    """构造 z=f(x,y) 的 (n+1)² 网格（面片绕向一致；不做凸体外向规范化）。"""
+    import sympy
+
+    def fn(deps):
+        vals = {}
+        for d in deps:
+            if hasattr(d, "value"):
+                vals[d.label] = d.value
+        try:
+            body = expr.replace("^", "**")
+            e = sympy.sympify(body, locals={**vals, "pi": sympy.pi, "e": sympy.E})
+            f = sympy.lambdify(sympy.symbols("x y"), e, "numpy")
+            xs = [xmin + (xmax - xmin) * i / n for i in range(n + 1)]
+            ys = [ymin + (ymax - ymin) * j / n for j in range(n + 1)]
+            verts, faces, edges = [], [], []
+            for j in range(n + 1):
+                for i in range(n + 1):
+                    z = f(xs[i], ys[j])
+                    z = float(z) if not hasattr(z, "__len__") else float(z[0])
+                    if not math.isfinite(z):
+                        raise GeoError("曲面在该网格点取值非有限（f(%.3f,%.3f) 可能为奇点）" % (xs[i], ys[j]))
+                    verts.append([xs[i], ys[j], z])
+            def vid(i, j):
+                return j * (n + 1) + i
+            for j in range(n):
+                for i in range(n):
+                    faces.append([vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)])
+                    edges.append([vid(i, j), vid(i + 1, j)])
+                    edges.append([vid(i, j), vid(i, j + 1)])
+            for i in range(n):
+                edges.append([vid(i, n), vid(i + 1, n)])
+            for j in range(n):
+                edges.append([vid(n, j), vid(n, j + 1)])
+        except GeoError:
+            raise
+        except Exception as ex:
+            raise GeoError("曲面表达式无法求值：" + str(ex)[:80])
+        return {"objtype": "polyhedron", "solid": "surface",
+                "data": {"verts": verts, "faces": faces, "edges": edges,
+                         "grid": n, "expr": expr}}
+    return fn
+
+
+def _cmd_mesh(cons, defn, args):
+    """Mesh[网格id]：把 OBJ 导入的网格数据建成 3D 网格元素（objtype=polyhedron, solid=mesh）。"""
+    if len(args) != 1:
+        raise GeoError("Mesh 需要一个网格 id（由 OBJ 导入生成）")
+    mid = args[0].strip()
+    from . import mesh_store
+    rec = mesh_store.get(mid)
+    if rec is None:
+        raise GeoError("找不到网格数据（请先导入 OBJ）: " + mid)
+    data = {"verts": rec["verts"], "faces": rec["faces"],
+            "edges": mesh_store.edges_of(rec["faces"]), "meshid": mid}
+    el = _mk(cons, Geo3D, "geo3d", defn, [],
+             lambda d: {"objtype": "polyhedron", "solid": "mesh", "data": data})
+    el.meshid = mid
+    return el
+
+
+def _cmd_fitplane(cons, defn, args):
+    """FitPlane[点列表]：三维点云最小二乘拟合平面（法向 = 协方差最小特征向量）。"""
+    if len(args) != 1:
+        raise GeoError("FitPlane 需要点列表，如 {(0,0,0),(1,0,0),(0,1,1),(1,1,1)}")
+    L = _list_arg(cons, args[0])
+    if L.itemkind not in ("point", "point3d"):
+        raise GeoError("FitPlane 需要点列表（三维点，如 {(0,0,0),(1,0,0),(0,1,1)}）")
+    return _mk(cons, Geo3D, "geo3d", defn, [L], lambda d: _fitplane_state(d[0].items))
+
+
+def _fitplane_state(items):
+    import numpy as np
+    pts = np.array([[float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)] for p in items])
+    if len(pts) < 3:
+        raise GeoError("FitPlane 至少需要 3 个点")
+    ctr = pts.mean(axis=0)
+    q = pts - ctr
+    cov = q.T @ q
+    w, v = np.linalg.eigh(cov)        # 升序：w[0] ≤ w[1] ≤ w[2]
+    if w[2] <= 1e-12:
+        raise GeoError("点云重合，无法确定平面")
+    if w[1] <= 1e-9 * w[2]:
+        raise GeoError("点云共线（秩 1），无法确定平面")
+    nrm = v[:, 0]                     # 最小特征值对应法向
+    ln = float(np.linalg.norm(nrm))
+    if ln < 1e-12:
+        raise GeoError("点云退化，无法确定法向")
+    nx, ny, nz = (nrm / ln).tolist()
+    dd = -(nx * ctr[0] + ny * ctr[1] + nz * ctr[2])
+    # 平面内正交基（供渲染/面片使用）
+    ref = [1.0, 0.0, 0.0] if abs(nx) < 0.9 else [0.0, 1.0, 0.0]
+    ux = ref[1] * nz - ref[2] * ny
+    uy = ref[2] * nx - ref[0] * nz
+    uz = ref[0] * ny - ref[1] * nx
+    lu = math.sqrt(ux * ux + uy * uy + uz * uz)
+    ux, uy, uz = ux / lu, uy / lu, uz / lu
+    vx = ny * uz - nz * uy
+    vy = nz * ux - nx * uz
+    vz = nx * uy - ny * ux
+    return {"objtype": "plane", "solid": "plane",
+            "data": {"a": nx, "b": ny, "c": nz, "d": dd,
+                     "ax": float(ctr[0]), "ay": float(ctr[1]), "az": float(ctr[2]),
+                     "ux": ux, "uy": uy, "uz": uz, "vx": vx, "vy": vy, "vz": vz,
+                     "fit": True}}
+
+
 def _cmd_sphere(cons, defn, args):
     if len(args) != 2:
         raise GeoError("Sphere 需要 球心 和 球面点或半径")
@@ -4438,6 +4570,8 @@ def _solid_volume(el) -> float:
         raise GeoError("无限圆锥没有有限体积")
     if getattr(el, "objtype", "") == "sphere":
         return 4.0 / 3.0 * math.pi * d["r"] ** 3
+    if getattr(el, "solid", "") == "surface":
+        raise GeoError("曲面没有体积（可用 Area 求曲面面积）")
     if "verts" in d:
         return _mesh_volume(d)
     raise GeoError("Volume 不支持该对象（需要球/圆锥/圆柱/棱柱/棱锥/正多面体）")
@@ -6472,6 +6606,8 @@ ALIASES = {
     "平行线": "perpendicularline", "垂线": "perpendicularline", "垂足": "foot",
     "角平分线": "anglebisector", "中垂线": "perpendicularbisector", "正多边形": "regularpolygon",
     "面积": "area", "体积": "volume", "表面积": "area", "周长": "perimeter",
+    "曲面": "surface", "拟合平面": "fitplane", "平面拟合": "fitplane",
+    "网格": "mesh", "导入网格": "mesh",
     "内切圆": "incircle", "内心": "incenter", "重心": "centroid",
     "滑动条": "slider", "文本": "text", "轨迹": "locus", "圆上点": "pointoncircle", "动点": "pointonpath",
     "删除": "delete", "重命名": "rename", "重定义": "redefine",
@@ -6535,6 +6671,7 @@ def _result_kind(name: str) -> str:
         "variance": "number", "stdev": "number", "min": "number", "max": "number",
         "length": "number", "sort": "list", "fitline": "line", "fitpoly": "function",
         "sphere": "geo3d", "plane": "geo3d", "cube": "geo3d",
+        "surface": "geo3d", "fitplane": "geo3d", "mesh": "geo3d",
         "cone": "geo3d", "cylinder": "geo3d", "prism": "geo3d", "pyramid": "geo3d",
         "tetrahedron": "geo3d", "octahedron": "geo3d", "hexahedron": "geo3d", "icosahedron": "geo3d", "dodecahedron": "geo3d",
         "parametric": "parametric", "polar": "polar", "implicit": "implicit",
@@ -6623,7 +6760,8 @@ COMMANDS = {
     "fitline": _cmd_fitline,
     "fitpoly": _cmd_fitpoly,
     "fitexpr": _cmd_fitexpr,
-    "sphere": _cmd_sphere,
+    "sphere": _cmd_sphere, "surface": _cmd_surface, "fitplane": _cmd_fitplane,
+    "mesh": _cmd_mesh,
     "plane": _cmd_plane,
     "cube": _cmd_cube,
     "cone": _cmd_cone,
@@ -6755,13 +6893,18 @@ def process_line(cons, line: str) -> List:
         if label is None:
             label = cons.auto_label("number")
         defn = label + "=" + lname + "(" + arg + ")"
-        if L.itemkind == "point":
+        if L.itemkind in ("point", "point3d"):
+            three = L.itemkind == "point3d"
+
             def fn(d):
                 idx = int(eval_number(cons, arg)) - 1
                 items = d[0].items
                 if idx < 0 or idx >= len(items):
                     raise GeoError("索引越界: " + arg)
-                return {"x": items[idx][0], "y": items[idx][1]}
+                p = items[idx]
+                if three:
+                    return {"x": p[0], "y": p[1], "z": p[2]}
+                return {"x": p[0], "y": p[1]}
             return [_mk(cons, GeoPoint, "point", defn, [L], fn)]
         def fn(d):
             idx = int(eval_number(cons, arg)) - 1

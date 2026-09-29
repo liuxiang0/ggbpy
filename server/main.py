@@ -326,6 +326,23 @@ def image_upload(b: ImageBody):
         return {"ok": False, "message": str(e)}
 
 
+@app.post("/api/mesh")
+async def import_mesh(request: Request):
+    """导入 OBJ 网格文本 → 存入网格仓库，返回 id（前端随后输入 m=Mesh[id]）。"""
+    try:
+        from kernel.mesh_io import parse_obj
+        from kernel import mesh_store
+        text = (await request.body()).decode("utf-8", errors="replace")
+        verts, faces, warnings = parse_obj(text)
+        mid = mesh_store.put(verts, faces)
+        rec = mesh_store.get(mid)
+        return {"ok": True, "id": mid, "verts": len(rec["verts"]), "faces": len(rec["faces"]),
+                "edges": len(mesh_store.edges_of(rec["faces"])), "warnings": warnings,
+                "message": "已导入网格 %d 顶点 / %d 面" % (len(rec["verts"]), len(rec["faces"]))}
+    except Exception as e:
+        return {"ok": False, "message": "导入失败: " + str(e)}
+
+
 @app.get("/api/image/{iid}")
 def image_get(iid: str):
     """按 id 返回图片原始字节（浏览器缓存由 <img> 处理）。"""

@@ -416,6 +416,70 @@ check("空间圆×空间圆 → 交点 (1,√3,0)", qq is not None and abs(qq.ge
       and abs(abs(qq.get("y", 0)) - 3 ** 0.5) < 1e-9, "(%s,%s,%s)" % (qq.get("x"), qq.get("y"), qq.get("z")) if qq else None)
 
 # ---------------------------------------------------------------------------
+section("J. 第七批：曲面 / 3D 点列表与 FitPlane / OBJ 导入")
+clear()
+for t in ["surf=Surface[x^2+y^2,-1,1,-1,1,8]", "A_s=Area[surf]",
+          "L={(0,0,1),(1,0,1.5),(0,1,0.75),(1,1,1.25)}", "fp=FitPlane[L]"]:
+    put(t)
+els = state3d()
+surf = find(els, "surf")
+check("Surface 经 API 建成（81 顶点）",
+      surf is not None and len((surf.get("data") or {}).get("verts", [])) == 81
+      and surf.get("solid") == "surface",
+      "%s/%s" % (surf.get("solid") if surf else None,
+                 len((surf.get("data") or {}).get("verts", [])) if surf else None))
+fp = find(els, "fp")
+check("FitPlane 经 API 得平面元素", fp is not None and fp.get("objtype") == "plane",
+      "%s" % (fp.get("objtype") if fp else None))
+st, d = jget("/api/state")
+vals = {e.get("label"): e.get("value") for e in (d or {}).get("elements", [])}
+check("API Area[曲面] > 0", "A_s" in vals and vals["A_s"] and float(str(vals["A_s"]).split()[-1]) > 0,
+      str(vals.get("A_s")))
+# OBJ 导入
+OBJ_TEXT = """v 0 0 0
+v 2 0 0
+v 2 2 0
+v 0 2 0
+v 0 0 2
+v 2 0 2
+v 2 2 2
+v 0 2 2
+f 1 2 3 4
+f 5 6 7 8
+f 1 2 6 5
+f 2 3 7 6
+f 3 4 8 7
+f 4 1 5 8
+"""
+st, r = None, None
+req = urllib.request.Request(BASE + "/api/mesh", data=OBJ_TEXT.encode("utf-8"),
+                             headers={"Content-Type": "text/plain"}, method="POST")
+try:
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        r = json.loads(resp.read().decode("utf-8")); st = resp.status
+except Exception as e:
+    st, r = 0, {"ok": False, "message": str(e)}
+check("POST /api/mesh 返回 id 与计数",
+      st == 200 and (r or {}).get("ok") and r.get("verts") == 8 and r.get("faces") == 6,
+      json.dumps(r, ensure_ascii=False)[:120])
+mid = (r or {}).get("id")
+if mid:
+    put("m=Mesh[" + mid + "]")
+    put("V_m=Volume[m]")
+    els = state3d()
+    m = find(els, "m")
+    check("Mesh[导入 id] 元素 8/6/12",
+          m is not None and (len((m.get("data") or {}).get("verts", [])),
+                             len((m.get("data") or {}).get("faces", [])),
+                             len((m.get("data") or {}).get("edges", []))) == (8, 6, 12),
+          str([len((m.get("data") or {}).get(k, [])) for k in ("verts", "faces", "edges")]) if m else None)
+    st2, _h2, raw2 = http("/api/export/obj")
+    check("导入网格可再次导出为 OBJ", b"v 0 0 0" in raw2 and b"o m" in raw2, "len=%d" % len(raw2))
+    st3, d3 = jget("/api/state")
+    v3 = {e.get("label"): e.get("value") for e in (d3 or {}).get("elements", [])}
+    check("导入立方体体积 = 8", "8" in str(v3.get("V_m")), str(v3.get("V_m")))
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D API 检测矩阵 @ %s：%d 项断言，%d 失败" % (BASE, COUNT[0], len(FAILS)))
 for f in FAILS:

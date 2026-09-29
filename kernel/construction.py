@@ -643,7 +643,7 @@ class Construction:
     # 存取：JSON（自有格式）
     # ------------------------------------------------------------------
     def save_json(self) -> str:
-        from . import macro, image_store
+        from . import macro, image_store, mesh_store
         img_ids = [getattr(self.elements[lab], "imgid", "") for lab in self.order
                    if getattr(self.elements[lab], "kind", "") == "image"]
         return json.dumps({
@@ -655,6 +655,8 @@ class Construction:
                              self.elements[lab].locked,
                              bool(getattr(self.elements[lab], "wire", False))] for lab in self.order},
             "images": image_store.serialize(img_ids),
+            "meshes": mesh_store.serialize([getattr(self.elements[lab], "meshid", "")
+                                            for lab in self.order]),
             "macros": macro.serialize(),
         }, ensure_ascii=False, indent=1)
 
@@ -675,6 +677,8 @@ class Construction:
         from . import image_store
         if data.get("images"):
             image_store.load(data["images"])   # 必须在重放 Image[...] 之前恢复图片数据
+        from . import mesh_store
+        mesh_store.load(data.get("meshes"))
         for lab in order:
             self.process_internal(defns[lab])
             st = styles.get(lab)

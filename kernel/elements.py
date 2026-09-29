@@ -761,10 +761,14 @@ class GeoList(GeoElement):
         if d is None:
             return None
         d["itemkind"] = self.itemkind
-        d["items"] = [[a, b] for a, b in self.items] if self.itemkind == "point" else list(self.items)
         if self.itemkind == "point":
+            d["items"] = [[a, b] for a, b in self.items]
             d["value"] = "{" + ", ".join("(" + _fmt(a) + ", " + _fmt(b) + ")" for a, b in self.items) + "}"
+        elif self.itemkind == "point3d":
+            d["items"] = [[a, b, c] for a, b, c in self.items]
+            d["value"] = "{" + ", ".join("(" + _fmt(a) + ", " + _fmt(b) + ", " + _fmt(c) + ")" for a, b, c in self.items) + "}"
         else:
+            d["items"] = list(self.items)
             d["value"] = "{" + ", ".join(_fmt(v) for v in self.items) + "}"
         return d
 

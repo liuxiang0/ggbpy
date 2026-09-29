@@ -289,11 +289,8 @@ def parse_line(cons, line: str) -> Tuple[Optional[str], str, object]:
         if not parts:
             return label, "list", ([], "number")
         if parts[0].startswith("("):
-            items = []
-            for pp in parts:
-                tp = _tuple_parts_str(pp)
-                items.append((eval_number(cons, tp[0]), eval_number(cons, tp[1])))
-            return label, "list", (items, "point")
+            items, kind3 = _list_tuple_items(cons, parts)
+            return label, "list", (items, kind3)
         items = [eval_number(cons, pp) for pp in parts]
         return label, "list", (items, "number")
     if toks[0] == "{":
@@ -303,11 +300,8 @@ def parse_line(cons, line: str) -> Tuple[Optional[str], str, object]:
         if not parts:
             return label, "list", ([], "number")
         if parts[0].startswith("("):
-            items = []
-            for p in parts:
-                tp = _tuple_parts_str(p)
-                items.append((eval_number(cons, tp[0]), eval_number(cons, tp[1])))
-            return label, "list", (items, "point")
+            items, kind3 = _list_tuple_items(cons, parts)
+            return label, "list", (items, kind3)
         items = [eval_number(cons, p) for p in parts]
         return label, "list", (items, "number")
 
@@ -355,6 +349,23 @@ def _join_toks(toks: List[str]) -> str:
     return s.strip()
 
 
+def _list_tuple_items(cons, parts):
+    """列表元素解析：支持 (x,y) 与 (x,y,z)，返回 (items, itemkind)。"""
+    items = []
+    kind = None
+    for pp in parts:
+        tp = _tuple_parts_str(pp)
+        if len(tp) not in (2, 3):
+            raise GeoError("列表元素需要 (x,y) 或 (x,y,z): " + pp)
+        k = "point3d" if len(tp) == 3 else "point"
+        if kind is None:
+            kind = k
+        elif kind != k:
+            raise GeoError("列表元素分量数需一致（要么全是 (x,y)，要么全是 (x,y,z)）")
+        items.append(tuple(eval_number(cons, q) for q in tp))
+    return items, kind
+
+
 def _tuple_parts_str(s: str) -> List[str]:
     """从字符串 (a,b) 提取分量。"""
     s = s.strip()
@@ -378,8 +389,8 @@ def _tuple_parts_str(s: str) -> List[str]:
             cur += ch
     if cur.strip():
         parts.append(cur.strip())
-    if len(parts) != 2:
-        raise GeoError("元组需要恰好两个分量: " + s)
+    if len(parts) not in (2, 3):
+        raise GeoError("元组需要两个或三个分量: " + s)
     return parts
 
 

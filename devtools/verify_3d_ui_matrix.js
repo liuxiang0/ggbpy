@@ -470,6 +470,42 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     }
   }
 
+  // 第七批：曲面 + OBJ 文件导入（真实 setInputFiles）
+  await reset(['O=(0,0,0)']);
+  await page.fill('#cmd', 'surf=Surface[x^2-y^2,-2,2,-2,2,12]');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(900);
+  await open3d();
+  await page.waitForTimeout(600);
+  let els7 = await state3d();
+  const surf7 = els7.filter(e => e.solid === 'surface')[0];
+  check('曲面经输入框建成（13²=169 顶点）', !!surf7 && (surf7.data.verts || []).length === 169,
+    surf7 ? String((surf7.data.verts || []).length) : 'missing');
+  const px7 = await nonBgPixels();
+  check('曲面已渲染（像素 > 500）', px7 > 500, 'non-bg pixels=' + px7);
+  // OBJ 文件导入
+  const objPath = require('os').tmpdir() + '/ggbpy_ui_test.obj';
+  fs.writeFileSync(objPath, ['v 0 0 0', 'v 2 0 0', 'v 2 2 0', 'v 0 2 0',
+    'v 0 0 2', 'v 2 0 2', 'v 2 2 2', 'v 0 2 2',
+    'f 1 2 3 4', 'f 5 6 7 8', 'f 1 2 6 5', 'f 2 3 7 6', 'f 3 4 8 7', 'f 4 1 5 8'].join('\n'));
+  const hasInput = await page.$('#objfile');
+  check('OBJ 导入文件输入存在', !!hasInput, hasInput ? 'ok' : 'missing');
+  if (hasInput) {
+    await page.setInputFiles('#objfile', objPath);
+    await page.waitForTimeout(1200);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(400);
+    await open3d();
+    await page.waitForTimeout(500);
+    els7 = await state3d();
+    const mesh7 = els7.filter(e => e.solid === 'mesh')[0];
+    check('OBJ 导入生成网格元素（8/6/12）', !!mesh7 && (mesh7.data.verts || []).length === 8
+      && (mesh7.data.faces || []).length === 6 && (mesh7.data.edges || []).length === 12,
+      mesh7 ? (mesh7.data.verts.length + '/' + mesh7.data.faces.length + '/' + mesh7.data.edges.length) : 'missing');
+    const pxM = await nonBgPixels();
+    check('导入网格已渲染（像素 > 500）', pxM > 500, 'non-bg pixels=' + pxM);
+  }
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));

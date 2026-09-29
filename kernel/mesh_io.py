@@ -99,3 +99,50 @@ def export_stl(cons) -> Tuple[str, List[str]]:
                 out.append("  endfacet")
         out.append("endsolid " + el.label)
     return "\n".join(out) + "\n", warnings
+
+
+def parse_obj(text: str) -> Tuple[List[List[float]], List[List[int]], List[str]]:
+    """解析 OBJ 文本 → (verts, faces, warnings)。
+
+    支持 `v x y z` 与 `f a b c [d ...]`（含 `f v/vt/vn` 形式与负索引）；
+    其它行（vt/vn/o/g/s/usemtl/#）忽略并汇总为提示。
+    """
+    from .elements import GeoError
+
+    verts: List[List[float]] = []
+    faces: List[List[int]] = []
+    skipped = {"vt": 0, "vn": 0, "other": 0}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        tag = parts[0]
+        if tag == "v":
+            if len(parts) < 4:
+                raise GeoError("OBJ 顶点行缺少分量: " + line[:40])
+            verts.append([float(parts[1]), float(parts[2]), float(parts[3])])
+        elif tag == "f":
+            idxs: List[int] = []
+            for tok in parts[1:]:
+                head = tok.split("/")[0]
+                if head == "":
+                    continue
+                i = int(head)
+                if i < 0:
+                    i = len(verts) + i + 1
+                if i < 1 or i > len(verts):
+                    raise GeoError("OBJ 面索引越界: " + tok)
+                idxs.append(i - 1)
+            if len(idxs) >= 3:
+                faces.append(idxs)
+        elif tag in ("vt", "vn"):
+            skipped[tag] += 1
+        else:
+            skipped["other"] += 1
+    if not verts or not faces:
+        raise GeoError("OBJ 中没有可用的顶点或面（需要 v / f 行）")
+    warnings = []
+    if skipped["vt"] or skipped["vn"] or skipped["other"]:
+        warnings.append("已忽略 vt=%d vn=%d 其它=%d 行" % (skipped["vt"], skipped["vn"], skipped["other"]))
+    return verts, faces, warnings

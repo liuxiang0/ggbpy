@@ -808,6 +808,133 @@ if e28 is None:
     check("求交参数自身出错 → 明确提示", "求交参数无效" in rbad, rbad[:70])
 
 # ---------------------------------------------------------------------------
+section("V. 曲面 Surface")
+c29, e29 = build(["flat=Surface[0,-1,1,-1,1,4]", "ramp=Surface[x,0,1,0,1,8]",
+                  "sad=Surface[x^2-y^2,-2,2,-2,2,24]", "a=2",
+                  "dep=Surface[a*x^2+y^2,-1,1,-1,1,4]"])
+check("曲面用例构造", e29 is None, str(e29))
+if e29 is None:
+    flat = c29.elements["flat"]
+    d = flat.data
+    check("曲面网格 v/f/e（4×4 → 25/16/40）",
+          (len(d["verts"]), len(d["faces"]), len(d["edges"])) == (25, 16, 40),
+          "%d/%d/%d" % (len(d["verts"]), len(d["faces"]), len(d["edges"])))
+    check("曲面元素 solid=surface / objtype=polyhedron",
+          flat.solid == "surface" and flat.objtype == "polyhedron", "%s/%s" % (flat.solid, flat.objtype))
+    check("曲面顶点取值正确（z=0）", all(abs(v[2]) < 1e-12 for v in d["verts"]))
+    c29.process("A_flat=Area[flat]")
+    check("平面曲面 Area = 4", close(c29.elements["A_flat"].value, 4.0, 1e-9), "%.9f" % c29.elements["A_flat"].value)
+    c29.process("A_ramp=Area[ramp]")
+    check("斜面 z=x 的 Area = √2", close(c29.elements["A_ramp"].value, math.sqrt(2), 1e-9),
+          "%.9f" % c29.elements["A_ramp"].value)
+    c29.process("A_sad=Area[sad]")
+    check("马鞍面 24×24 面积 ≈ 52.02（网格近似）", abs(c29.elements["A_sad"].value - 52.0182) < 0.05,
+          "%.6f" % c29.elements["A_sad"].value)
+    c29.process("V_surf=Volume[flat]")
+    check("曲面 Volume → 明确报错", bool(c29.elements["V_surf"].error) and "没有体积" in c29.elements["V_surf"].error,
+          str(c29.elements["V_surf"].error))
+    r_range = c29.process("bad_range=Surface[x,1,1,0,1,4]")
+    check("范围退化 → 明确报错", "范围" in r_range, r_range[:60])
+    c29.process("bad_pole=Surface[1/x,0,1,0,1,4]")
+    check("含奇点（非有限取值）→ error", bool(c29.elements["bad_pole"].error),
+          str(c29.elements["bad_pole"].error))
+    # 滑块联动
+    z0 = c29.elements["dep"].data["verts"][0][2]
+    c29.elements["a"].value = 3.0
+    c29._recompute(c29.elements["a"])
+    z1 = c29.elements["dep"].data["verts"][0][2]
+    check("曲面随滑块重算（a=2→3）", not close(z0, z1), "%.3f → %.3f" % (z0, z1))
+    # 与其他 3D 能力联动：曲面 ∩ 平面 → 截面（用曲面近似平面截 z=0）
+    c29.process("pl0=Plane[(0,0,0.5),(1,0,0.5),(0,1,0.5)]")
+    c29.process("sec_ramp=Intersect[pl0,ramp]")
+    check("曲面（网格）与平面求交仍可用", not c29.elements["sec_ramp"].error
+          and getattr(c29.elements["sec_ramp"], "objtype", "") == "section",
+          str(c29.elements["sec_ramp"].error))
+
+# ---------------------------------------------------------------------------
+section("W. 3D 点列表与 FitPlane")
+c30, e30 = build([
+    "L={(0,0,1),(1,0,1.5),(0,1,0.75),(1,1,1.25)}",     # z = 1 + 0.5x − 0.25y
+    "p0=L(1)", "fp=FitPlane[L]",
+    "col={(0,0,0),(1,1,1),(2,2,2)}",
+])
+check("3D 点列表 / FitPlane 构造", e30 is None, str(e30))
+if e30 is None:
+    check("3D 点列表 itemkind=point3d", c30.elements["L"].itemkind == "point3d", c30.elements["L"].itemkind)
+    p0 = c30.elements["p0"]
+    check("点列表取元素 → 3D 点（带 z）", p0.kind == "point" and close(getattr(p0, "z", None) or 0, 1.0),
+          "z=%s" % getattr(p0, "z", None))
+    d = c30.elements["fp"].data
+    check("FitPlane objtype=plane", getattr(c30.elements["fp"], "objtype", "") == "plane")
+    n = (d["a"], d["b"], d["c"])
+    # 期望法向 ∝ (0.5, -0.25, -1)（符号任意）
+    exp = (0.5, -0.25, -1.0)
+    le = math.sqrt(sum(v * v for v in exp))
+    exp = tuple(v / le for v in exp)
+    same = all(close(n[i], exp[i], 1e-7) for i in range(3)) or all(close(n[i], -exp[i], 1e-7) for i in range(3))
+    check("FitPlane 法向 = (0.5,−0.25,−1) 归一化", same, "n=(%.6f,%.6f,%.6f)" % n)
+    ctr = (0.5, 0.5, 1.125)
+    val = n[0] * ctr[0] + n[1] * ctr[1] + n[2] * ctr[2] + d["d"]
+    check("拟合平面过点云质心", abs(val) < 1e-9, "%.3e" % val)
+    c30.process("fp2=FitPlane[col]")
+    check("共线点云 → error", bool(c30.elements["fp2"].error), str(c30.elements["fp2"].error))
+    c30.process("cu=Cube[(0,0,0),(2,0,0)]")
+    c30.process("sec_fp=Intersect[fp,cu]")
+    check("拟合平面 ∩ 立方体 → section", getattr(c30.elements["sec_fp"], "objtype", "") == "section",
+          str(c30.elements["sec_fp"].error))
+    c30.process("per=Perimeter[sec_fp]")
+    check("截面周长 > 0", c30.elements["per"].value > 0, "%.6f" % c30.elements["per"].value)
+
+# ---------------------------------------------------------------------------
+section("X. OBJ 导入（Mesh 元素）")
+from kernel.mesh_io import parse_obj  # noqa: E402
+OBJ_CUBE = """# unit cube
+v 0 0 0
+v 2 0 0
+v 2 2 0
+v 0 2 0
+v 0 0 2
+v 2 0 2
+v 2 2 2
+v 0 2 2
+f 1 2 3 4
+f 5 6 7 8
+f 1 2 6 5
+f 2 3 7 6
+f 3 4 8 7
+f 4 1 5 8
+"""
+vv, ff, ww = parse_obj(OBJ_CUBE)
+check("parse_obj 顶点/面数", len(vv) == 8 and len(ff) == 6, "%d/%d" % (len(vv), len(ff)))
+c31, e31 = build([])
+import kernel.mesh_store as _ms  # noqa: E402
+_mid = _ms.put(vv, ff)
+c31, e31 = build(["m=Mesh[" + _mid + "]", "V_m=Volume[m]", "A_m=Area[m]"])
+check("Mesh[id] 构造", e31 is None, str(e31))
+if e31 is None:
+    m = c31.elements["m"]
+    d = m.data
+    check("Mesh 元素 v/f/e = 8/6/12",
+          (len(d["verts"]), len(d["faces"]), len(d["edges"])) == (8, 6, 12),
+          "%d/%d/%d" % (len(d["verts"]), len(d["faces"]), len(d["edges"])))
+    check("Mesh solid=mesh", m.solid == "mesh" and getattr(m, "meshid", "") == _mid, m.solid)
+    check("Mesh 体积 = 8", close(c31.elements["V_m"].value, 8.0, 1e-9), "%.6f" % c31.elements["V_m"].value)
+    check("Mesh 表面积 = 24", close(c31.elements["A_m"].value, 24.0, 1e-9), "%.6f" % c31.elements["A_m"].value)
+    txt = c31.save_json()
+    c32 = Construction()
+    c32.load_json(txt)
+    m2 = c32.elements.get("m")
+    check(".ggk 往返保留导入网格",
+          m2 is not None and len(m2.data["verts"]) == 8 and len(m2.data["faces"]) == 6,
+          "None" if m2 is None else "%d/%d" % (len(m2.data["verts"]), len(m2.data["faces"])))
+    # 导出的 OBJ 能被自己解析回来（往返）
+    otext, _w = export_obj(c31)
+    v2, f2, _w2 = parse_obj(otext)
+    check("OBJ 导出→导入 往返一致（8/6）", len(v2) == 8 and len(f2) == 6, "%d/%d" % (len(v2), len(f2)))
+    r_bad = c31.process("bad=Mesh[mesh_不存在]")
+    check("未知网格 id → 明确报错", "找不到网格数据" in r_bad, r_bad[:60])
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D 内核检测矩阵：%d 项断言，%d 失败" % (COUNT[0], len(FAILS)))
 if FAILS:

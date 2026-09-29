@@ -12,7 +12,7 @@
   var I18N = {
     zh: {
       undo: '↶ 撤销', redo: '↷ 重做', snap: '吸附', demo: '示例', grid: '网格', axes: '坐标轴',
-      clear: '清空', save: '保存', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', load: '加载', cas: 'CAS', d3: '3D',
+      clear: '清空', save: '保存', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', objin: '📥OBJ', load: '加载', cas: 'CAS', d3: '3D',
       help_t: '命令帮助', save_t: '保存为 .ggk（含样式与视口）', cas_t: '打开/关闭 CAS 视图',
       cmd_ph: '代数输入：A=(1,2)  f(x)=x^2  M=Midpoint[A,B]  c=Circle[A,B]  P=Intersect[c,g] …',
       hint: '拖拽自由点 · 滚轮缩放 · 空白处平移 · 输入后回车创建对象 · CAS 符号计算 · 3D 视图',
@@ -84,7 +84,7 @@
     },
     en: {
       undo: '↶ Undo', redo: '↷ Redo', snap: 'Snap', demo: 'Demo', grid: 'Grid', axes: 'Axes',
-      clear: 'Clear', save: 'Save', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', load: 'Load', cas: 'CAS', d3: '3D',
+      clear: 'Clear', save: 'Save', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', objin: '📥OBJ', load: 'Load', cas: 'CAS', d3: '3D',
       help_t: 'Command help', save_t: 'Save as .ggk (styles + viewport)', cas_t: 'Toggle CAS panel',
       cmd_ph: 'Algebra input: A=(1,2)  f(x)=x^2  M=Midpoint[A,B]  c=Circle[A,B]  P=Intersect[c,g] …',
       hint: 'Drag free points · Scroll to zoom · Drag empty space to pan · Enter to create · CAS · 3D',
@@ -3362,6 +3362,31 @@
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  });
+  btn('btn-objin', function () {
+    document.getElementById('objfile').click();
+  });
+  document.getElementById('objfile').addEventListener('change', function (ev) {
+    var f = ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () {
+      fetch('/api/mesh', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: rd.result })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || !d.ok) {
+            setMsg((lang === 'en' ? 'OBJ import failed: ' : 'OBJ 导入失败: ') + ((d && d.message) || ''), true);
+            return;
+          }
+          document.getElementById('cmd').value = 'Mesh[' + d.id + ']';
+          submitInput();
+          setMsg((lang === 'en' ? 'Mesh imported: ' : '已导入网格 ') + d.verts + ' v / ' + d.faces + ' f'
+                 + (d.warnings && d.warnings.length ? ('（' + d.warnings.join('；') + '）') : ''), false);
+        })
+        .catch(function (e) { setMsg((lang === 'en' ? 'OBJ import error: ' : 'OBJ 导入出错: ') + e, true); });
+    };
+    rd.readAsText(f);
   });
   btn('btn-image', function () {
     document.getElementById('imgfile').click();
