@@ -137,8 +137,9 @@ app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 @app.get("/api/commands")
 def commands_list():
     """命令名列表（前端自动补全/帮助）。"""
-    from kernel.commands import COMMANDS
-    return {"commands": sorted(COMMANDS.keys())}
+    from kernel.commands import COMMANDS, DISPLAY_NAMES
+    return {"commands": sorted(COMMANDS.keys()),
+            "display": {k: DISPLAY_NAMES.get(k, k[:1].upper() + k[1:]) for k in COMMANDS}}
 
 
 @app.get("/api/state")

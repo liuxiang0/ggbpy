@@ -3332,15 +3332,19 @@
   fetch('/api/commands').then(function (r) { return r.json(); }).then(function (d) {
     var dl = document.getElementById('cmd-list');
     var s = '';
-    for (var i = 0; i < d.commands.length; i++) s += '<option value="' + d.commands[i] + '["></option>';
+    var dsp = d.display || {};
+    for (var i = 0; i < d.commands.length; i++) {
+      var nm = dsp[d.commands[i]] || d.commands[i];
+      s += '<option value="' + nm + '["></option>';
+    }
     dl.innerHTML = s;
   }).catch(function () {});
   btn('btn-help', function () {
     fetch('/api/commands').then(function (r) { return r.json(); }).then(function (d) {
-      showHelpModal(d.commands);
+      showHelpModal(d.commands, d.display || {});
     }).catch(function () { setMsg('加载命令失败', true); });
   });
-  function showHelpModal(commands) {
+  function showHelpModal(commands, display) {
     var ex = document.getElementById('help-pop');
     if (!ex) {
       ex = document.createElement('div');
@@ -3352,13 +3356,41 @@
       return '<span class="hc hc-cas" data-cas="' + c.name + '" title="' + esc(c.zh) + ' / ' + esc(c.en) + '">' + c.name + '</span>';
     }).join('');
     ex.innerHTML = '<div class="help-head"><span>' + head + '</span><button id="help-close" class="x" title="' + (lang === 'en' ? 'Close' : '关闭') + '">✕</button></div>'
-      + '<div class="help-body">' + commands.map(function (c) { return '<span class="hc">' + c + '</span>'; }).join('') + '</div>'
+      + '<div class="help-search"><input id="help-search" type="text" placeholder="'
+      + (lang === 'en' ? 'Filter commands (e.g. surface, volume, fit)' : '筛选命令（如 surface / volume / 拟合 / 曲面）') + '"></div>'
+      + '<div class="help-body" id="help-cmds">' + commands.map(function (c) {
+          var cnm = (display && display[c]) || c;
+          return '<span class="hc hc-cmd" data-cmd="' + cnm + '" title="' + (lang === 'en' ? 'Click to insert' : '点击插入') + '">' + cnm + '</span>';
+        }).join('') + '</div>'
       + '<div class="help-sec">' + (lang === 'en' ? 'CAS symbolic commands (click to use in the CAS panel)' : 'CAS 符号命令（点击可直接在 CAS 面板使用）') + '</div>'
       + '<div class="help-body">' + casChips + '</div>'
-      + '<div class="help-foot">' + (lang === 'en' ? 'Type a command like f(x)=x^2 or Circle[A,B] into the input bar. CAS commands run in the CAS panel.' : '在上方输入框键入命令，如 f(x)=x^2、Circle[A,B]、中=中点[A,B]。CAS 命令在 CAS 面板执行。') + '</div>';
+      + '<div class="help-foot">' + (lang === 'en' ? 'Click a command to insert Name[] into the input bar; CAS commands run in the CAS panel.' : '点击命令即在输入框插入 Name[]；CAS 命令在 CAS 面板执行。') + '</div>';
+    var searchEl = ex.querySelector('#help-search');
+    if (searchEl) {
+      searchEl.addEventListener('input', function () {
+        var q = searchEl.value.trim().toLowerCase();
+        var chips = ex.querySelectorAll('#help-cmds .hc-cmd');
+        for (var i = 0; i < chips.length; i++) {
+          var nm = (chips[i].getAttribute('data-cmd') || '').toLowerCase();
+          chips[i].style.display = (!q || nm.indexOf(q) !== -1) ? '' : 'none';
+        }
+      });
+      searchEl.focus();
+    }
     ex.style.display = 'block';
     ex.querySelector('#help-close').addEventListener('click', function () { ex.style.display = 'none'; });
     ex.addEventListener('click', function (ev) {
+      var tc = ev.target.closest ? ev.target.closest('.hc-cmd') : null;
+      if (tc) {
+        var cname = tc.getAttribute('data-cmd') || '';   // 已是规范显示名（如 SurfacePoint）
+        var inp = document.getElementById('cmd');
+        if (inp) {
+          inp.value = cname + '[]';
+          inp.focus();
+          try { inp.setSelectionRange(cname.length + 1, cname.length + 1); } catch (e) {}
+        }
+        return;
+      }
       var t = ev.target.closest ? ev.target.closest('.hc-cas') : null;
       if (!t) return;
       var nm = t.getAttribute('data-cas');

@@ -105,6 +105,10 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **`.ggb` 支持 3D（长期限制解除）**：三维点现在按 `z="<真实z>" w="1"` 写出、导入时据此还原（`z="1"` 仍为二维齐次约定），3D 派生对象继续以 `<command>` 重放——实测三维点/球/立方体/圆锥/截面/线段/空间圆/交线/拟合平面/曲面**逐项往返一致且不再有跳过警告**；只有 OBJ/STL/glTF 导入的网格（数据在 .ggk 网格仓库里）仍会跳过并在 `X-GGB-Warnings` 说明
   - **`CovarianceEllipsoid[点列表, 倍数?]`**：协方差椭球（特征向量为轴、半轴 = k√λ，默认 k=2），输出可渲染/可导出的曲面网格；对称点云三轴相等、长条点云长轴 ∝ 标准差（与 numpy 特征值逐项一致）
   - **`SurfaceIsoline[曲面, 参数值, 维度?]`**：曲面参数线（固定 x / y / s / t），返回 `curve3d` 折线并在 3D 视图渲染；参数值超出定义域、隐式曲面（无解析参数）等情况给出明确提示
+- **第十二批（2026-09-29）**：
+  - **`ConvexHull[点列表]` 三维凸包**：scipy Qhull 求凸包（面统一环序与外向法向后输出可渲染/可求 `Volume`/`Area`/可导出的凸多面体）；立方体 8 点 → 8 顶点/12 三角（Euler=2）、V=8、A=24；共线/重合点云给出明确错误
+  - **`SurfacePoint[曲面, u, v]`**：曲面在给定参数处的点（解析求值，越界报错）；**`SurfaceProject[点, 曲面]`**：点在曲面上的最近点（9×9 网格初值 + Nelder–Mead 精化，参数域内裁剪）——投影 (5,0,1) 到圆柱侧面得 (1,0,1)、(0,0,9) 到圆柱得端面 (0,0,2)
+  - **命令帮助面板升级**：新增**筛选框**（按名称实时过滤）、命令 chip **点击即插入 `Name[]` 并把光标停在括号内**；`/api/commands` 现在附带规范**显示名映射**（`surfacepoint → SurfacePoint`、`implicitSurface → ImplicitSurface`、`fitplane → FitPlane` 等 54 个多词命令），帮助面板与输入框补全都用规范写法
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
@@ -118,7 +122,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_3d_detection.sh       # 内核 434 + API 145 + 浏览器 106 项断言（需服务运行）
+bash devtools/run_3d_detection.sh       # 内核 453 + API 150 + 浏览器 112 项断言（需服务运行）
 ```
 
 - `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 显式/参数/隐式曲面 × FitPlane × OBJ·STL 导入 × 样式快照 × 序列化 × 3D 度量语义）

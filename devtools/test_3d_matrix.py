@@ -1378,6 +1378,81 @@ if e48 is None:
     check("非法维度 → 明确报错", "维度" in r_dim, r_dim[:50])
 
 # ---------------------------------------------------------------------------
+section("AI. 三维凸包 ConvexHull")
+c49, e49 = build([
+    "cube={(0,0,0),(2,0,0),(2,2,0),(0,2,0),(0,0,2),(2,0,2),(2,2,2),(0,2,2)}",
+    "h1=ConvexHull[cube]", "V1=Volume[h1]", "A1=Area[h1]",
+    "sp={(2,0,0),(-2,0,0),(0,2,0),(0,-2,0),(0,0,2),(0,0,-2),(1.1547,1.1547,1.1547),(-1.1547,-1.1547,1.1547),"
+    "(1.1547,-1.1547,-1.1547),(-1.1547,1.1547,-1.1547)}",
+    "h2=ConvexHull[sp]", "V2=Volume[h2]",
+])
+check("凸包用例构造", e49 is None, str(e49))
+if e49 is None:
+    h1 = c49.elements["h1"]
+    check("立方体凸包 8 顶点 / 12 三角", len(h1.data["verts"]) == 8 and len(h1.data["faces"]) == 12,
+          "%d/%d" % (len(h1.data["verts"]), len(h1.data["faces"])))
+    check("凸包 Euler V-E+F=2",
+          len(h1.data["verts"]) - len(h1.data["edges"]) + len(h1.data["faces"]) == 2,
+          "%d-%d+%d" % (len(h1.data["verts"]), len(h1.data["edges"]), len(h1.data["faces"])))
+    check("凸包体积 = 8", close(c49.elements["V1"].value, 8.0, 1e-9), "%.6f" % c49.elements["V1"].value)
+    check("凸包表面积 = 24（立方体）", close(c49.elements["A1"].value, 24.0, 1e-9), "%.6f" % c49.elements["A1"].value)
+    v2 = c49.elements["V2"].value
+    sphere_v = 4 / 3 * math.pi * 8
+    check("球面附近点云凸包体积在内接多面体量级（0.4–1.0 × 球）", 0.4 * sphere_v < v2 < sphere_v,
+          "%.4f vs %.4f（比值 %.3f）" % (v2, sphere_v, v2 / sphere_v))
+    c49.process("deg={(0,0,0),(1,0,0),(2,0,0),(3,0,0)}")
+    c49.process("bad=ConvexHull[deg]")
+    check("共线点云凸包 → error", bool(c49.elements["bad"].error), str(c49.elements["bad"].error))
+    c49.process("bad2=ConvexHull[{(0,0,0),(1,0,0),(0,1,0)}]")
+    check("不足 4 点 → 明确报错",
+          bool(c49.elements["bad2"].error) and "至少需要 4 个点" in c49.elements["bad2"].error,
+          str(c49.elements["bad2"].error))
+    check("凸包可导出（OBJ 含 hull 对象）", export_obj(c49)[0].count("o ") >= 1)
+
+# ---------------------------------------------------------------------------
+section("AJ. 曲面取点 / 曲面投影")
+c50, e50 = build([
+    "cyl=SurfaceParam[cos(t),sin(t),s,s,t,0,2,0,2*pi,16]",
+    "sp1=SurfacePoint[cyl,1,0]", "sp2=SurfacePoint[cyl,1.5,pi/2]",
+    "pr1=SurfaceProject[(5,0,1),cyl]", "pr2=SurfaceProject[(0,0,9),cyl]",
+    "flat=Surface[x^2+y^2,-1,1,-1,1,10]",
+    "sp3=SurfacePoint[flat,0.5,-0.5]", "sp4=SurfacePoint[flat,0,0]",
+    "plane0=Surface[0,-1,1,-1,1,4]", "pr3=SurfaceProject[(0.3,0.4,5),plane0]",
+    "cu=Cube[(0,0,0),(2,0,0)]",
+])
+check("曲面取点/投影用例构造", e50 is None, str(e50))
+if e50 is None:
+    p1, p2 = c50.elements["sp1"], c50.elements["sp2"]
+    check("SurfacePoint[圆柱,1,0] = (1,0,1)", close(p1.x, 1.0, 1e-9) and close(p1.y, 0.0, 1e-9)
+          and close(p1.z, 1.0, 1e-9), "(%.4f,%.4f,%.4f)" % (p1.x, p1.y, p1.z))
+    check("SurfacePoint[圆柱,1.5,π/2] = (0,1,1.5)", close(p2.x, 0.0, 1e-9) and close(p2.y, 1.0, 1e-9)
+          and close(p2.z, 1.5, 1e-9), "(%.4f,%.4f,%.4f)" % (p2.x, p2.y, p2.z))
+    p3 = c50.elements["sp3"]
+    check("SurfacePoint[抛物面,0.5,−0.5] = (0.5,−0.5,0.5)",
+          close(p3.x, 0.5, 1e-9) and close(p3.y, -0.5, 1e-9) and close(p3.z, 0.5, 1e-9),
+          "(%.4f,%.4f,%.4f)" % (p3.x, p3.y, p3.z))
+    check("SurfacePoint[抛物面,0,0] 顶点 = (0,0,0)", close(c50.elements["sp4"].z, 0.0, 1e-9))
+    q1 = c50.elements["pr1"]
+    check("投影 (5,0,1) 到圆柱侧面 = (1,0,1)",
+          close(q1.x, 1.0, 1e-6) and close(q1.y, 0.0, 1e-6) and close(q1.z, 1.0, 1e-6),
+          "(%.4f,%.4f,%.4f)" % (q1.x, q1.y, q1.z))
+    q2 = c50.elements["pr2"]
+    check("投影 (0,0,9) 到圆柱 → 端面 (0,0,2)",
+          close(q2.z, 2.0, 1e-6) and close(math.hypot(q2.x, q2.y), 1.0, 1e-6),
+          "(%.4f,%.4f,%.4f)" % (q2.x, q2.y, q2.z))
+    q3 = c50.elements["pr3"]
+    check("投影 (0.3,0.4,5) 到平面曲面 = (0.3,0.4,0)",
+          close(q3.x, 0.3, 1e-6) and close(q3.y, 0.4, 1e-6) and close(q3.z, 0.0, 1e-6),
+          "(%.4f,%.4f,%.4f)" % (q3.x, q3.y, q3.z))
+    c50.process("bad=SurfacePoint[cyl,5,0]")
+    check("参数越界 → error", bool(c50.elements["bad"].error) and "超出定义域" in c50.elements["bad"].error,
+          str(c50.elements["bad"].error))
+    c50.process("bad2=SurfaceProject[(1,2,3),cu]")
+    check("投影目标不是曲面 → 明确报错",
+          bool(c50.elements["bad2"].error) and "曲面" in c50.elements["bad2"].error,
+          str(c50.elements["bad2"].error))
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D 内核检测矩阵：%d 项断言，%d 失败" % (COUNT[0], len(FAILS)))
 if FAILS:

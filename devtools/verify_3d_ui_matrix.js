@@ -680,6 +680,61 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   const px11 = await nonBgPixels();
   check('椭球与参数线已渲染（像素 > 500）', px11 > 500, 'non-bg pixels=' + px11);
 
+  // 第十二批：帮助面板筛选/点击插入 + 凸包渲染
+  await reset(['O=(0,0,0)']);
+  await page.fill('#cmd', 'cube={(0,0,0),(2,0,0),(2,2,0),(0,2,0),(0,0,2),(2,0,2),(2,2,2),(0,2,2)}');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(400);
+  await page.fill('#cmd', 'h1=ConvexHull[cube]');
+  await page.press('#cmd', 'Enter');
+  await page.waitForTimeout(700);
+  await open3d();
+  await page.waitForTimeout(600);
+  const els12 = await state3d();
+  const hull12 = els12.filter(e => e.solid === 'hull')[0];
+  check('凸包元素出现（8 顶点 / 12 三角）',
+    !!hull12 && (hull12.data.verts || []).length === 8 && (hull12.data.faces || []).length === 12,
+    hull12 ? (hull12.data.verts.length + '/' + hull12.data.faces.length) : 'missing');
+  const px12 = await nonBgPixels();
+  check('凸包已渲染（像素 > 500）', px12 > 500, 'non-bg pixels=' + px12);
+  // 帮助面板：筛选 + 点击插入
+  await page.click('#btn-help');
+  await page.waitForTimeout(600);
+  const hasSearch = await page.$('#help-search');
+  check('帮助面板有筛选框', !!hasSearch, hasSearch ? 'ok' : 'missing');
+  if (hasSearch) {
+    const total0 = await page.evaluate(() => document.querySelectorAll('#help-cmds .hc-cmd').length);
+    await page.fill('#help-search', 'surface');
+    await page.waitForTimeout(300);
+    const visible = await page.evaluate(() => {
+      let n = 0;
+      document.querySelectorAll('#help-cmds .hc-cmd').forEach(function (el) {
+        if (el.style.display !== 'none') n++;
+      });
+      return n;
+    });
+    check('筛选 "surface" 后可见项减少且非空', visible > 0 && visible < total0,
+      'visible=' + visible + ' total=' + total0);
+    const names = await page.evaluate(() => {
+      const out = [];
+      document.querySelectorAll('#help-cmds .hc-cmd').forEach(function (el) {
+        if (el.style.display !== 'none') out.push(el.getAttribute('data-cmd'));
+      });
+      return out;
+    });
+    const namesLc = names.map(function (n) { return String(n).toLowerCase(); });
+    check('筛选结果含 SurfaceIsoline/SurfacePoint/SurfaceProject',
+      namesLc.indexOf('surfaceisoline') !== -1 && namesLc.indexOf('surfacepoint') !== -1
+      && namesLc.indexOf('surfaceproject') !== -1, JSON.stringify(names.slice(0, 8)));
+    await page.click('#help-cmds .hc-cmd[data-cmd="SurfacePoint"]');
+    await page.waitForTimeout(200);
+    const inserted = await page.evaluate(() => document.getElementById('cmd').value);
+    check('点击命令插入 Name[]', inserted === 'SurfacePoint[]', inserted);
+    const closeBtn = await page.$('#help-close');
+    if (closeBtn) await closeBtn.click();
+    await page.waitForTimeout(200);
+  }
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));

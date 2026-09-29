@@ -1055,6 +1055,144 @@ def _cmd_covariance(cons, defn, args):
     return _mk(cons, GeoMatrix, "matrix", defn, [L], fn)
 
 
+def _cmd_convexhull(cons, defn, args):
+    """ConvexHull[点列表]：三维点云凸包（scipy Qhull），输出可渲染/可求体积的凸多面体。"""
+    if len(args) != 1:
+        raise GeoError("ConvexHull 需要三维点列表")
+    L = _list_arg(cons, args[0])
+    if L.itemkind not in ("point", "point3d"):
+        raise GeoError("ConvexHull 需要三维点列表")
+    return _mk(cons, Geo3D, "geo3d", defn, [L], lambda d: _convexhull_state(d[0].items))
+
+
+def _convexhull_state(items):
+    import numpy as np
+    from scipy.spatial import ConvexHull, QhullError
+    if len(items) < 4:
+        raise GeoError("三维凸包至少需要 4 个点")
+    pts = np.array([[float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)] for p in items])
+    try:
+        hull = ConvexHull(pts)
+    except QhullError as e:
+        raise GeoError("点云退化（共面/共线/重合），无法构成三维凸包：" + str(e)[:60])
+    keep = [int(i) for i in hull.vertices]
+    remap = {old: k for k, old in enumerate(keep)}
+    verts = [[float(pts[i][0]), float(pts[i][1]), float(pts[i][2])] for i in keep]
+    faces = []
+    for tri in hull.simplices:
+        f = [remap[int(tri[0])], remap[int(tri[1])], remap[int(tri[2])]]
+        if f not in faces:
+            faces.append(f)
+    edges = []
+    seen = set()
+    for f in faces:
+        for m in range(3):
+            a, b = f[m], f[(m + 1) % 3]
+            key = (min(a, b), max(a, b))
+            if key not in seen:
+                seen.add(key)
+                edges.append([key[0], key[1]])
+    return {"objtype": "polyhedron", "solid": "hull",
+            "data": {"verts": verts, "faces": _normalize_mesh(verts, faces), "edges": edges,
+                     "points": int(len(pts))}}
+
+
+def _surface_eval(d):
+    """由曲面 data 构造 (x,y,z) 求值函数 + 参数域 + 参数名。"""
+    import sympy
+    if d.get("param"):
+        xb, yb, zb, sname, tname, smin, smax, tmin, tmax = d["param"]
+        su, tu = sympy.symbols(sname + " " + tname)
+        loc = {sname: su, tname: tu, "pi": sympy.pi, "e": sympy.E}
+        fns = [sympy.lambdify((su, tu), sympy.sympify(b.replace("^", "**"), locals=loc), "numpy")
+               for b in (xb, yb, zb)]
+
+        def f(u, v):
+            out = []
+            for fn in fns:
+                val = fn(u, v)
+                out.append(float(val) if not hasattr(val, "__len__") else float(val[0]))
+            return out
+        return f, [(smin, smax), (tmin, tmax)], (sname, tname)
+    if d.get("expr"):
+        xmin, xmax, ymin, ymax = d["ranges"]
+        pf = sympy.lambdify(sympy.symbols("x y"),
+                            sympy.sympify(str(d["expr"]).replace("^", "**"),
+                                          locals={"pi": sympy.pi, "e": sympy.E}), "numpy")
+
+        def f(u, v):
+            z = pf(u, v)
+            z = float(z) if not hasattr(z, "__len__") else float(z[0])
+            return [float(u), float(v), z]
+        return f, [(xmin, xmax), (ymin, ymax)], ("x", "y")
+    raise GeoError("该曲面不支持参数取点（需要 Surface / SurfaceParam）")
+
+
+def _cmd_surfacepoint(cons, defn, args):
+    """SurfacePoint[曲面, u, v]：曲面在给定参数处的点（三维点）。"""
+    if len(args) != 3:
+        raise GeoError("SurfacePoint 需要 曲面, u, v")
+    surf = _resolve(cons, args[0], ("geo3d",))
+    u = eval_number(cons, args[1])
+    v = eval_number(cons, args[2])
+    return _mk(cons, GeoPoint, "point", defn, [surf], lambda d: _surfacepoint_state(d[0], u, v))
+
+
+def _surfacepoint_state(surf, u, v):
+    f, dom, names = _surface_eval(surf.data or {})
+    for k, (lo, hi) in enumerate(dom):
+        val = u if k == 0 else v
+        if not (lo - 1e-9 <= val <= hi + 1e-9):
+            raise GeoError("参数 %s=%s 超出定义域 [%s, %s]" % (names[k], val, lo, hi))
+    p = f(u, v)
+    if not all(math.isfinite(c) for c in p):
+        raise GeoError("该参数处取值非有限（可能为奇点）")
+    return {"x": p[0], "y": p[1], "z": p[2]}
+
+
+def _cmd_surfaceproject(cons, defn, args):
+    """SurfaceProject[点, 曲面]：点在曲面上的最近点（数值最小化）。"""
+    if len(args) != 2:
+        raise GeoError("SurfaceProject 需要 点, 曲面")
+    pt = _point_arg(cons, args[0])
+    surf = _resolve(cons, args[1], ("geo3d",))
+    return _mk(cons, GeoPoint, "point", defn, [pt, surf],
+               lambda d: _surfaceproject_state(d[0], d[1]))
+
+
+def _surfaceproject_state(pt, surf):
+    import numpy as np
+    from scipy.optimize import minimize
+    f, dom, _names = _surface_eval(surf.data or {})
+    target = np.array([pt.x, pt.y, _z_of(pt)])
+
+    def dist2(x):
+        p = np.array(f(float(x[0]), float(x[1])))
+        if not np.all(np.isfinite(p)):
+            return 1e12
+        return float(np.sum((p - target) ** 2))
+
+    best = None
+    lo0, hi0 = dom[0]
+    lo1, hi1 = dom[1]
+    for i in range(9):
+        for j in range(9):
+            u = lo0 + (hi0 - lo0) * i / 8.0
+            v = lo1 + (hi1 - lo1) * j / 8.0
+            d0 = dist2((u, v))
+            if best is None or d0 < best[0]:
+                best = (d0, u, v)
+    res = minimize(dist2, [best[1], best[2]], method="Nelder-Mead",
+                   options={"xatol": 1e-10, "fatol": 1e-14, "maxiter": 800})
+    u, v = float(res.x[0]), float(res.x[1])
+    u = min(max(u, lo0), hi0)
+    v = min(max(v, lo1), hi1)
+    p = f(u, v)
+    if not all(math.isfinite(c) for c in p):
+        raise GeoError("最近点求解失败（曲面在该处奇异）")
+    return {"x": p[0], "y": p[1], "z": p[2]}
+
+
 def _cmd_cov_ellipsoid(cons, defn, args):
     """CovarianceEllipsoid[点列表, 倍数?]：协方差椭球（特征向量为轴，半轴 = k√λ）。"""
     if len(args) not in (1, 2):
@@ -7064,6 +7202,32 @@ def _cmd_macrolist(cons, defn, args):
 # 中文命令别名（GGB 中文版风格）
 # ---------------------------------------------------------------------------
 
+# 规范显示名（命令解析大小写不敏感；帮助面板/补全用它展示与插入）
+DISPLAY_NAMES = {
+    "surfacepoint": "SurfacePoint", "surfaceproject": "SurfaceProject",
+    "surfaceisoline": "SurfaceIsoline", "surfaceparam": "SurfaceParam",
+    "implicitsurface": "ImplicitSurface", "covarianceellipsoid": "CovarianceEllipsoid",
+    "boundingbox": "BoundingBox", "convexhull": "ConvexHull", "fitplane": "FitPlane",
+    "fitsphere": "FitSphere", "fitline": "FitLine", "fitpoly": "FitPoly", "fitexpr": "FitExpr",
+    "pointoncircle": "PointOnCircle", "randompointin": "RandomPointIn",
+    "anglebisector": "AngleBisector", "barchart": "BarChart", "piechart": "PieChart",
+    "boxplot": "BoxPlot", "histogram": "Histogram", "circumcircle": "CircumCircle",
+    "rigidpolygon": "RigidPolygon", "randombetween": "RandomBetween",
+    "areparallel": "AreParallel", "areperpendicular": "ArePerpendicular",
+    "arecollinear": "AreCollinear", "areconcyclic": "AreConcyclic",
+    "arecongruent": "AreCongruent", "areconcurrent": "AreConcurrent",
+    "leftsum": "LeftSum", "rightsum": "RightSum", "midpointsum": "MidpointSum",
+    "lowersum": "LowerSum", "uppersum": "UpperSum", "trapezoidalsum": "TrapezoidalSum",
+    "rectanglesum": "RectangleSum", "iterationlist": "IterationList",
+    "factorslist": "FactorsList", "partialfractions": "PartialFractions",
+    "solveode": "SolveODE", "nsolve": "NSolve", "setcoords": "SetCoords",
+    "setvalue": "SetValue", "setcolor": "SetColor", "setvisible": "SetVisible",
+    "setlocked": "SetLocked", "setwire": "SetWire", "isfinite": "IsFinite",
+    "isprime": "IsPrime", "divisors": "Divisors", "sequence": "Sequence",
+    "normaldist": "NormalDist", "surfacearea": "SurfaceArea", "centroid": "Centroid",
+}
+
+
 ALIASES = {
     "中点": "midpoint", "直线": "line", "线段": "segment", "射线": "ray",
     "圆": "circle", "多边形": "polygon", "刚性多边形": "rigidpolygon", "刚体多边形": "rigidpolygon", "折线": "polyline", "向量": "vector",
@@ -7084,6 +7248,7 @@ ALIASES = {
     "质心": "centroid", "拟合球": "fitsphere", "球拟合": "fitsphere",
     "包围盒": "boundingbox", "点云包围盒": "boundingbox", "协方差": "covariance", "协方差矩阵": "covariance",
     "协方差椭球": "covarianceellipsoid", "椭球": "covarianceellipsoid", "参数线": "surfaceisoline",
+    "凸包": "convexhull", "曲面取点": "surfacepoint", "曲面投影": "surfaceproject",
     "内切圆": "incircle", "内心": "incenter", "重心": "centroid",
     "滑动条": "slider", "文本": "text", "轨迹": "locus", "圆上点": "pointoncircle", "动点": "pointonpath",
     "删除": "delete", "重命名": "rename", "重定义": "redefine",
@@ -7151,6 +7316,7 @@ def _result_kind(name: str) -> str:
         "surfaceparam": "geo3d", "implicitsurface": "geo3d",
         "centroid": "point", "fitsphere": "geo3d", "boundingbox": "geo3d", "covariance": "matrix",
         "covarianceellipsoid": "geo3d", "surfaceisoline": "geo3d",
+        "convexhull": "geo3d", "surfacepoint": "point", "surfaceproject": "point",
         "cone": "geo3d", "cylinder": "geo3d", "prism": "geo3d", "pyramid": "geo3d",
         "tetrahedron": "geo3d", "octahedron": "geo3d", "hexahedron": "geo3d", "icosahedron": "geo3d", "dodecahedron": "geo3d",
         "parametric": "parametric", "polar": "polar", "implicit": "implicit",
@@ -7243,6 +7409,8 @@ COMMANDS = {
     "mesh": _cmd_mesh, "surfaceparam": _cmd_surface_param, "implicitsurface": _cmd_implicit_surface,
     "fitsphere": _cmd_fitsphere, "boundingbox": _cmd_bbox, "covariance": _cmd_covariance,
     "covarianceellipsoid": _cmd_cov_ellipsoid, "surfaceisoline": _cmd_isoline,
+    "convexhull": _cmd_convexhull, "surfacepoint": _cmd_surfacepoint,
+    "surfaceproject": _cmd_surfaceproject,
     "plane": _cmd_plane,
     "cube": _cmd_cube,
     "cone": _cmd_cone,

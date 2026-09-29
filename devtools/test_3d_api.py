@@ -716,6 +716,41 @@ check("API 曲面参数线 → curve3d（120 段）",
       "%s/%s" % (iso.get("objtype") if iso else None, (iso.get("data") or {}).get("count") if iso else None))
 
 # ---------------------------------------------------------------------------
+section("O. 第十二批：凸包 / 曲面取点投影 / 命令帮助")
+clear()
+for t in ["cube={(0,0,0),(2,0,0),(2,2,0),(0,2,0),(0,0,2),(2,0,2),(2,2,2),(0,2,2)}",
+          "h1=ConvexHull[cube]", "V1=Volume[h1]",
+          "cyl=SurfaceParam[cos(t),sin(t),s,s,t,0,2,0,2*pi,16]",
+          "sp1=SurfacePoint[cyl,1,0]", "pr1=SurfaceProject[(5,0,1),cyl]"]:
+    put(t)
+els = state3d()
+h1 = find(els, "h1")
+sp1 = find(els, "sp1")
+pr1 = find(els, "pr1")
+check("API ConvexHull → 8 顶点 / 12 三角",
+      h1 is not None and len((h1.get("data") or {}).get("verts", [])) == 8
+      and len((h1.get("data") or {}).get("faces", [])) == 12,
+      "%s/%s" % (len((h1.get("data") or {}).get("verts", [])) if h1 else None,
+                 len((h1.get("data") or {}).get("faces", [])) if h1 else None))
+check("API SurfacePoint[圆柱,1,0] = (1,0,1)",
+      sp1 is not None and abs(sp1.get("x", 0) - 1) < 1e-9 and abs(sp1.get("z", 0) - 1) < 1e-9,
+      "(%s,%s,%s)" % (sp1.get("x"), sp1.get("y"), sp1.get("z")) if sp1 else None)
+check("API SurfaceProject → (1,0,1)",
+      pr1 is not None and abs(pr1.get("x", 0) - 1) < 1e-5 and abs(pr1.get("z", 0) - 1) < 1e-5,
+      "(%s,%s,%s)" % (pr1.get("x"), pr1.get("y"), pr1.get("z")) if pr1 else None)
+st, d = jget("/api/state")
+vals = {e.get("label"): e.get("value") for e in (d or {}).get("elements", [])}
+check("API 凸包体积 = 8", _num_or_none(vals.get("V1")) is not None and abs(_num_or_none(vals["V1"]) - 8) < 1e-9,
+      str(vals.get("V1")))
+# 命令列表包含本轮新命令（帮助面板/补全数据源）
+st_c, dc = jget("/api/commands")
+cmds = set((dc or {}).get("commands", []))
+need = {"convexhull", "surfacepoint", "surfaceproject", "covarianceellipsoid", "surfaceisoline",
+        "boundingbox", "covariance", "mesh", "surfaceparam", "implicitsurface", "gltf"}
+missing = sorted(need - cmds - {"gltf"})
+check("API 命令列表含本轮新增命令", not missing, "缺 " + str(missing))
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D API 检测矩阵 @ %s：%d 项断言，%d 失败" % (BASE, COUNT[0], len(FAILS)))
 for f in FAILS:
