@@ -374,12 +374,22 @@ def do_shared(sid: str):
 
 @app.get("/api/export/ggb")
 def export_ggb():
-    """兼容导出：GeoGebra XML 格式。"""
-    xml = cons.save_ggb()
+    """兼容导出：GeoGebra XML 格式。
+
+    .ggb 子集不支持 3D：这些元素会被跳过，警告写入响应头 X-GGB-Warnings
+    （percent-encoded）并作为 XML 注释写入文件首部。
+    """
+    warnings = []
+    xml = cons.save_ggb(warnings)
+    headers = {"Content-Disposition": 'attachment; filename="ggbpy.ggb"'}
+    if warnings:
+        from urllib.parse import quote
+        headers["X-GGB-Warnings"] = quote(" | ".join(warnings), safe="")
+        headers["X-GGB-Skipped-3D"] = "1"
     return Response(
         content=xml,
         media_type="application/xml",
-        headers={"Content-Disposition": 'attachment; filename="ggbpy.ggb"'},
+        headers=headers,
     )
 
 

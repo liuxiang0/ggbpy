@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .elements import GeoError
 
@@ -19,6 +19,37 @@ from .elements import GeoError
 def _fmt(v: float) -> str:
     s = ("%.6f" % v).rstrip("0").rstrip(".")
     return s if s not in ("", "-0") else "0"
+
+
+def _is_3d(el) -> bool:
+    """3D 元素：geo3d 对象，或带显式 z 的三维点。"""
+    return el.kind == "geo3d" or (el.kind == "point" and getattr(el, "z", None) is not None)
+
+
+def _refs_label(defn: str, label: str) -> bool:
+    """defn 中是否以独立标识符形式引用了 label。"""
+    return re.search(r"(?<![A-Za-z0-9_])" + re.escape(label) + r"(?![A-Za-z0-9_])", defn) is not None
+
+
+def _collect_3d_skips(cons) -> List[str]:
+    """需要从 .ggb 导出中跳过的标签：3D 元素 + 级联引用它们的元素。
+
+    .ggb 子集不支持 3D；跳过而不是写出丢失 z 的错误数据，避免"静默损坏"。
+    """
+    skipped = [lab for lab in cons.order if _is_3d(cons.elements[lab])]
+    skip_set = set(skipped)
+    changed = True
+    while changed:
+        changed = False
+        for lab in cons.order:
+            if lab in skip_set:
+                continue
+            el = cons.elements[lab]
+            if any(_refs_label(el.defn, s) for s in skip_set):
+                skip_set.add(lab)
+                skipped.append(lab)
+                changed = True
+    return [lab for lab in cons.order if lab in skip_set]
 
 
 def _parse_defn(defn: str) -> Tuple[str, str, List[str], Optional[int]]:
@@ -37,13 +68,25 @@ def _parse_defn(defn: str) -> Tuple[str, str, List[str], Optional[int]]:
     return label, name, args, idx
 
 
-def export_ggb(cons) -> str:
+def export_ggb(cons, warnings: Optional[List[str]] = None) -> str:
     lines: List[str] = []
-    lines.append('<?xml version="1.0" encoding="utf-8"?>')
+    skip = set(_collect_3d_skips(cons))
+    if skip:
+        note = ("ggbpy 提示：.ggb（GeoGebra XML 子集）不支持 3D 对象，已跳过 " +
+                str(len(skip)) + " 个元素：" + ", ".join(lab for lab in cons.order if lab in skip) +
+                "。请用 .ggk 保存以保留 3D 内容。")
+        if warnings is not None:
+            warnings.append(note)
+        lines.append('<?xml version="1.0" encoding="utf-8"?>')
+        lines.append("<!-- " + _xml_escape(note) + " -->")
+    else:
+        lines.append('<?xml version="1.0" encoding="utf-8"?>')
     lines.append('<geogebra format="5.0" version="5.0.826.0" app="ggbpy" platform="python">')
     lines.append('  <gui show="true" />')
     lines.append("  <construction title=\"ggbpy\" author=\"ggbpy\">")
     for lab in cons.order:
+        if lab in skip:
+            continue
         el = cons.elements[lab]
         lines.append('    <element type="' + el.kind + '" label="' + el.label + '">')
         lines.append('      <show object="true" label="true"/>')
@@ -65,6 +108,8 @@ def export_ggb(cons) -> str:
         lines.append("    </element>")
     # 派生元素 → command（多结果命令只导一次：取 #0 元素）
     for lab in cons.order:
+        if lab in skip:
+            continue
         el = cons.elements[lab]
         if el.free:
             continue

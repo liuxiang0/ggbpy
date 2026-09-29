@@ -23,6 +23,39 @@ from .parser import eval_number, parse_line
 
 DEG = math.pi / 180.0
 
+# 形如 "Circle[O,2]" / "Plane[A,B,C]" 的嵌套命令调用（不含赋值号）
+_NESTED_CALL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*\[.*\]$")
+
+
+def _nested_arg_hint(s: str, what: str = "对象") -> None:
+    """参数写成嵌套命令时给出可操作错误（本内核不支持在实参位置递归求值命令）。"""
+    t = s.strip()
+    if _NESTED_CALL_RE.match(t):
+        raise GeoError(
+            "参数不能是嵌套命令 " + t + "：请先用一条独立语句创建该" + what +
+            "，再用其标签作为参数（例如先 c=Circle[O,2]，再 Cone[c,3]）")
+
+
+def _tag3d(el, solid: str):
+    """给 Geo3D 元素标注具体立体类型（objtype 保持历史值不变）。"""
+    if el is not None:
+        el.solid = solid
+    return el
+
+
+def _z_of(el) -> float:
+    z = getattr(el, "z", None)
+    return 0.0 if z is None else float(z)
+
+
+def _has_z(*els) -> bool:
+    """任一元素带显式 z（即三维点）时为真；纯二维对象全为 None。"""
+    return any(getattr(e, "z", None) is not None for e in els)
+
+
+def _dist3(a, b) -> float:
+    return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (_z_of(a) - _z_of(b)) ** 2)
+
 
 # ---------------------------------------------------------------------------
 # 解析辅助
@@ -33,6 +66,7 @@ def _resolve(cons, s: str, kinds: Optional[Tuple[str, ...]] = None):
     s = s.strip()
     el = cons.elements.get(s)
     if el is None:
+        _nested_arg_hint(s)
         raise GeoError("找不到对象 " + s)
     if kinds and el.kind not in kinds:
         raise GeoError(s + " 的类型是 " + el.kind + "，这里需要 " + "/".join(kinds))
@@ -55,20 +89,34 @@ def _point_arg(cons, s: str):
         el = GeoPoint("_h", s, vals[0], vals[1], True, z)
         el.visible = False
         return el
+    _nested_arg_hint(s, "点")
     raise GeoError("找不到点 " + s)
 
 
 def _resolve_vector(cons, s: str) -> Tuple[float, float]:
     """参数可以是向量元素或 (a,b) 元组，返回 (dx, dy)。"""
+    dx, dy, _dz = _resolve_vector3(cons, s)
+    return dx, dy
+
+
+def _resolve_vector3(cons, s: str) -> Tuple[float, float, float]:
+    """向量参数（支持三维）：(a,b) / (a,b,c) 元组或向量元素 → (dx, dy, dz)。
+
+    向量元素本身只有 dx/dy 两个分量，其 dz 记为 0。
+    """
     s = s.strip()
     if s.startswith("("):
-        parts = _tuple_parts(s)
-        return eval_number(cons, parts[0]), eval_number(cons, parts[1])
+        parts = _tuple_parts_any(s)
+        vals = [eval_number(cons, p) for p in parts]
+        if len(vals) == 2:
+            return vals[0], vals[1], 0.0
+        return vals[0], vals[1], vals[2]
     el = cons.elements.get(s)
     if el is None:
+        _nested_arg_hint(s, "向量")
         raise GeoError("找不到对象 " + s)
     if el.kind == "vector":
-        return el.dx, el.dy
+        return el.dx, el.dy, 0.0
     if el.kind == "point":
         raise GeoError("需要向量或 (a,b) 元组，而不是点 " + s)
     raise GeoError("需要向量或 (a,b) 元组")
@@ -705,7 +753,8 @@ def _cmd_distance(cons, label, args):
     o2 = _resolve(cons, args[1])
     if o1.kind == "point" and o2.kind == "point":
         return _mk(cons, GeoNumber, "number", label, [o1, o2],
-                   lambda d: {"value": _dist((d[0].x, d[0].y), (d[1].x, d[1].y))})
+                   lambda d: {"value": _dist3(d[0], d[1]) if _has_z(d[0], d[1])
+                              else _dist((d[0].x, d[0].y), (d[1].x, d[1].y))})
     if o1.kind == "point" and o2.kind in ("line", "segment", "ray"):
         return _mk(cons, GeoNumber, "number", label, [o1, o2],
                    lambda d: {"value": _pt_linear_dist(d[0], d[1])})
@@ -789,6 +838,14 @@ def _angle_state(a, b, c) -> Dict[str, float]:
         ang += 360.0
     if ang > 180.0:
         ang = 360.0 - ang          # 无向角 0..180（初中直觉：∠ABC = 45° 而非 315°）
+    # 三维点：值改用真三维夹角；弧的绘制字段仍按 xy 投影（3D 视图里弧为示意）
+    if _has_z(a, b, c):
+        uz, vz = _z_of(a) - _z_of(b), _z_of(c) - _z_of(b)
+        nu = math.sqrt(ux * ux + uy * uy + uz * uz)
+        nv = math.sqrt(vx * vx + vy * vy + vz * vz)
+        if nu > 1e-12 and nv > 1e-12:
+            cs = max(-1.0, min(1.0, (ux * vx + uy * vy + uz * vz) / (nu * nv)))
+            ang = math.degrees(math.acos(cs))   # 0..180
     rad = math.radians(ang)
     return {"value": ang, "rad": rad,
             "cx": b.x, "cy": b.y,
@@ -806,8 +863,8 @@ def _cmd_translate(cons, label, args):
     if len(args) != 2:
         raise GeoError("Translate 需要 对象 和 向量")
     obj = _resolve(cons, args[0])
-    dx, dy = _resolve_vector(cons, args[1])
-    return _transform_mk(cons, label, obj, "translate", (dx, dy))
+    dx, dy, dz = _resolve_vector3(cons, args[1])
+    return _transform_mk(cons, label, obj, "translate", (dx, dy, dz))
 
 
 def _cmd_rotate(cons, label, args):
@@ -869,9 +926,15 @@ def _dilate_pt(x, y, k, cx, cy):
 
 def _transform_fn(op, kind, extra):
     if op == "translate":
-        dx, dy = extra
+        dx, dy, dz = extra
         if kind == "point":
-            return lambda d: {"x": d[0].x + dx, "y": d[0].y + dy}
+            def _tp(d):
+                st = {"x": d[0].x + dx, "y": d[0].y + dy}
+                # 三维点（带 z）平移时 z 也随位移更新；二维点保持无 z
+                if dz != 0.0 or d[0].z is not None:
+                    st["z"] = (d[0].z or 0.0) + dz
+                return st
+            return _tp
         if kind == "segment":
             return lambda d: {"x1": d[0].x1 + dx, "y1": d[0].y1 + dy,
                               "x2": d[0].x2 + dx, "y2": d[0].y2 + dy}
@@ -888,7 +951,13 @@ def _transform_fn(op, kind, extra):
         th, center = extra
         cxp, cyp = (center.x, center.y) if center is not None else (0.0, 0.0)
         if kind == "point":
-            return lambda d: dict(zip(("x", "y"), _rotate(d[0].x, d[0].y, th, cxp, cyp)))
+            def _rp(d):
+                st = dict(zip(("x", "y"), _rotate(d[0].x, d[0].y, th, cxp, cyp)))
+                # 三维点：绕「过中心、平行 z 轴」的轴旋转，z 分量不变
+                if d[0].z is not None:
+                    st["z"] = d[0].z
+                return st
+            return _rp
         if kind == "segment":
             def _rs(d):
                 p1 = _rotate(d[0].x1, d[0].y1, th, cxp, cyp)
@@ -3171,15 +3240,15 @@ def _sphere_check(r):
 
 def _sphere_state(c, p):
     r = math.sqrt((p.x - c.x) ** 2 + (p.y - c.y) ** 2 + ((p.z or 0) - (c.z or 0)) ** 2)
-    return {"objtype": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r)}}
+    return {"objtype": "sphere", "solid": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r)}}
 
 
 def _sphere_state_r(c, r):
-    return {"objtype": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r.value)}}
+    return {"objtype": "sphere", "solid": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r.value)}}
 
 
 def _sphere_state_fixed(c, r):
-    return {"objtype": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r)}}
+    return {"objtype": "sphere", "solid": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r)}}
 
 
 def _cmd_plane(cons, defn, args):
@@ -3203,7 +3272,7 @@ def _plane_state(a, b, c):
         raise GeoError("三点共线，无法确定平面")
     nx, ny, nz = n[0] / ln, n[1] / ln, n[2] / ln
     dd = -(nx * ax + ny * ay + nz * az)
-    return {"objtype": "plane",
+    return {"objtype": "plane", "solid": "plane",
             "data": {"a": nx, "b": ny, "c": nz, "d": dd,
                      "ax": ax, "ay": ay, "az": az, "ux": ux, "uy": uy, "uz": uz,
                      "vx": vx, "vy": vy, "vz": vz}}
@@ -3377,7 +3446,7 @@ def _cube_build(base_verts, n, h):
     ]
     edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4],
              [0, 4], [1, 5], [2, 6], [3, 7]]
-    return {"objtype": "cube", "data": {"verts": verts, "faces": faces, "edges": edges}}
+    return {"objtype": "cube", "solid": "cube", "data": {"verts": verts, "faces": faces, "edges": edges}}
 
 
 def _cube_state(a, b, c):
@@ -3492,7 +3561,9 @@ def _ortho_frame(a, b, c):
 
 
 def _poly_register(cons, defn, deps, fn, objtype):
-    return _mk(cons, Geo3D, "geo3d", defn, deps, fn)
+    """创建多面体元素：objtype 仍为历史值 polyhedron，solid 记录具体立体类型。"""
+    el = _mk(cons, Geo3D, "geo3d", defn, deps, fn)
+    return _tag3d(el, objtype)
 
 
 def _number_arg(cons, s):
@@ -3630,7 +3701,8 @@ def _cmd_cone(cons, defn, args):
             def fn_h(d):
                 hv = d[1].value if h_el is not None else h_val
                 return _cone_from_circle_state(d[0], hv)
-            return _mk(cons, Geo3D, "geo3d", defn, deps, fn_h)
+            return _tag3d(_mk(cons, Geo3D, "geo3d", defn, deps, fn_h), "cone")
+        _nested_arg_hint(args[0], "圆")
         raise GeoError("Cone[圆, 高] 需要 圆 与高度")
     if len(args) == 3:
         a_el = cons.elements.get(args[0].strip())
@@ -3645,7 +3717,7 @@ def _cmd_cone(cons, defn, args):
                     av = d[1].value if ang_el is not None else ang_val
                     apex = [d[0].x, d[0].y, d[0].z or 0]
                     return _infinite_cone_state(apex, [vec[0], vec[1], vec[2]], av)
-                return _mk(cons, Geo3D, "geo3d", defn, deps, fn_v)
+                return _tag3d(_mk(cons, Geo3D, "geo3d", defn, deps, fn_v), "cone")
             b_el = cons.elements.get(args[1].strip())
             if b_el is not None and b_el.kind == "point":
                 c_el = cons.elements.get(args[2].strip())
@@ -3658,7 +3730,7 @@ def _cmd_cone(cons, defn, args):
                         apex = [d[0].x, d[0].y, d[0].z or 0]
                         base = [d[1].x, d[1].y, d[1].z or 0]
                         return _cone_apex_center_radius_state(apex, base, rv)
-                    return _mk(cons, Geo3D, "geo3d", defn, deps, fn_r)
+                    return _tag3d(_mk(cons, Geo3D, "geo3d", defn, deps, fn_r), "cone")
         # 经典三点：底心 A、半径点 B、顶点 C
         a, b, c = _poly3_points(cons, args, 3, "Cone")
         return _poly_register(cons, defn, [a, b, c], lambda d: _cone_state(d[0], d[1], d[2]), "cone")
@@ -3732,7 +3804,8 @@ def _cmd_cylinder(cons, defn, args):
             def fn_h(d):
                 hv = d[1].value if h_el is not None else h_val
                 return _cylinder_from_circle_state(d[0], hv)
-            return _mk(cons, Geo3D, "geo3d", defn, deps, fn_h)
+            return _tag3d(_mk(cons, Geo3D, "geo3d", defn, deps, fn_h), "cylinder")
+        _nested_arg_hint(args[0], "圆")
         raise GeoError("Cylinder[圆, 高] 需要 圆 与高度")
     if len(args) == 3:
         a_el = cons.elements.get(args[0].strip())
@@ -3749,7 +3822,7 @@ def _cmd_cylinder(cons, defn, args):
                 p1 = [d[0].x, d[0].y, d[0].z or 0]
                 p2 = [d[1].x, d[1].y, d[1].z or 0]
                 return _cylinder_centers_radius_state(p1, p2, rv)
-            return _mk(cons, Geo3D, "geo3d", defn, deps, fn_r)
+            return _tag3d(_mk(cons, Geo3D, "geo3d", defn, deps, fn_r), "cylinder")
         a, b, c = _poly3_points(cons, args, 3, "Cylinder")
         return _poly_register(cons, defn, [a, b, c], lambda d: _cylinder_state(d[0], d[1], d[2]), "cylinder")
     raise GeoError("Cylinder 支持 Cylinder[圆,高] / Cylinder[底心,顶心,半径] / Cylinder[三点]")

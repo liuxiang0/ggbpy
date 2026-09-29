@@ -884,6 +884,10 @@ class Geo3D(GeoElement):
     def __init__(self, label: str, defn: str, objtype: str = "point", free: bool = False) -> None:
         super().__init__(label, defn, free)
         self.objtype = objtype
+        # 具体立体类型（cube/cone/cylinder/prism/pyramid/tetrahedron/…）。
+        # objtype 历史上对多面体统一为 "polyhedron"（向后兼容），故另设 solid 字段区分；
+        # 两者都为空的旧对象回退为 objtype。
+        self.solid = ""
         self.data: Dict[str, Any] = {}
         self.wire = False   # 线框显示模式（仅 3D 物体）
 
@@ -892,6 +896,7 @@ class Geo3D(GeoElement):
         if d is None:
             return None
         d["objtype"] = self.objtype
+        d["solid"] = self.solid or self.objtype
         d["wire"] = self.wire
         d["data"] = self.data
         return d

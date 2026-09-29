@@ -683,9 +683,9 @@ class Construction:
     # ------------------------------------------------------------------
     # 存取：GGB XML
     # ------------------------------------------------------------------
-    def save_ggb(self) -> str:
+    def save_ggb(self, warnings: Optional[list] = None) -> str:
         from . import ggb_io
-        return ggb_io.export_ggb(self)
+        return ggb_io.export_ggb(self, warnings)
 
     def load_ggb(self, text: str) -> None:
         from . import ggb_io

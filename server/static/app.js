@@ -76,7 +76,11 @@
               text: '文本', barchart: '直方图', locus: '轨迹', arc: '圆弧', matrix: '矩阵', result: '结果', sumrect: '黎曼和', piechart: '饼图', boxplot: '箱线图', complex: '复数',
               parametric: '参数曲线', polar: '极坐标曲线', implicit: '隐式曲线', semicircle: '半圆',
               image: '图片',
-              conic_ellipse: '椭圆', conic_hyperbola: '双曲线', conic_parabola: '抛物线', conic_general: '圆锥曲线' }
+              conic_ellipse: '椭圆', conic_hyperbola: '双曲线', conic_parabola: '抛物线', conic_general: '圆锥曲线' },
+      solid: { sphere: '球', plane: '平面', cube: '立方体', cone: '圆锥', cylinder: '圆柱',
+               prism: '棱柱', pyramid: '棱锥', tetrahedron: '正四面体', octahedron: '正八面体',
+               hexahedron: '正六面体', icosahedron: '正二十面体', dodecahedron: '正十二面体',
+               segment: '线段', line3d: '直线' }
     },
     en: {
       undo: '↶ Undo', redo: '↷ Redo', snap: 'Snap', demo: 'Demo', grid: 'Grid', axes: 'Axes',
@@ -143,7 +147,11 @@
               inequality: 'Inequality', boolean: 'Boolean', number: 'Number', angle: 'Angle', geo3d: '3D',
               text: 'Text', barchart: 'BarChart', locus: 'Locus', arc: 'Arc', matrix: 'Matrix', result: 'Result', sumrect: 'Riemann Sum', piechart: 'Pie Chart', boxplot: 'Box Plot', complex: 'Complex',
               parametric: 'Parametric', polar: 'Polar', implicit: 'Implicit', semicircle: 'Semicircle',
-              conic_ellipse: 'Ellipse', conic_hyperbola: 'Hyperbola', conic_parabola: 'Parabola', conic_general: 'Conic', image: 'Image' }
+              conic_ellipse: 'Ellipse', conic_hyperbola: 'Hyperbola', conic_parabola: 'Parabola', conic_general: 'Conic', image: 'Image' },
+      solid: { sphere: 'Sphere', plane: 'Plane', cube: 'Cube', cone: 'Cone', cylinder: 'Cylinder',
+               prism: 'Prism', pyramid: 'Pyramid', tetrahedron: 'Tetrahedron', octahedron: 'Octahedron',
+               hexahedron: 'Hexahedron', icosahedron: 'Icosahedron', dodecahedron: 'Dodecahedron',
+               segment: 'Segment', line3d: 'Line' }
     }
   };
   var MSG_MAP_EN = {
@@ -1763,6 +1771,16 @@
       renderList3d();
     }).catch(function () {});
   }
+  // 3D 对象类型名：优先 solid（具体立体：球/圆锥/圆柱/正十二面体…），回退 objtype
+  function solidLabelName(e) {
+    if (!e) return '3D';
+    if (e.solid) {
+      var nm = t('solid.' + e.solid);
+      return nm !== ('solid.' + e.solid) ? nm : e.solid;
+    }
+    return e.objtype || '3D';
+  }
+
   // 3D 模式对象列表（点击选中 → 编辑栏可改色/显隐/锁定/删除）
   function renderList3d() {
     if (!mode3d) return;
@@ -1775,8 +1793,8 @@
       var e = els3d[i];
       var selCls = (selected3d === e.label) ? ' sel' : '';
       if (i === listCursor) selCls += ' cur';
-      var kindName = e.kind === 'point' ? t('kind.point') : (e.objtype || '3D');
-      var defnTxt = e.defn || (e.label + '=' + (e.objtype || '3D'));
+      var kindName = e.kind === 'point' ? t('kind.point') : solidLabelName(e);
+      var defnTxt = e.defn || (e.label + '=' + solidLabelName(e));
       if (e.visible === false) selCls += ' hid';   // 隐藏对象灰显
       s += '<div class="obj' + selCls + '" data-label="' + e.label + '">'
         + '<span class="dh" draggable="true" title="' + (lang === 'en' ? 'Drag to reorder (drawing order)' : '拖拽调整叠放顺序') + '">⠿</span>'

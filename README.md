@@ -62,6 +62,27 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **3D 对象平移**：点击选中 3D 对象后直接在画布上拖动即可平移（普通=水平面内，Shift+拖动=仅改高度），空白处拖动仍旋转视角
 - **3D 控制点提示**：自由点渲染为**红色菱形**（可拖动的控制点，拖动即可改变其驱动的立方体/多面体大小），派生点为蓝色圆点；选中的点变为**橙色**并加粗、带虚线光环，状态栏提示「已选中控制点 — 拖动可改变立体大小」
 - 画家算法排序、hidden-line 遮挡虚线、逐对象线框/实体切换、坐标轴刻度
+- **3D 度量与变换（2026-09-29 修正）**：`Translate[三维点,(dx,dy,dz)]` 的 z 分量参与运算；`Rotate[三维点,角度,中心]` 绕「过中心、平行 z 轴」的轴旋转、z 不变；`Distance[三维点,三维点]` 用真三维距离；`Angle[A,B,C]` 三点含 z 时用真三维夹角（**单位仍为度**，与 2D 一致；绘制的弧仍为 xy 投影示意）。纯 2D 对象行为不变
+- **对象类型可读化**：`/api/state3d` 为每个 3D 对象附带 `solid` 字段（sphere/plane/cube/cone/cylinder/prism/pyramid/tetrahedron/octahedron/hexahedron/icosahedron/dodecahedron），3D 对象列表据此显示「球/圆锥/圆柱/正十二面体」等；`objtype` 保持历史值（多面体统一为 `polyhedron`）不变，旧脚本不受影响
+
+#### 3D 限制（由检测矩阵锁定当前行为）
+
+- **参数不能是嵌套命令**：`Cone[Circle[O,2],3]`、`Intersect[pl,Plane[...]]` 会报「参数不能是嵌套命令」，请先 `c=Circle[O,2]` 再 `Cone[c,3]`；顶层字面量形式（`Sphere[(1,1,1),2]`、`Segment[A,(0,0,0)]`、`Cube[正方形多边形]`）不受影响
+- **3D 求交仅两种**：面×面 → 交线、线段×面 → 交点；直线×面、体×面、体×线不支持（明确报错）；平行/重合平面会产出元素并带 `error`
+- **没有 `Volume`**；`Area`/`Perimeter` 只接受多边形/圆/圆锥曲线，不接受立体
+- **`.ggb` 导出跳过 3D**：GeoGebra XML 子集不支持 3D，导出时跳过 3D 元素及其级联引用，并在 XML 首部写入警告注释、响应头 `X-GGB-Warnings`（percent-encoded）给出提示 —— **3D 内容请用 .ggk 保存**
+- **SVG 导出只含 2D 视图**（3D 对象按设计跳过）
+
+#### 3D 检测矩阵（可重复执行）
+
+```bash
+PORT=8091 ./run.sh &                    # 改动内核后必须重启服务，否则测的是旧代码
+bash devtools/run_3d_detection.sh       # 内核 142 + API 82 + 浏览器 56 项断言
+```
+
+- `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 序列化 × 3D 度量语义）
+- `devtools/test_3d_api.py` —— API 层（`/api/state3d` schema、错误传播、undo/redo、`.ggb` 警告、`.ggk` 载入）
+- `devtools/verify_3d_ui_matrix.js` —— 浏览器层（15 个工具全部路径、退化与取消、工具切换、滑块驱动、像素校验、零 JS 错误）
 
 ### 定理证明器 / 脚本 / 导出 / 协作
 
