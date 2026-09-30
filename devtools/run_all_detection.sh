@@ -25,11 +25,12 @@ step() {
 }
 
 cd "$ROOT"
-step "1/5 命令注册表一致性" python3 -B devtools/test_registry.py
-step "2/5 2D 内核检测矩阵" python3 -B devtools/test_2d_matrix.py
-step "3/5 2D/平台 API 检测矩阵" python3 -B devtools/test_2d_api.py --base "$BASE"
-step "4/5 3D 三层检测矩阵（内核/API/浏览器）" bash devtools/run_3d_detection.sh
-step "5/5 微积分/求根回归" python3 -B devtools/test_mixed_smoke.py 2>/dev/null || true
+step "1/6 命令注册表一致性" python3 -B devtools/test_registry.py
+step "2/6 2D 内核检测矩阵" python3 -B devtools/test_2d_matrix.py
+step "3/6 2D/平台 API 检测矩阵" python3 -B devtools/test_2d_api.py --base "$BASE"
+step "4/6 3D 三层检测矩阵（内核/API/浏览器）" bash devtools/run_3d_detection.sh
+step "5/6 2D 前端回归矩阵（编辑栏/CAS/分享/图片/导出/工具）" node devtools/verify_2d_ui_matrix.js
+step "6/6 微积分/求根回归" python3 -B devtools/test_mixed_smoke.py 2>/dev/null || true
 
 echo ""
 echo "==================================================================="

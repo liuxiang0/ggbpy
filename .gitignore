@@ -13,6 +13,7 @@ verify*.js
 verify_*.js
 # 3D 检测矩阵：浏览器层脚本入库（唯一例外，便于回归复现）
 !devtools/verify_3d_ui_matrix.js
+!devtools/verify_2d_ui_matrix.js
 diag*.js
 probe*.js
 test_*.js

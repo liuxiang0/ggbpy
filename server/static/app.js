@@ -2099,6 +2099,9 @@
     lastFaces: function () { return dbgLastFaces; },
     lastSegs: function () { return dbgLastSegs; },
     resetCounters: function () { dbgProjCalls = 0; dbgOccTests = 0; dbgProjReuse = 0; },
+    toolState: function () {
+      return { activeTool: activeTool, pending: !!pendingImage, sel: (toolSel || []).length };
+    },
     els3dCount: function () { return (typeof els3d !== 'undefined' && els3d) ? els3d.length : -1; },
     mode3d: function () { return typeof mode3d !== 'undefined' ? !!mode3d : null; },
     load3d: function () { load3d(); },

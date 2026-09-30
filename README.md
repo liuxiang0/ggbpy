@@ -118,6 +118,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **撤销/重做计算记忆（`kernel/memo.py`）**：派生元素按「defn + 各依赖的几何状态签名」缓存计算结果，快照回放时依赖未变即复用 —— 含 n=32 等值面的构造 **redo 1201 ms → <1 ms**，且网格/依赖结果与撤销前逐项一致；依赖（滑块值、点坐标、网格规模…）任一变化或 defn 变化自动失效；随机类命令（RandomPointIn 等）显式**不参与**记忆，保证每次重算都会重新随机；条目数 + 规模双上限防内存膨胀
   - **3D 渲染投影复用 + 遮挡 bbox 预筛**：网格顶点在面/边之间只投影一次（大网格实测 reuse >1000 次，总投影次数从 ~8000 降到 ~4200）；遮挡测试改为「面屏外接矩形预筛 + 按深度近→远早停」，实测同一场景精确多边形测试 **321 → 9（36×）**，渲染结果不变（`projCalls` 一致）
   - **命令注册表单一来源 + 漂移守卫**：结果类型表从 `_result_kind()` 内部提为模块级 **`RESULT_KINDS`**（补上 5 条缺失：`circumcircle/pointonpath/macro*`），规范化 13 条多词命令的 CamelCase 显示名（`PerpendicularBisector`、`MacroCreate`、`PointOnPath`、`SemiCircle`…），并新增 **`devtools/test_registry.py`**：校验 163 条命令都有结果类型、别名都指向真实命令、别名与命令名不冲突、多词命令显示名规范、显示名唯一 —— 四张表以后再漂移会直接测出来
+  - **2D 前端回归入库（`devtools/verify_2d_ui_matrix.js`，30 断言）**：覆盖此前无回归的前端路径 —— **编辑栏**（改色 swatch、显隐勾选、锁定勾选、重定义、改名、级联删除，并锁定"重定义必须同名"的守卫）、**撤销/重做/清空按钮**、**CAS 面板**（执行 `Expand[(x+1)^2]` 并校验结果）、**分享按钮**、**图片插入**（选文件 → 两次基点点击 → `Image` 元素）、**导出下载**（SVG/PNG/.ggk 三种文件）、**2D 工具点击建点**、**语言/主题切换**与"全流程无未捕获 JS 错误"
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
@@ -131,7 +132,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量：注册表 8 + 2D 内核 123 + 2D API 31 + 3D 470/167/131（合计 930 断言）
+bash devtools/run_all_detection.sh       # 全量 6 步：注册表 8 + 2D 内核 123 + 2D API 31 + 3D 470/167/131 + 2D 前端 30 = 960 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 459 + API 161 + 浏览器 125
 ```
 
