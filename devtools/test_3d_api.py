@@ -12,6 +12,7 @@
 """
 
 import gzip
+import time
 import json
 import math
 import os
@@ -823,6 +824,45 @@ check("并发写入均成功", r1.get("ok") and r2.get("ok"), "%s / %s" % (r1.ge
 st3, d3 = jget("/api/state")
 labs3 = sorted(e.get("label") for e in (d3 or {}).get("elements", []))
 check("并发后两个对象都在（无丢失更新）", labs3 == ["A1", "B1"], str(labs3))
+
+# ---------------------------------------------------------------------------
+section("Q. P1-D：撤销/重做增量与计算记忆")
+clear()
+put("cu=Cube[(0,0,0),(2,0,0)]")
+put("imp=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,32]")
+put("A1=Area[imp]")
+els = state3d()
+imp0 = find(els, "imp")
+v0 = len((imp0.get("data") or {}).get("verts", []))
+_st, d0 = jget("/api/state")
+a0 = None
+for e in (d0 or {}).get("elements", []):
+    if e.get("label") == "A1":
+        a0 = _num_or_none(e.get("value"))
+check("重做性能用例就绪（等值面 11978 顶点）", v0 == 11978 and a0 is not None, "v=%d area=%s" % (v0, a0))
+st, j1 = jpost("/api/undo", {})
+st, j2 = jpost("/api/undo", {})
+els = state3d()
+check("两次撤销后重对象从 3D 状态移除", find(els, "imp") is None and find(els, "A1") is None,
+      str([e.get("label") for e in els]))
+_t0 = time.time()
+st, j3 = jpost("/api/redo", {})
+_dt = time.time() - _t0
+check("redo 走计算记忆（HTTP 往返 < 500 ms，原约 1.2 s）", _dt < 0.5, "%.0f ms" % (_dt * 1000))
+els = state3d()
+imp1 = find(els, "imp")
+check("redo 后网格顶点数一致", imp1 is not None and len((imp1.get("data") or {}).get("verts", [])) == v0,
+      "%s vs %d" % (len((imp1.get("data") or {}).get("verts", [])) if imp1 else None, v0))
+st, j4 = jpost("/api/redo", {})
+_st2, d2 = jget("/api/state")
+a2 = None
+for e in (d2 or {}).get("elements", []):
+    if e.get("label") == "A1":
+        a2 = _num_or_none(e.get("value"))
+check("redo 后依赖元素结果一致", a2 is not None and a0 is not None and abs(a2 - a0) < 1e-9,
+      "%s vs %s" % (a2, a0))
+_st3, d3 = jget("/api/state")
+check("重做栈状态正确（can_redo=False）", (d3 or {}).get("can_redo") is False, str((d3 or {}).get("can_redo")))
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

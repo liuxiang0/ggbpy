@@ -105,13 +105,37 @@ class GeoElement:
             d.dependents.add(self)
 
     def compute(self) -> None:
-        """按 deps 当前状态重算自身；free 元素为 no-op。"""
+        """按 deps 当前状态重算自身；free 元素为 no-op。
+
+        重算前先查计算记忆（kernel.memo）：键 = defn + 各依赖的几何状态签名。
+        撤销/重做/快照回放时依赖未变 → 直接复用上次结果，避免重算大网格。
+        """
         if self.free or self._fn is None:
             return
+        mkey = None
+        try:
+            from . import memo as _memo
+            mkey = _memo.key_for(self)
+            cached = _memo.get(mkey)
+        except Exception:
+            _memo = None
+            cached = None
+        if cached is not None:
+            try:
+                self.apply_state(cached)
+                self.error = None
+                return
+            except Exception:
+                pass
         try:
             state = self._fn(self.deps)
             self.apply_state(state)
             self.error = None
+            if _memo is not None:
+                try:
+                    _memo.put(mkey, state)
+                except Exception:
+                    pass
         except GeoError as e:
             self.error = str(e)
         except Exception as e:  # 数值失败保留旧状态

@@ -819,6 +819,47 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   const clientN13 = await page.evaluate(() => window.__ggbpyDebug.els3dCount());
   check('增量合并后客户端 3D 列表 = 3 个对象', clientN13 === 3, 'els3d=' + clientN13);
 
+  // P1-E：投影复用 + 遮挡 bbox 预筛（计数证据）
+  await reset(['O=(0,0,0)']);
+  await typeCmd('cu=Cube[(0,0,0),(2,0,0)]');
+  await typeCmd('sp=Sphere[(0,0,0),1.4]');
+  await page.waitForTimeout(700);
+  await open3d();
+  await page.waitForTimeout(700);
+  const cubeE = await page.evaluate(() => {
+    window.__ggbpyDebug.resetCounters();
+    window.__ggbpyDebug.render3d();
+    return { projCalls: window.__ggbpyDebug.projCalls(), occTests: window.__ggbpyDebug.occTests(),
+             faces: window.__ggbpyDebug.lastFaces(), segs: window.__ggbpyDebug.lastSegs() };
+  });
+  check('小网格：遮挡路径确实运行（occTests > 0）', cubeE.occTests > 0, JSON.stringify(cubeE));
+  // 实测：去掉 bbox 预筛后同一场景 occTests = 321（有预筛 9）→ 约 36× 减少
+  const occPairs = Math.max(1, cubeE.faces * cubeE.segs);
+  check('bbox 预筛把精确多边形测试砍到 <5%（实测无预筛为 321）',
+    cubeE.occTests < 0.05 * occPairs,
+    'occTests=' + cubeE.occTests + ' / faces×segs=' + occPairs + ' = ' + (100 * cubeE.occTests / occPairs).toFixed(1) + '%');
+  await typeCmd('big=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,28]');
+  await page.waitForTimeout(2500);
+  const bigE = await page.evaluate(() => {
+    window.__ggbpyDebug.resetCounters();
+    const t0 = performance.now();
+    window.__ggbpyDebug.render3d();
+    return { projCalls: window.__ggbpyDebug.projCalls(), projReuse: window.__ggbpyDebug.projReuse(),
+             ms: performance.now() - t0 };
+  });
+  const meshE = await page.evaluate(async () => {
+    const d = await (await fetch('/api/state3d?since=-999')).json();
+    const m = (d.elements || []).filter(e => e.solid === 'surface')[0];
+    return m ? { verts: m.data.verts.length, faces: m.data.faces.length } : null;
+  });
+  check('大网格：顶点投影被复用（reuse > 1000）', bigE.projReuse > 1000,
+    'reuse=' + bigE.projReuse + ' / projCalls=' + bigE.projCalls);
+  check('大网格：总投影次数低于无复用下界（< 7000）', bigE.projCalls < 7000,
+    'projCalls=' + bigE.projCalls + '（网格 ' + (meshE ? meshE.verts : '?') + ' 顶点，面预算 2000×4）');
+  check('大网格：单次渲染 < 200ms', bigE.ms < 200, bigE.ms.toFixed(0) + 'ms');
+  const pxE = await nonBgPixels();
+  check('投影复用后渲染输出正常（像素 > 500）', pxE > 500, 'non-bg pixels=' + pxE);
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));

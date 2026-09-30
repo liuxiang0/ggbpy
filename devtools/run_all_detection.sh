@@ -25,10 +25,11 @@ step() {
 }
 
 cd "$ROOT"
-step "1/4 2D 内核检测矩阵" python3 -B devtools/test_2d_matrix.py
-step "2/4 2D/平台 API 检测矩阵" python3 -B devtools/test_2d_api.py --base "$BASE"
-step "3/4 3D 三层检测矩阵（内核/API/浏览器）" bash devtools/run_3d_detection.sh
-step "4/4 微积分/求根回归" python3 -B devtools/test_mixed_smoke.py 2>/dev/null || true
+step "1/5 命令注册表一致性" python3 -B devtools/test_registry.py
+step "2/5 2D 内核检测矩阵" python3 -B devtools/test_2d_matrix.py
+step "3/5 2D/平台 API 检测矩阵" python3 -B devtools/test_2d_api.py --base "$BASE"
+step "4/5 3D 三层检测矩阵（内核/API/浏览器）" bash devtools/run_3d_detection.sh
+step "5/5 微积分/求根回归" python3 -B devtools/test_mixed_smoke.py 2>/dev/null || true
 
 echo ""
 echo "==================================================================="

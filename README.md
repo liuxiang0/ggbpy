@@ -114,6 +114,10 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **计算预算与串行化**：隐式曲面分辨率上限 64 → **48**，marching 循环内加**时间预算**（默认 8 s，`GGBPY_IMPLICIT_BUDGET` 可收紧，超时给「计算量过大」可操作错误）；`球×立体` 改 numpy 一次性半空间判定（76 面凸包 **3 ms**，原为 O(面数²) 纯 Python 循环），面数 > 4000 明确护栏；**共享构造的 11 个变更端点全部串行化**（并发写不再交错破坏 DAG）
   - **2D 回归入库**：新增 `devtools/test_2d_matrix.py`（**123 断言**，覆盖此前零引用的 60 条 2D 命令：变换/圆锥曲线/微积分/统计回归/线代复数/编辑/宏/布尔判定）与 `devtools/test_2d_api.py`（**31 断言**，覆盖此前未测的 17 个端点：drag/shift/batch/reorder/macro*/share+shared/image*/cas*/download/export-svg/demo/load）；统一入口 **`bash devtools/run_all_detection.sh`**
   - **写矩阵时揪出并修掉 6 个真 bug**：① `GeoFunction.compute()` 丢弃状态里的 `xsym` → **所有 `Fit*` 拟合函数不可求值、绘图样本全为 NaN**；② `Are*` 布尔判定对具体数值构造一律返回「未知」→ 增加数值兜底（含两线平行/重合的共点判定）；③ `Arc/Sector` 半径误取两端半径**平均** → 改为 `|CA|` 并要求圆心近似等距，否则明确报错；④ `BarChart[列表]` 只认 `[`（GeoGebra 列表用 `{}`）→ 三种写法全部支持；⑤ `SetColor` 拒绝带引号颜色 → 自动去引号；⑥ `FitExpr` 报错文案写成 `FitExp` 且未说明数据来源 → 修正；另抑制 `curve_fit` 警告噪音；`/api/commands` 现在附带规范**显示名映射**（`surfacepoint → SurfacePoint`、`implicitSurface → ImplicitSurface`、`fitplane → FitPlane` 等 54 个多词命令），帮助面板与输入框补全都用规范写法
+- **第十四批（2026-09-29 · P1：性能结构债）**：
+  - **撤销/重做计算记忆（`kernel/memo.py`）**：派生元素按「defn + 各依赖的几何状态签名」缓存计算结果，快照回放时依赖未变即复用 —— 含 n=32 等值面的构造 **redo 1201 ms → <1 ms**，且网格/依赖结果与撤销前逐项一致；依赖（滑块值、点坐标、网格规模…）任一变化或 defn 变化自动失效；随机类命令（RandomPointIn 等）显式**不参与**记忆，保证每次重算都会重新随机；条目数 + 规模双上限防内存膨胀
+  - **3D 渲染投影复用 + 遮挡 bbox 预筛**：网格顶点在面/边之间只投影一次（大网格实测 reuse >1000 次，总投影次数从 ~8000 降到 ~4200）；遮挡测试改为「面屏外接矩形预筛 + 按深度近→远早停」，实测同一场景精确多边形测试 **321 → 9（36×）**，渲染结果不变（`projCalls` 一致）
+  - **命令注册表单一来源 + 漂移守卫**：结果类型表从 `_result_kind()` 内部提为模块级 **`RESULT_KINDS`**（补上 5 条缺失：`circumcircle/pointonpath/macro*`），规范化 13 条多词命令的 CamelCase 显示名（`PerpendicularBisector`、`MacroCreate`、`PointOnPath`、`SemiCircle`…），并新增 **`devtools/test_registry.py`**：校验 163 条命令都有结果类型、别名都指向真实命令、别名与命令名不冲突、多词命令显示名规范、显示名唯一 —— 四张表以后再漂移会直接测出来
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
@@ -127,7 +131,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量：2D 内核 123 + 2D API 31 + 3D 459/161/125（合计 899 断言）
+bash devtools/run_all_detection.sh       # 全量：注册表 8 + 2D 内核 123 + 2D API 31 + 3D 470/167/131（合计 930 断言）
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 459 + API 161 + 浏览器 125
 ```
 

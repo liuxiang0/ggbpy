@@ -1498,6 +1498,66 @@ check("面数 > 4000 的立体 → 明确护栏提示",
       str(c54.elements["ixbig"].error))
 
 # ---------------------------------------------------------------------------
+section("AM. 撤销/重做增量与计算记忆（P1-D）")
+import time as _time  # noqa: E402
+import kernel.memo as _memo  # noqa: E402
+
+_memo.clear()
+c55, e55 = build(["cu=Cube[(0,0,0),(2,0,0)]",
+                  "imp=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,32]"])
+check("重做性能用例构造", e55 is None, str(e55))
+if e55 is None:
+    before = c55.elements["imp"].data
+    v_before, f_before = len(before["verts"]), len(before["faces"])
+    c55.process("A1=Area[imp]")
+    area_before = c55.elements["A1"].value
+    order_before = list(c55.order)
+    c55.undo()          # 撤销 A1
+    c55.undo()          # 撤销重对象 imp
+    check("两次 undo 后重对象已移除", "imp" not in c55.elements and "A1" not in c55.elements,
+          str(sorted(c55.elements.keys())))
+    _t0 = _time.time()
+    c55.redo()          # 重新创建重对象：应命中计算记忆
+    _dt = _time.time() - _t0
+    c55.redo()          # 再恢复 A1
+    after = c55.elements["imp"].data
+    check("redo 重放命中计算记忆（< 150 ms，原约 1200 ms）", _dt < 0.15, "%.0f ms" % (_dt * 1000))
+    check("redo 后网格与撤销前完全一致",
+          len(after["verts"]) == v_before and len(after["faces"]) == f_before
+          and after["verts"][:3] == before["verts"][:3],
+          "v %d→%d" % (v_before, len(after["verts"])))
+    check("redo 后依赖元素重新算出一致结果",
+          close(c55.elements["A1"].value, area_before, 1e-9),
+          "%.6f vs %.6f" % (c55.elements["A1"].value, area_before))
+    check("redo 后元素顺序不变", list(c55.order) == order_before,
+          "%s vs %s" % (list(c55.order), order_before))
+    st = _memo.stats()
+    check("计算记忆有命中记录", st["hits"] > 0, str(st))
+
+# 记忆正确性：依赖变化必须失效
+_memo.clear()
+c56, _e56 = build(["a=2", "cyl=SurfaceParam[a*cos(t),a*sin(t),u,u,t,0,1,0,2*pi,8]"])
+r1 = c56.elements["cyl"].data["verts"][0][0]
+c56.elements["a"].value = 5.0
+c56._recompute(c56.elements["a"])
+r2 = c56.elements["cyl"].data["verts"][0][0]
+check("滑块值变化后不再复用旧结果（记忆键含依赖签名）", abs(r1 - 2.0) < 1e-9 and abs(r2 - 5.0) < 1e-9,
+      "%.3f → %.3f" % (r1, r2))
+# 随机元素不进记忆
+c57, _e57 = build(["poly=Polygon[(0,0),(4,0),(4,4),(0,4)]", "rp=RandomPointIn[poly]"])
+rp = c57.elements["rp"]
+check("随机类元素不参与计算记忆（键为 None）", _memo.key_for(rp) is None, str(_memo.key_for(rp)))
+p_a = (rp.x, rp.y)
+rp.compute()
+check("随机点每次重算都会变", (rp.x, rp.y) != p_a, "%.4f,%.4f" % (rp.x, rp.y))
+# 记忆容量上限
+_memo.clear()
+for _i in range(140):
+    _memo.put(("t", _i), {"data": {"verts": [[0, 0, 0]]}})
+check("计算记忆有条目上限（不会无限增长）", _memo.stats()["entries"] <= 96, str(_memo.stats()["entries"]))
+_memo.clear()
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D 内核检测矩阵：%d 项断言，%d 失败" % (COUNT[0], len(FAILS)))
 if FAILS:

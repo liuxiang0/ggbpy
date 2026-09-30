@@ -1866,6 +1866,7 @@
     return { right: [rx, ry, 0], up: [ux, uy, uz], dir: dir };
   }
   function proj3(p) {
+    dbgProjCalls++;
     var d = [p[0] - cam.tx, p[1] - cam.ty, p[2] - cam.tz];
     var f = cam.r * 2.2;
     var pxScale = Math.min(cssW, cssH) * 0.42 / cam.r;
@@ -2059,6 +2060,7 @@
   }
   // 大网格渲染预算：面数超限时只画面积最大的面（LOD，保轮廓），
   // 并跳过 O(边×面) 的 hidden-line 遮挡测试，避免等值面/参数曲面卡死。
+  var dbgProjCalls = 0, dbgOccTests = 0, dbgLastFaces = 0, dbgLastSegs = 0, dbgProjReuse = 0;
   var MESH_FACE_BUDGET = 2000;
   var MESH_EDGE_BUDGET = 4000;
   var OCCLUSION_BUDGET = 150000;
@@ -2091,6 +2093,12 @@
     render3d: function () { render3d(); },
     faceBudget: function () { return MESH_FACE_BUDGET; },
     cacheSize: function () { return Object.keys(meshFaceCache).length; },
+    projCalls: function () { return dbgProjCalls; },
+    projReuse: function () { return dbgProjReuse; },
+    occTests: function () { return dbgOccTests; },
+    lastFaces: function () { return dbgLastFaces; },
+    lastSegs: function () { return dbgLastSegs; },
+    resetCounters: function () { dbgProjCalls = 0; dbgOccTests = 0; dbgProjReuse = 0; },
     els3dCount: function () { return (typeof els3d !== 'undefined' && els3d) ? els3d.length : -1; },
     mode3d: function () { return typeof mode3d !== 'undefined' ? !!mode3d : null; },
     load3d: function () { load3d(); },
@@ -2142,12 +2150,19 @@
         var fillCol = e.objtype === 'cube' ? 'rgba(79,70,229,.16)' : 'rgba(217,70,239,.12)';
         var strokeCol = e.objtype === 'cube' ? '#4f46e5' : '#d946ef';
         cfaces = selectMeshFaces(e, verts, cfaces);   // 大网格 LOD：只画最大的若干面
+        // 顶点投影复用：同一顶点被多面共用，避免每面重复 proj3（大网格下省一大截）
+        var projV = [];
+        var projVFn = function (vi2) {
+          var q = projV[vi2];
+          if (q === undefined) { q = proj3(verts[vi2]); projV[vi2] = q; } else { dbgProjReuse++; }
+          return q;
+        };
         for (var f = 0; f < cfaces.length; f++) {
           var idx = cfaces[f];
           var poly = [];
           var zsum = 0;
           for (var vi = 0; vi < idx.length; vi++) {
-            var pr2 = proj3(verts[idx[vi]]);
+            var pr2 = projVFn(idx[vi]);
             poly.push(pr2);
             zsum += pr2.z;
           }
@@ -2305,21 +2320,37 @@
       }
       return inside;
     }
-    // 收集面屏多边形（用于遮挡测试；面平均深度已知）
+    // 遮挡测试用的面表：屏外接矩形 + 平均深度；按深度从近到远排序便于早停
     var facePolys = [];
     for (var fpi = 0; fpi < faces.length; fpi++) {
-      facePolys.push({ poly: faces[fpi].poly, z: faces[fpi].z });
+      var fpPoly = faces[fpi].poly;
+      if (fpPoly.length < 3) continue;
+      var bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+      for (var bi = 0; bi < fpPoly.length; bi++) {
+        var bpt = fpPoly[bi];
+        if (bpt.x < bx0) bx0 = bpt.x;
+        if (bpt.y < by0) by0 = bpt.y;
+        if (bpt.x > bx1) bx1 = bpt.x;
+        if (bpt.y > by1) by1 = bpt.y;
+      }
+      facePolys.push({ poly: fpPoly, z: faces[fpi].z, x0: bx0, y0: by0, x1: bx1, y1: by1 });
     }
+    facePolys.sort(function (p, q) { return p.z - q.z; });   // 近 → 远
     function edgeOccluded(p1, p2) {
-      // 边中点投影 + 两端点投影，任一端点被遮挡则整边虚线
+      // 边中点投影：先用面屏外接矩形筛掉绝大多数面，再做精确多边形测试
       var a = proj3(p1), b = proj3(p2);
-      var m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+      var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, mz = (a.z + b.z) / 2;
       for (var i = 0; i < facePolys.length; i++) {
         var fp = facePolys[i];
-        if (fp.z < m.z - 0.01 && fp.poly.length >= 3 && pointInPoly2d(m.x, m.y, fp.poly)) return true;
+        if (fp.z >= mz - 0.01) break;                       // 已排序：更远的都不比中点近
+        if (mx < fp.x0 || mx > fp.x1 || my < fp.y0 || my > fp.y1) continue;
+        dbgOccTests++;
+        if (pointInPoly2d(mx, my, fp.poly)) return true;
       }
       return false;
     }
+    dbgLastFaces = faces.length;
+    dbgLastSegs = segs.length;
     var doOcclusion = (faces.length * segs.length) <= OCCLUSION_BUDGET;
     for (var si = 0; si < segs.length; si++) {
       var occ = doOcclusion && edgeOccluded(segs[si][0], segs[si][1]);

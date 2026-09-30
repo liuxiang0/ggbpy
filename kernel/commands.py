@@ -3020,6 +3020,8 @@ def _cmd_randomize(cons, defn, args):
     """Randomize[A]：把 RandomBetween 数值重新随机（抛硬币/掷骰模拟）。"""
     if len(args) != 1:
         raise GeoError("Randomize 需要一个对象")
+    from . import memo as _memo
+    _memo.clear()          # 随机结果不参与计算记忆，清空以确保依赖它的对象重新生成
     el = _resolve(cons, args[0], ("number",))
     src = getattr(el, "_random_src", None)
     if not src:
@@ -7407,6 +7409,13 @@ DISPLAY_NAMES = {
     "setlocked": "SetLocked", "setwire": "SetWire", "isfinite": "IsFinite",
     "isprime": "IsPrime", "divisors": "Divisors", "sequence": "Sequence",
     "normaldist": "NormalDist", "surfacearea": "SurfaceArea", "centroid": "Centroid",
+    # 多词命令的规范写法（其余单词命令由首字母大写自动生成）
+    "circumcenter": "CircumCenter", "orthocenter": "OrthoCenter",
+    "correlationcoefficient": "CorrelationCoefficient",
+    "macrocreate": "MacroCreate", "macrodelete": "MacroDelete", "macrolist": "MacroList",
+    "perpendicularline": "PerpendicularLine", "perpendicularbisector": "PerpendicularBisector",
+    "pointonpath": "PointOnPath", "semicircle": "SemiCircle", "semiperimeter": "SemiPerimeter",
+    "solveineq": "SolveIneq", "regularpolygon": "RegularPolygon",
 }
 
 
@@ -7477,8 +7486,9 @@ ALIASES = {
 # 结果类型提示（自动标签用）
 # ---------------------------------------------------------------------------
 
-def _result_kind(name: str) -> str:
-    table = {
+RESULT_KINDS = {
+    "circumcircle": "circle", "pointonpath": "point",
+    "macrocreate": "result", "macrodelete": "result", "macrolist": "result",
         "midpoint": "point", "line": "line", "segment": "segment", "ray": "ray",
         "circle": "circle", "polygon": "polygon", "intersect": "point",
         "distance": "number", "slope": "number", "angle": "number",
@@ -7539,8 +7549,12 @@ def _result_kind(name: str) -> str:
         "randompointin": "point",
         "conj": "complex", "conjugate": "complex",
         "re": "number", "im": "number", "arg": "number", "abs": "number",
-    }
-    return table.get(name, "point")
+}
+
+
+def _result_kind(name: str) -> str:
+    """命令的默认结果类型（自动标签、类型提示用）。表见模块级 RESULT_KINDS（单一来源，可检测）。"""
+    return RESULT_KINDS.get(name, "point")
 
 
 # ---------------------------------------------------------------------------

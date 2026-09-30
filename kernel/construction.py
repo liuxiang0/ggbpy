@@ -53,6 +53,11 @@ class Construction:
             raise GeoError("找不到对象 " + label)
         return el
 
+    def memo_stats(self):
+        """计算记忆统计（命中/条目数），供检测与诊断。"""
+        from . import memo
+        return memo.stats()
+
     def clear(self, silent: bool = False) -> None:
         if not silent:
             # 清空作为一步可撤销操作
