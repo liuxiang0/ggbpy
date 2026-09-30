@@ -11,6 +11,7 @@
 退出码: 0 全通过 / 1 有失败 / 2 服务不可用或代码过旧。
 """
 
+import gzip
 import json
 import math
 import os
@@ -749,6 +750,79 @@ need = {"convexhull", "surfacepoint", "surfaceproject", "covarianceellipsoid", "
         "boundingbox", "covariance", "mesh", "surfaceparam", "implicitsurface", "gltf"}
 missing = sorted(need - cmds - {"gltf"})
 check("API 命令列表含本轮新增命令", not missing, "缺 " + str(missing))
+
+# ---------------------------------------------------------------------------
+section("P. 第十三批（P0）：state3d 增量 / gzip / 并发串行化")
+clear()
+put("cu=Cube[(0,0,0),(2,0,0)]")
+put("sp=Sphere[(1,1,1),2]")
+full = jget("/api/state3d")[1]
+rev0 = full.get("rev")
+check("state3d 全量首屏带 rev", isinstance(rev0, int) and "elements" in full and full.get("count") == 2,
+      "rev=%s count=%s" % (rev0, full.get("count")))
+again = jget("/api/state3d?since=%d" % rev0)[1]
+check("同一 rev 再请求 → unchanged（零重传）",
+      again.get("unchanged") is True and "elements" not in again and again.get("rev") == rev0,
+      json.dumps(again, ensure_ascii=False)[:90])
+put("co=Cone[Circle[(0,0),1],2]")
+d1 = jget("/api/state3d?since=%d" % rev0)[1]
+labels1 = sorted(e.get("label") for e in (d1.get("changed") or []))
+check("新增对象后只回增量（changed=[co]）",
+      d1.get("unchanged") is False and labels1 == ["co"] and not d1.get("removed")
+      and d1.get("rev") > rev0, json.dumps({"changed": labels1, "removed": d1.get("removed")})[:90])
+# 合并增量 == 全量
+merged = {}
+for e in full["elements"]:
+    merged[e["label"]] = e
+for e in d1.get("changed") or []:
+    merged[e["label"]] = e
+for lab in d1.get("removed") or []:
+    merged.pop(lab, None)
+full2 = jget("/api/state3d")[1]
+check("增量合并结果 == 全量结果（标签集合）",
+      sorted(merged.keys()) == sorted(e["label"] for e in full2["elements"]),
+      "%s vs %s" % (sorted(merged.keys()), sorted(e["label"] for e in full2["elements"])))
+# 删除对象 → removed
+rev_now = d1["rev"]
+jpost("/api/input", {"text": "Delete[co]"})
+d2 = jget("/api/state3d?since=%d" % rev_now)[1]
+check("删除后返回 removed=[co]", "co" in (d2.get("removed") or []),
+      json.dumps({"removed": d2.get("removed"), "changed": [e.get("label") for e in (d2.get("changed") or [])]})[:90])
+# rev 过期 → 全量兜底
+stale = jget("/api/state3d?since=-999")[1]
+check("rev 过期（历史已淘汰/未知）→ 全量兜底", "elements" in stale and len(stale["elements"]) >= 2,
+      "keys=%s" % sorted(stale.keys()))
+# gzip：大网格载荷
+clear()
+put("big=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,24]")
+req = urllib.request.Request(BASE + "/api/state3d", headers={"Accept-Encoding": "gzip"})
+with urllib.request.urlopen(req, timeout=30) as resp:
+    gz = resp.read()
+    enc = (resp.headers.get("Content-Encoding") or "").lower()
+    raw = gzip.decompress(gz) if enc == "gzip" else gz
+check("大 state3d 响应启用 gzip", enc == "gzip", "Content-Encoding=%s" % enc)
+check("gzip 压缩后体积显著减小（< 40%）", len(gz) < 0.4 * len(raw),
+      "%.0f KB → %.0f KB（%.0f%%）" % (len(raw) / 1024, len(gz) / 1024, 100.0 * len(gz) / max(1, len(raw))))
+try:
+    payload = json.loads(raw.decode("utf-8"))
+    ok_json = payload.get("count", 0) == 1
+except Exception:
+    ok_json = False
+check("gzip 解压后 JSON 可解析", ok_json)
+# 并发串行化：两个请求同时改构造，不能丢元素/破坏顺序
+clear()
+import concurrent.futures as _cf  # noqa: E402
+
+def _post(t):
+    _st, _d = jpost("/api/input", {"text": t})
+    return _d or {}
+
+with _cf.ThreadPoolExecutor(max_workers=2) as ex:
+    r1, r2 = [f.result() for f in [ex.submit(_post, "A1=(1,1)"), ex.submit(_post, "B1=(2,2)")]]
+check("并发写入均成功", r1.get("ok") and r2.get("ok"), "%s / %s" % (r1.get("ok"), r2.get("ok")))
+st3, d3 = jget("/api/state")
+labs3 = sorted(e.get("label") for e in (d3 or {}).get("elements", []))
+check("并发后两个对象都在（无丢失更新）", labs3 == ["A1", "B1"], str(labs3))
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

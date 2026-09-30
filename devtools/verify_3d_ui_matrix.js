@@ -59,7 +59,13 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     catch (e) { return { status: r.status, text: txt, headers: {} }; }
   }, [path, body, method]);
 
-  const inp = async (t) => api('/api/input', { text: t });
+  const inp = async (t) => api('/api/input', { text: t });   // 仅服务端构造（不走 UI）
+  // 真实 UI 输入：填 #cmd 并回车 → 触发 submitInput 与 3D 刷新链路
+  const typeCmd = async (text) => {
+    await page.fill('#cmd', text);
+    await page.press('#cmd', 'Enter');
+    await page.waitForTimeout(250);
+  };
   const clearApi = async () => api('/api/clear', {});
   const state3d = async () => (await api('/api/state3d')).json.elements || [];
   const state = async () => (await api('/api/state')).json.elements || [];
@@ -597,8 +603,12 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   const bigFaces = big10 ? (big10.data.faces || []).length : 0;
   check('大网格等值面已建成（面数 > 3000）', bigFaces > 3000, 'faces=' + bigFaces);
   // 输入框在 3D 模式下创建对象后，客户端 3D 列表应立即刷新（回归：此前要切模式才出现）
-  const clientN = await page.evaluate(() => window.__ggbpyDebug.els3dCount());
-  check('3D 模式下输入后客户端 3D 列表已刷新', clientN >= 1, 'els3d=' + clientN);
+  const nBefore10 = await page.evaluate(() => window.__ggbpyDebug.els3dCount());
+  await typeCmd('extra=Sphere[(0,0,0),1]');
+  await page.waitForTimeout(900);
+  const nAfter10 = await page.evaluate(() => window.__ggbpyDebug.els3dCount());
+  check('3D 模式下 UI 输入新对象后客户端 3D 列表立即 +1', nAfter10 === nBefore10 + 1,
+    nBefore10 + ' → ' + nAfter10);
   const dbg = await page.evaluate(() => !!(window.__ggbpyDebug && window.__ggbpyDebug.render3d));
   check('渲染调试钩子可用', dbg, dbg ? 'ok' : 'missing');
   if (dbg) {
@@ -734,6 +744,80 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     if (closeBtn) await closeBtn.click();
     await page.waitForTimeout(200);
   }
+
+  // 第十三批（P0）：state3d 增量 + gzip 端到端
+  await reset(['O=(0,0,0)']);
+  const sdResp = [];
+  page.on('response', function (r) {
+    try {
+      const u = (typeof r.url === 'function') ? r.url() : String(r.url || '');
+      if (u.indexOf('/api/state3d') === -1) return;
+      const rec = { url: u, enc: (r.headers()['content-encoding'] || ''), status: r.status(), body: '' };
+      sdResp.push(rec);
+      r.text().then(function (txt) { rec.body = txt.slice(0, 120); }).catch(function () {});
+    } catch (e) {}
+  });
+  await typeCmd('big=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,24]');
+  await page.waitForTimeout(1800);
+  await open3d();
+  await page.waitForTimeout(1500);
+  // 先让客户端追上服务端 rev，再比较连续两次刷新
+  await page.evaluate(() => window.__ggbpyDebug.load3d());
+  await page.waitForTimeout(600);
+  const modeA = await page.evaluate(() => window.__ggbpyDebug.mode3d());
+  check('增量测试前处于 3D 模式', modeA === true, 'mode3d=' + modeA);
+  const revA = await page.evaluate(() => window.__ggbpyDebug.rev3d());
+  const tInc0 = Date.now();
+  await page.evaluate(() => window.__ggbpyDebug.load3d());
+  const incMs = Date.now() - tInc0;
+  await page.waitForTimeout(600);
+  const revB = await page.evaluate(() => window.__ggbpyDebug.rev3d());
+  check('增量协议：客户端持有 rev', typeof revA === 'number' && revA >= 0, 'rev=' + revA);
+  check('未变更时连续刷新 rev 不变（零重传路径）', revA === revB, revA + ' → ' + revB);
+  check('未变更刷新往返 < 400ms', incMs < 400, incMs + 'ms');
+  const els13 = await state3d();
+  check('增量刷新后 3D 列表元素数保持', els13.length >= 1, 'n=' + els13.length);
+  await page.waitForTimeout(300);
+  const gzSeen = sdResp.filter(function (r) { return r.enc === 'gzip'; });
+  check('大 state3d 响应线上带 gzip', gzSeen.length > 0,
+    'state3d 响应 ' + sdResp.length + ' 条，gzip ' + gzSeen.length + ' 条');
+  const incSeen = sdResp.filter(function (r) { return r.url.indexOf('since=') !== -1; });
+  check('客户端请求带 since（增量拉取）', incSeen.length > 0, 'since 请求 ' + incSeen.length + ' 条');
+  const unchangedSeen = sdResp.filter(function (r) { return r.body.indexOf('"unchanged":true') !== -1; });
+  check('服务端确实回 unchanged（零重传生效）', unchangedSeen.length > 0,
+    'unchanged 响应 ' + unchangedSeen.length + ' 条 / 共 ' + sdResp.length);
+  // 变更后 rev 前进 + 增量合并
+  const nBefore = sdResp.length;
+  const refreshBefore = await page.evaluate(() => window.__ggbpyDebug.refreshCount());
+  await typeCmd('p2=Sphere[(0,0,0),1]');
+  await page.waitForTimeout(900);
+  const refreshAfter = await page.evaluate(() => window.__ggbpyDebug.refreshCount());
+  check('UI 输入后 refresh3dIfNeeded() 被调用', refreshAfter > refreshBefore,
+    refreshBefore + ' → ' + refreshAfter);
+  const newReqs = sdResp.slice(nBefore).map(function (r) { return r.url.replace(/^.*\/api/, '/api'); });
+  const diag = await page.evaluate(() => ({
+    refreshN: window.__ggbpyDebug.refreshCount(), loadN: window.__ggbpyDebug.loadCount(),
+    cmdVal: document.getElementById('cmd').value,
+    n2d: (typeof elements !== 'undefined' && elements) ? elements.length : -1,
+    labels2d: (typeof elements !== 'undefined' && elements) ? elements.map(function (e) { return e.label; }).join(',') : '',
+    mode3d: window.__ggbpyDebug.mode3d(),
+    tool: (document.querySelector('#cat-tools .tool-btn.active') || {}).getAttribute
+      ? document.querySelector('#cat-tools .tool-btn.active').getAttribute('data-tool') : null
+  }));
+  check('输入后客户端自动发起 state3d 增量请求', sdResp.length > nBefore,
+    '新增请求 ' + JSON.stringify(newReqs) + ' | 诊断 ' + JSON.stringify(diag));
+  const incProbe = await page.evaluate(async (since) => {
+    const r = await fetch('/api/state3d?since=' + since);
+    return await r.json();
+  }, revB);
+  check('服务端增量：输入后 changed 含 p2',
+    (incProbe.changed || []).some(function (e) { return e.label === 'p2'; }),
+    JSON.stringify({ rev: incProbe.rev, unchanged: incProbe.unchanged,
+      changed: (incProbe.changed || []).map(function (e) { return e.label; }), removed: incProbe.removed }));
+  const revC = await page.evaluate(() => window.__ggbpyDebug.rev3d());
+  check('新增对象后 rev 前进', revC > revB, revB + ' → ' + revC);
+  const clientN13 = await page.evaluate(() => window.__ggbpyDebug.els3dCount());
+  check('增量合并后客户端 3D 列表 = 3 个对象', clientN13 === 3, 'els3d=' + clientN13);
 
   // ---- H. JS 错误 ----
   section('H. JS 错误');

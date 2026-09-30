@@ -582,6 +582,12 @@ class GeoFunction(GeoElement):
         if self._fn is not None:
             state = self._fn(self.deps)
             self.expr = state["expr"]
+            # 应用状态里的其余字段（尤其 xsym）：拟合类函数依赖是点列表，
+            # 无法像导数/积分那样从"函数依赖"继承自变量，原先漏掉会导致
+            # lambdify 失败 → 函数不可求值、绘图样本全为 NaN。
+            for k, v in state.items():
+                if k != "expr":
+                    setattr(self, k, v)
             if self.xsym is None and self.deps and self.deps[0].kind == "function":
                 self.xsym = self.deps[0].xsym
             self._lamb = None

@@ -1349,30 +1349,42 @@ def _fitsphere_state(items):
 
 
 def _ix_sphere_solid(sph, solid):
-    """球面 ∩ 凸立体 → 交线（objtype=curve3d：按立体各面分段的折线集合）。"""
+    """球面 ∩ 凸立体 → 交线（objtype=curve3d：按立体各面分段的折线集合）。
+
+    用 numpy 一次性对所有半空间做内点判定（此前逐点 Python 循环是 O(面数²)）。
+    """
+    import numpy as np
     d = sph.data
-    c = [d["cx"], d["cy"], d["cz"]]
-    r = d["r"]
+    c = np.array([float(d["cx"]), float(d["cy"]), float(d["cz"])])
+    r = float(d["r"])
+    planes = _solid_planes(solid)
+    faces = solid.data["faces"]
+    if len(planes) > 4000:
+        raise GeoError("立体的面数过多（%d > 4000），球×复杂网格暂不支持；请改用凸多面体或降低网格分辨率"
+                       % len(planes))
     N = 180
+    P = np.array([p[0] for p in planes], dtype=float)
+    Q = np.array([p[1] for p in planes], dtype=float)
+    th = np.linspace(0.0, 2 * math.pi, N, endpoint=False)
+    ct, st = np.cos(th), np.sin(th)
     segs = []
-    for (n, dd), face in zip(_solid_planes(solid), solid.data["faces"]):
-        sdist = n[0] * c[0] + n[1] * c[1] + n[2] * c[2] + dd
+    for (n, dd), face in zip(planes, faces):
+        nv = np.asarray(n, dtype=float)
+        sdist = float(nv @ c + dd)
         if abs(sdist) > r - 1e-9:
             continue                      # 平面与球不相交/相切
         rr = math.sqrt(max(0.0, r * r - sdist * sdist))
-        cen = [c[i] - sdist * n[i] for i in range(3)]
-        u, v, _nn = _frame_from_axis(list(n))
-        planes = _solid_planes(solid)
-        keep = []
-        for k in range(N):
-            t = 2 * math.pi * k / N
-            p = [cen[i] + rr * (math.cos(t) * u[i] + math.sin(t) * v[i]) for i in range(3)]
-            if all(nn[0] * p[0] + nn[1] * p[1] + nn[2] * p[2] + dq <= 1e-7 for nn, dq in planes):
-                keep.append(p)
+        cen = c - sdist * nv
+        u, v, _nn = _frame_from_axis(list(nv))
+        U = np.asarray(u, dtype=float)
+        V = np.asarray(v, dtype=float)
+        pts = cen[None, :] + rr * (ct[:, None] * U[None, :] + st[:, None] * V[None, :])
+        maxv = (pts @ P.T + Q[None, :]).max(axis=1)      # 到所有半空间的最大值 ≤ 0 → 在体内
+        keep = pts[maxv <= 1e-7]
         if len(keep) < 2:
             continue
         for k in range(len(keep) - 1):
-            segs.append([keep[k], keep[k + 1]])
+            segs.append([list(keep[k]), list(keep[k + 1])])
     if not segs:
         raise GeoError("球面与立体不相交（或交线退化）")
     return {"objtype": "curve3d", "data": {"segs": segs, "count": len(segs)}}
@@ -3870,6 +3882,15 @@ def _fitline_state(items):
 
 
 
+def _fit_silent_fit(*a, **kw):
+    """curve_fit 包装：参数协方差无法估计时的 OptimizeWarning 属正常噪声，不外泄到服务日志。"""
+    import warnings
+    from scipy.optimize import curve_fit as _cf
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return _cf(*a, **kw)
+
+
 def _fit_expr(cons, defn, body):
     """Desmos 风格回归：y~a*x+b。数据 = 绘图区所有自由点，最小二乘拟合。"""
     import sympy
@@ -3938,7 +3959,7 @@ def _fit_expr(cons, defn, body):
 def _cmd_fitexpr(cons, defn, args):
     """FitExp[y~a*x+b]：命令形式的回归拟合。"""
     if len(args) != 1:
-        raise GeoError("FitExp 需要如 y~a*x+b 的表达式")
+        raise GeoError("FitExpr 需要如 y~a*x+b 的表达式（数据取当前所有自由点）")
     return _fit_expr(cons, defn, args[0])
 
 def _cmd_fitpoly(cons, defn, args):
@@ -4482,7 +4503,7 @@ def _cmd_implicit_surface(cons, defn, args):
     n = int(eval_number(cons, args[7])) if len(args) == 8 else 20
     if xmax <= xmin or ymax <= ymin or zmax <= zmin:
         raise GeoError("ImplicitSurface 的范围需满足 max > min")
-    n = max(4, min(n, 64))
+    n = max(4, min(n, 48))     # 分辨率上限：n=48 实测约 3 s，再大就不可交互
     el = Geo3D(label_of(defn), defn)
     el.objtype = "polyhedron"
     el.solid = "surface"
@@ -4494,6 +4515,15 @@ def _cmd_implicit_surface(cons, defn, args):
 def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
     import sympy
     import numpy as np
+    import time as _time
+
+    import os as _os
+    _t0 = _time.time()
+    # 单个等值面抽取的时间预算（秒），超时给出可操作错误而不是长时间卡住；测试可用环境变量收紧
+    try:
+        _budget = float(_os.environ.get("GGBPY_IMPLICIT_BUDGET", "8.0"))
+    except Exception:
+        _budget = 8.0
 
     # 立方体 6 个四面体（沿主对角线 0-7 的 Kuhn 分解）
     TETRA = [(0, 1, 3, 7), (0, 3, 2, 7), (0, 2, 6, 7), (0, 6, 4, 7), (0, 4, 5, 7), (0, 5, 1, 7)]
@@ -4534,6 +4564,9 @@ def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
 
         faces = []
         for i in range(n):
+            if _time.time() - _t0 > _budget:
+                raise GeoError("隐式曲面计算量过大（超过 %.0f 秒）：请降低分辨率 n（当前 %d）或缩小范围"
+                               % (_budget, n))
             for j in range(n):
                 for k in range(n):
                     corners = {}
@@ -5687,8 +5720,138 @@ def _dodecahedron_state(a, b, c):
 # P4：定理证明 / 序列 / 回归 / 脚本
 # ---------------------------------------------------------------------------
 
+# 与 construction.DEFAULT_VIEW 一致（此处避免循环导入而本地定义）
+_PRED_VIEW = (-10.0, 10.0, -10.0, 10.0)
+
+
+def _pred_dir(el):
+    """取"线类"元素的方向向量：直线/线段/射线/向量。"""
+    if el is None:
+        return None
+    d = el.draw(_PRED_VIEW) or {}
+    if el.kind == "line":
+        seg = d.get("seg")
+        return None if not seg else (seg[2] - seg[0], seg[3] - seg[1])
+    if el.kind == "segment":
+        return (d.get("x2", 0.0) - d.get("x1", 0.0), d.get("y2", 0.0) - d.get("y1", 0.0))
+    if el.kind == "ray":
+        return (d.get("ux", 1.0), d.get("uy", 0.0))
+    if el.kind == "vector":
+        return (d.get("x", 0.0), d.get("y", 0.0))
+    return None
+
+
+def _pred_scale(*vals):
+    m = 1.0
+    for v in vals:
+        m = max(m, abs(float(v)))
+    return m
+
+
+def _numeric_verdict(cons, kind, args):
+    """具体数值输入的数值兜底判定（符号证明返回"未知"时使用）。
+
+    返回 (True/False/None, 说明)。容差按量级取相对值。
+    """
+    els = []
+    for a in args:
+        raw = a.strip()
+        e = _lookup(cons, raw)
+        if e is None:
+            try:
+                e = _resolve(cons, raw)        # 内联命令（如 Line[(0,0),(1,1)]）的临时对象
+            except Exception:
+                e = None
+        if e is None and raw.startswith("(") and raw.endswith(")"):
+            try:
+                e = _point_arg(cons, raw)      # 内联点字面量 (x,y)
+            except Exception:
+                e = None
+        els.append(e)
+    if any(e is None for e in els):
+        return None, "数值判定：对象不存在"
+    if kind in ("parallel", "perpendicular"):
+        d1, d2 = _pred_dir(els[0]), _pred_dir(els[1])
+        if d1 is None or d2 is None:
+            return None, "数值判定：需要直线/线段/射线/向量"
+        cross = d1[0] * d2[1] - d1[1] * d2[0]
+        dot = d1[0] * d2[0] + d1[1] * d2[1]
+        tol = 1e-9 * _pred_scale(d1[0], d1[1], d2[0], d2[1]) ** 2
+        if kind == "parallel":
+            return (abs(cross) <= tol), "数值判定：方向叉积 = %.3e" % cross
+        return (abs(dot) <= tol), "数值判定：方向点积 = %.3e" % dot
+    if kind == "collinear":
+        if not all(e.kind == "point" for e in els):
+            return None, "数值判定：需要三个点"
+        (x1, y1), (x2, y2), (x3, y3) = [(e.x, e.y) for e in els]
+        cr = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
+        tol = 1e-9 * _pred_scale(x2 - x1, y2 - y1, x3 - x1, y3 - y1) ** 2
+        return (abs(cr) <= tol), "数值判定：三点叉积 = %.3e" % cr
+    if kind == "congruent":
+        d1, d2 = _pred_dir(els[0]), _pred_dir(els[1])
+        if d1 is None or d2 is None:
+            return None, "数值判定：需要两条线段"
+        l1 = math.hypot(*d1)
+        l2 = math.hypot(*d2)
+        return (abs(l1 - l2) <= 1e-9 * _pred_scale(l1, l2)), "数值判定：长度 %.6g vs %.6g" % (l1, l2)
+    if kind == "concyclic":
+        if not all(e.kind == "point" for e in els):
+            return None, "数值判定：需要四个点"
+        pts = [(e.x, e.y) for e in els]
+        # 四点共圆 ⇔ 4×4 行列式为零
+        import sympy
+        rows = [[p[0], p[1], p[0] ** 2 + p[1] ** 2, 1] for p in pts]
+        det = sympy.Matrix(rows).det()
+        scale = _pred_scale(*[c for p in pts for c in p]) ** 4
+        return (abs(float(det)) <= 1e-9 * max(1.0, scale)), "数值判定：共圆行列式 = %.3e" % float(det)
+    if kind == "concurrent":
+        ds = [_pred_dir(e) for e in els]
+        if any(d is None for d in ds):
+            return None, "数值判定：需要三条直线"
+        if not all(e.kind == "point" for e in els[:0]):   # 占位：直线可由两点确定
+            pass
+        # 用直线一般式：a x + b y + c = 0（方向 (dx,dy) → a=dy, b=-dx，过首点）
+        def abc(el, d):
+            a_, b_ = d[1], -d[0]
+            dd = el.draw(_PRED_VIEW) or {}
+            if el.kind == "line":
+                return dd.get("a", a_), dd.get("b", b_), dd.get("c", 0.0)
+            if el.kind == "segment":
+                return a_, b_, -(a_ * dd.get("x1", 0.0) + b_ * dd.get("y1", 0.0))
+            if el.kind == "ray":
+                return a_, b_, -(a_ * dd.get("ox", 0.0) + b_ * dd.get("oy", 0.0))
+            return None
+        l1, l2, l3 = (abc(e, d) for e, d in zip(els, ds))
+        if l1 is None or l2 is None or l3 is None:
+            return None, "数值判定：无法取直线方程"
+        def _pt_on(l):
+            if abs(l[0]) >= abs(l[1]):
+                return (-l[2] / l[0], 0.0)
+            return (0.0, -l[2] / l[1])
+
+        sc12 = _pred_scale(l1[0], l1[1], l2[0], l2[1])
+        det12 = l1[0] * l2[1] - l1[1] * l2[0]
+        if abs(det12) <= 1e-9 * sc12 * sc12:
+            # 前两条平行：不重合 ⇒ 无公共点（必不共点）；重合 ⇒ 看第三条是否也过这条线
+            qx, qy = _pt_on(l1)
+            off = abs(l2[0] * qx + l2[1] * qy + l2[2]) / max(1e-12, math.hypot(l2[0], l2[1]))
+            if off > 1e-7 * _pred_scale(qx, qy, 1.0):
+                return False, "数值判定：前两条直线平行且不重合 → 不共点"
+            on3 = abs(l3[0] * qx + l3[1] * qy + l3[2]) / max(1e-12, math.hypot(l3[0], l3[1]))
+            return (on3 <= 1e-7 * _pred_scale(qx, qy, 1.0)), "数值判定：前两条重合，第三条偏移 = %.3e" % on3
+        px = (l1[1] * l2[2] - l2[1] * l1[2]) / det12
+        py = (l2[0] * l1[2] - l1[0] * l2[2]) / det12
+        val = l3[0] * px + l3[1] * py + l3[2]
+        scale = _pred_scale(l3[0], l3[1], px, py)
+        return (abs(val) <= 1e-7 * scale), "数值判定：三线共点残差 = %.3e" % val
+    return None, "数值判定：不支持的命题"
+
+
 def _prove_cmd(cons, defn, args, kind, n):
-    """Are* 命令：构造布尔元素，一次性符号证明（避免拖拽重跑 sympy）。"""
+    """Are* 命令：构造布尔元素，一次性符号证明（避免拖拽重跑 sympy）。
+
+    符号化失败（具体数值构造常见）时退回数值判定，避免整条命令只剩"未知"。
+    """
     if len(args) != n:
         raise GeoError("该命题需要 " + str(n) + " 个参数")
     from .prover import SymbolicGeo
@@ -5697,6 +5860,10 @@ def _prove_cmd(cons, defn, args, kind, n):
     el._prove_args = (kind, list(args))
     sg = SymbolicGeo(cons)
     res = sg.prove(kind, args)
+    if res.value is None:
+        nv, note = _numeric_verdict(cons, kind, args)
+        if nv is not None:
+            res = type(res)(nv, note)
     el.value = res.value
     el.detail = res.detail
     return cons.add(el)
@@ -5809,7 +5976,7 @@ def _fit_cmd(cons, defn, args, kind):
             def model(xv, a, b, c, d):
                 return a * np.sin(b * xv + c) + d
             p0 = [(ys.max() - ys.min()) / 2, 2 * np.pi / max(xs.max() - xs.min(), 1e-9), 0, ys.mean()]
-            popt, _ = curve_fit(model, xs, ys, p0=p0, maxfev=20000)
+            popt, _ = _fit_silent_fit(model, xs, ys, p0=p0, maxfev=20000)
             a, b, c, d = popt
             expr = a * sympy.sin(b * x + c) + d
         else:
@@ -6522,9 +6689,14 @@ def _cmd_boxplot(cons, defn, args):
 
 
 def _cmd_barchart(cons, defn, args):
-    """BarChart[列表] 或 BarChart[数据...] → 直方图（按值分类统计频数）。"""
-    if len(args) >= 1 and args[0].strip().startswith("["):
-        L = _list_arg(cons, args[0])
+    """BarChart[列表] / BarChart[{数值列表}] / BarChart[数据...] → 直方图（按值分类统计频数）。"""
+    L = None
+    if len(args) >= 1:
+        raw = args[0].strip()
+        cand = _lookup(cons, raw)
+        if raw.startswith("{") or (cand is not None and cand.kind == "list"):
+            L = _list_arg(cons, raw)
+    if L is not None:
         if L.itemkind == "point":
             raise GeoError("BarChart 需要数值列表")
         items = list(L.items)
@@ -6967,11 +7139,19 @@ def _cmd_sector(cons, defn, args):
 
 
 def _arc_state(a, b, c, sector):
+    """圆弧/扇形：C 为圆心，半径取 |CA|（保证弧过起点 A）。
+
+    原先取 (|CA|+|CB|)/2，当 C 不是 A、B 的等距圆心时弧两个端点都不在弧上（静默错误）。
+    现在要求圆心近似等距（相对偏差 ≤ 20%），否则明确报错。
+    """
     ra = math.hypot(a.x - c.x, a.y - c.y)
     rb = math.hypot(b.x - c.x, b.y - c.y)
-    r = (ra + rb) / 2.0
-    if r < 1e-12:
-        raise GeoError("退化圆弧")
+    if ra < 1e-12 or rb < 1e-12:
+        raise GeoError("退化圆弧（端点与圆心重合）")
+    if abs(ra - rb) > 0.2 * max(ra, rb):
+        raise GeoError("圆弧/扇形要求圆心 C 与两端点近似等距（|CA|=%.4f, |CB|=%.4f）；"
+                       "请改用等距的圆心或合适的端点" % (ra, rb))
+    r = ra
     ang1 = math.atan2(a.y - c.y, a.x - c.x)
     ang2 = math.atan2(b.y - c.y, b.x - c.x)
     return {"sector": sector, "cx": c.x, "cy": c.y, "r": r, "ang1": ang1, "ang2": ang2}
@@ -7089,6 +7269,8 @@ _COLOR_NAMES = {
 
 def _parse_color(s: str) -> str:
     s = s.strip().lower()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+        s = s[1:-1].strip()          # 允许 SetColor[A, "#059669"] 这种写法
     if s in _COLOR_NAMES:
         return _COLOR_NAMES[s]
     if re.match(r"^#[0-9a-f]{6}$", s):

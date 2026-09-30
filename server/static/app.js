@@ -1765,13 +1765,37 @@
   }
 
   // 3D 模式下任何构造变更后同步刷新 3D 视图与对象列表
+  var dbgRefreshN = 0, dbgLoadN = 0, dbgLoadSkip = 0;
   function refresh3dIfNeeded() {
+    dbgRefreshN++;
     if (mode3d) load3d();
   }
 
+  // 3D 状态增量拉取：服务端按 rev 只回变化项，未变则跳过重绘（大网格 1–2 MB → 几十字节）
+  var lastRev3d = -1;
   function load3d() {
-    fetch('/api/state3d').then(function (r) { return r.json(); }).then(function (d) {
-      els3d = d.elements;
+    dbgLoadN++;
+    fetch('/api/state3d?since=' + lastRev3d).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d) return;
+      if (typeof d.rev === 'number') lastRev3d = d.rev;
+      if (d.unchanged) return;
+      if (d.elements) {
+        els3d = d.elements;                       // 全量兜底（首次或 rev 过期）
+      } else {
+        var map = {}, order = [];
+        for (var i = 0; i < els3d.length; i++) { map[els3d[i].label] = els3d[i]; order.push(els3d[i].label); }
+        var ch = d.changed || [];
+        for (var c = 0; c < ch.length; c++) {
+          if (!(ch[c].label in map)) order.push(ch[c].label);
+          map[ch[c].label] = ch[c];
+        }
+        var rm = d.removed || [];
+        for (var r = 0; r < rm.length; r++) {
+          delete map[rm[r]];
+          order = order.filter(function (x) { return x !== rm[r]; });
+        }
+        els3d = order.filter(function (lab) { return map[lab]; }).map(function (lab) { return map[lab]; });
+      }
       render3d();
       renderList3d();
     }).catch(function () {});
@@ -2068,7 +2092,11 @@
     faceBudget: function () { return MESH_FACE_BUDGET; },
     cacheSize: function () { return Object.keys(meshFaceCache).length; },
     els3dCount: function () { return (typeof els3d !== 'undefined' && els3d) ? els3d.length : -1; },
-    mode3d: function () { return typeof mode3d !== 'undefined' ? !!mode3d : null; }
+    mode3d: function () { return typeof mode3d !== 'undefined' ? !!mode3d : null; },
+    load3d: function () { load3d(); },
+    rev3d: function () { return typeof lastRev3d !== 'undefined' ? lastRev3d : -1; },
+    refreshCount: function () { return dbgRefreshN; },
+    loadCount: function () { return dbgLoadN; }
   };
 
   function render3d() {

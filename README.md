@@ -108,7 +108,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **第十二批（2026-09-29）**：
   - **`ConvexHull[点列表]` 三维凸包**：scipy Qhull 求凸包（面统一环序与外向法向后输出可渲染/可求 `Volume`/`Area`/可导出的凸多面体）；立方体 8 点 → 8 顶点/12 三角（Euler=2）、V=8、A=24；共线/重合点云给出明确错误
   - **`SurfacePoint[曲面, u, v]`**：曲面在给定参数处的点（解析求值，越界报错）；**`SurfaceProject[点, 曲面]`**：点在曲面上的最近点（9×9 网格初值 + Nelder–Mead 精化，参数域内裁剪）——投影 (5,0,1) 到圆柱侧面得 (1,0,1)、(0,0,9) 到圆柱得端面 (0,0,2)
-  - **命令帮助面板升级**：新增**筛选框**（按名称实时过滤）、命令 chip **点击即插入 `Name[]` 并把光标停在括号内**；`/api/commands` 现在附带规范**显示名映射**（`surfacepoint → SurfacePoint`、`implicitSurface → ImplicitSurface`、`fitplane → FitPlane` 等 54 个多词命令），帮助面板与输入框补全都用规范写法
+  - **命令帮助面板升级**：新增**筛选框**（按名称实时过滤）、命令 chip **点击即插入 `Name[]` 并把光标停在括号内**
+- **第十三批（2026-09-29 · P0 性能与测试债）**：
+  - **state3d 增量协议 + gzip**：`GET /api/state3d?since=<rev>` 返回三形态之一 —— `{rev, unchanged:true}`（零重传）/ `{rev, changed, removed}`（按 rev 差分）/ `{rev, elements}`（rev 过期全量兜底）；服务端只对实际发送的元素做 JSON 清洗，任意 `>1KB` 响应启用 gzip。实测：全量 **841 KB → 163 KB（19%）**；未变更刷新 **36 字节 / 6 ms**（优化前 56 ms）；单对象变更 **270 字节 / 6 ms**
+  - **计算预算与串行化**：隐式曲面分辨率上限 64 → **48**，marching 循环内加**时间预算**（默认 8 s，`GGBPY_IMPLICIT_BUDGET` 可收紧，超时给「计算量过大」可操作错误）；`球×立体` 改 numpy 一次性半空间判定（76 面凸包 **3 ms**，原为 O(面数²) 纯 Python 循环），面数 > 4000 明确护栏；**共享构造的 11 个变更端点全部串行化**（并发写不再交错破坏 DAG）
+  - **2D 回归入库**：新增 `devtools/test_2d_matrix.py`（**123 断言**，覆盖此前零引用的 60 条 2D 命令：变换/圆锥曲线/微积分/统计回归/线代复数/编辑/宏/布尔判定）与 `devtools/test_2d_api.py`（**31 断言**，覆盖此前未测的 17 个端点：drag/shift/batch/reorder/macro*/share+shared/image*/cas*/download/export-svg/demo/load）；统一入口 **`bash devtools/run_all_detection.sh`**
+  - **写矩阵时揪出并修掉 6 个真 bug**：① `GeoFunction.compute()` 丢弃状态里的 `xsym` → **所有 `Fit*` 拟合函数不可求值、绘图样本全为 NaN**；② `Are*` 布尔判定对具体数值构造一律返回「未知」→ 增加数值兜底（含两线平行/重合的共点判定）；③ `Arc/Sector` 半径误取两端半径**平均** → 改为 `|CA|` 并要求圆心近似等距，否则明确报错；④ `BarChart[列表]` 只认 `[`（GeoGebra 列表用 `{}`）→ 三种写法全部支持；⑤ `SetColor` 拒绝带引号颜色 → 自动去引号；⑥ `FitExpr` 报错文案写成 `FitExp` 且未说明数据来源 → 修正；另抑制 `curve_fit` 警告噪音；`/api/commands` 现在附带规范**显示名映射**（`surfacepoint → SurfacePoint`、`implicitSurface → ImplicitSurface`、`fitplane → FitPlane` 等 54 个多词命令），帮助面板与输入框补全都用规范写法
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
@@ -122,7 +127,8 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_3d_detection.sh       # 内核 453 + API 150 + 浏览器 112 项断言（需服务运行）
+bash devtools/run_all_detection.sh       # 全量：2D 内核 123 + 2D API 31 + 3D 459/161/125（合计 899 断言）
+bash devtools/run_3d_detection.sh       # 仅 3D：内核 459 + API 161 + 浏览器 125
 ```
 
 - `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 显式/参数/隐式曲面 × FitPlane × OBJ·STL 导入 × 样式快照 × 序列化 × 3D 度量语义）

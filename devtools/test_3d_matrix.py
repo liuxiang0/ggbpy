@@ -1453,6 +1453,51 @@ if e50 is None:
           str(c50.elements["bad2"].error))
 
 # ---------------------------------------------------------------------------
+section("AK. 计算预算与球×立体性能（P0-B）")
+import os as _os  # noqa: E402
+c51, _e51 = build([])
+# 1) 隐式曲面分辨率上限
+c51.process("capped=ImplicitSurface[x^2+y^2+z^2-4=0,-3,3,-3,3,-3,3,64]")
+check("ImplicitSurface 分辨率上限 48（超出自动夹取）",
+      c51.elements["capped"].data.get("grid") == 48, str(c51.elements["capped"].data.get("grid")))
+# 2) 时间预算 → 明确错误（用环境变量把预算压到 0，保证确定性）
+_old_budget = _os.environ.get("GGBPY_IMPLICIT_BUDGET")
+_os.environ["GGBPY_IMPLICIT_BUDGET"] = "0"
+c52, _e52 = build(["imp=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,24]"])
+if _old_budget is None:
+    _os.environ.pop("GGBPY_IMPLICIT_BUDGET", None)
+else:
+    _os.environ["GGBPY_IMPLICIT_BUDGET"] = _old_budget
+check("超时间预算 → 明确错误（不会长时间卡住）",
+      bool(c52.elements["imp"].error) and "计算量过大" in c52.elements["imp"].error,
+      str(c52.elements["imp"].error))
+# 3) 球×多面数立体：向量化正确性 + 性能
+_pts = []
+for _i in range(40):
+    _a = _i * 0.7
+    _b = _i * 0.3
+    _pts.append((math.sin(_a) * math.cos(_b) * 1.6, math.sin(_a) * math.sin(_b) * 1.6, math.cos(_a) * 1.6))
+c53, _e53 = build(["L={" + ",".join("(%.4f,%.4f,%.4f)" % q for q in _pts) + "}",
+                   "h=ConvexHull[L]", "s=Sphere[(0.4,0.2,0.3),1.5]"])
+_t0 = __import__("time").time()
+c53.process("ix=Intersect[s,h]")
+_dt = __import__("time").time() - _t0
+ix = c53.elements["ix"]
+nf = len(c53.elements["h"].data["faces"])
+check("球×凸包（%d 面）交线成立" % nf, not ix.error and ix.data["count"] > 10,
+      "%s / %s 段" % (ix.error, getattr(ix, "data", {}).get("count")))
+pts53 = [p for seg in ix.data["segs"] for p in seg]
+dd53 = max(abs(math.dist(p, (0.4, 0.2, 0.3)) - 1.5) for p in pts53)
+check("交线点精确落在球面", dd53 < 1e-9, "max=%.2e" % dd53)
+check("球×多面数立体耗时 < 500ms（向量化）", _dt < 0.5, "%.0f ms" % (_dt * 1000))
+# 4) 面数护栏（用 96×96 参数曲面当复杂立体）
+c54, _e54 = build(["big=SurfaceParam[cos(t),sin(t),s,s,t,0,2,0,2*pi,96]", "sp4=Sphere[(0,0,1),3]"])
+c54.process("ixbig=Intersect[sp4,big]")
+check("面数 > 4000 的立体 → 明确护栏提示",
+      bool(c54.elements["ixbig"].error) and "面数过多" in c54.elements["ixbig"].error,
+      str(c54.elements["ixbig"].error))
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D 内核检测矩阵：%d 项断言，%d 失败" % (COUNT[0], len(FAILS)))
 if FAILS:

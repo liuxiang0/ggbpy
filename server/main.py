@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -26,6 +27,60 @@ from kernel.construction import Construction, DEFAULT_VIEW
 from kernel.cas import CASEngine
 
 app = FastAPI(title="ggbpy · Python 动态几何")
+# 大网格 state3d 载荷可达 1–2 MB：>1KB 自动 gzip（浏览器 fetch 默认带 Accept-Encoding）
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+import hashlib as _hashlib
+import json as _json
+import threading as _threading
+
+# ---- /api/state3d 增量协议 -------------------------------------------------
+# rev 由服务端在请求时惰性分配：指纹变化 → rev+1，并留存最近若干 rev 的指纹表。
+# 客户端带 ?since=<上次 rev>：返回 changed/removed 增量；rev 未变返回 unchanged。
+_SD = {"rev": 0, "fp": {}, "hist": {}, "lock": _threading.Lock()}
+# 全局构造是共享单例：所有变更串行化，避免并发请求交错破坏 DAG
+_cons_lock = _threading.Lock()
+
+
+def _mut(fn, *a, **kw):
+    """在全局构造上串行执行一次变更（端点本身跑在线程池里，不阻塞事件循环）。"""
+    with _cons_lock:
+        return fn(*a, **kw)
+_SD_HIST_MAX = 64
+
+
+def _fp_walk(obj, out, depth=0):
+    """把任意 JSON 结构折成紧凑指纹片段：字典按键、列表记长度 + 数值校验和。"""
+    if depth > 6 or len(out) > 400:
+        return
+    if isinstance(obj, dict):
+        for k in sorted(obj.keys()):
+            out.append(str(k))
+            _fp_walk(obj[k], out, depth + 1)
+    elif isinstance(obj, (list, tuple)):
+        out.append("n" + str(len(obj)))
+        s = 0.0
+        n = 0
+        for item in obj[:5000]:
+            if isinstance(item, (int, float)) and not isinstance(item, bool):
+                s += float(item)
+                n += 1
+            elif isinstance(item, (list, tuple)):
+                for x in item[:4]:
+                    if isinstance(x, (int, float)) and not isinstance(x, bool):
+                        s += float(x)
+                        n += 1
+            else:
+                _fp_walk(item, out, depth + 1)
+        out.append("%.6f/%d" % (s, n))
+    else:
+        out.append(repr(obj)[:40])
+
+
+def _state3d_fp(d):
+    out = []
+    _fp_walk(d, out)
+    return _hashlib.md5("|".join(out).encode("utf-8", "replace")).hexdigest()[:12]
 STATIC = Path(__file__).parent / "static"
 cons = Construction()
 cas = CASEngine(cons)
@@ -149,7 +204,7 @@ def state(xmin: float = -10.0, xmax: float = 10.0, ymin: float = -10.0, ymax: fl
 
 @app.post("/api/input")
 def do_input(b: InputBody):
-    msg = cons.process(b.text)
+    msg = _mut(cons.process, b.text)
     return {"ok": msg.startswith("OK"), "message": msg, **_state(_view(b))}
 
 
@@ -158,8 +213,8 @@ def do_drag(b: DragBody):
     try:
         if b.push:
             # 每次拖拽成为独立撤销步（首条请求带 push）
-            cons.push_history()
-        cons.move(b.label, b.x, b.y, b.z)
+            _mut(cons.push_history)
+        _mut(cons.move, b.label, b.x, b.y, b.z)
         return {"ok": True, "message": "", **_state(_view(b))}
     except Exception as e:
         return {"ok": False, "message": str(e), **_state(_view(b))}
@@ -167,25 +222,25 @@ def do_drag(b: DragBody):
 
 @app.post("/api/undo")
 def do_undo():
-    ok = cons.undo()
+    ok = _mut(cons.undo)
     return {"ok": ok, "message": "已撤销" if ok else "没有可撤销的操作", **_state((-10, 10, -10, 10))}
 
 
 @app.post("/api/redo")
 def do_redo():
-    ok = cons.redo()
+    ok = _mut(cons.redo)
     return {"ok": ok, "message": "已重做" if ok else "没有可重做的操作", **_state((-10, 10, -10, 10))}
 
 
 @app.post("/api/clear")
 def do_clear():
-    cons.clear()
+    _mut(cons.clear)
     return {"ok": True, "message": "已清空", **_state((-10, 10, -10, 10))}
 
 
 @app.post("/api/demo")
 def do_demo():
-    cons.load_demo()
+    _mut(cons.load_demo)
     return {"ok": True, "message": "已载入示例（拖动 A 观察依赖重算）", **_state((-10, 10, -10, 10))}
 
 
@@ -297,7 +352,7 @@ def macro_delete(b: MacroRunBody):
 def macro_run(b: MacroRunBody):
     from kernel import macro
     try:
-        created = macro.run_macro(cons, b.name, b.args)
+        created = _mut(macro.run_macro, cons, b.name, b.args)
         if created is None:
             return {"ok": False, "message": "宏不存在: " + b.name, **_state(_view(b))}
         return {"ok": True, "message": "宏 " + b.name + " 执行成功", "created": [e.label for e in created],
@@ -311,8 +366,8 @@ def do_shift(b: ShiftBody):
     """整体平移选中对象。"""
     try:
         if b.push:
-            cons.push_history()
-        cons.shift(b.label, b.dx, b.dy, getattr(b, "dz", 0.0))
+            _mut(cons.push_history)
+        _mut(cons.shift, b.label, b.dx, b.dy, getattr(b, "dz", 0.0))
         return {"ok": True, "message": "", **_state(_view(b))}
     except Exception as e:
         return {"ok": False, "message": str(e), **_state(_view(b))}
@@ -322,7 +377,7 @@ def do_shift(b: ShiftBody):
 def do_reorder(b: ReorderBody):
     """对象列表拖拽后按新顺序重排（Z 叠放序）。"""
     try:
-        cons.reorder(b.order)
+        _mut(cons.reorder, b.order)
         return {"ok": True, "message": "已调整对象顺序", **_state(_view(b))}
     except Exception as e:
         return {"ok": False, "message": str(e), **_state(_view(b))}
@@ -371,22 +426,27 @@ def image_get(iid: str):
 def do_batch(b: BatchBody):
     """批量执行命令序列（每行一条命令；# 注释/空行跳过；整体一个撤销步）。"""
     from kernel import commands as C
-    cons.push_history()
-    results = []
-    ok_count = 0
-    for ln_no, line in enumerate(b.script.splitlines(), 1):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            results.append({"no": ln_no, "line": line or "(空)", "ok": True, "message": ""})
-            continue
-        try:
-            created = C.process_line(cons, line)
-            labels = [e.label for e in created]
-            results.append({"no": ln_no, "line": line, "ok": True,
+
+    def _run_batch():
+        cons.push_history()
+        out = []
+        okn = 0
+        for ln_no, line in enumerate(b.script.splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                out.append({"no": ln_no, "line": line or "(空)", "ok": True, "message": ""})
+                continue
+            try:
+                created = C.process_line(cons, line)
+                labels = [e.label for e in created]
+                out.append({"no": ln_no, "line": line, "ok": True,
                             "message": ("已创建 " + ", ".join(labels)) if labels else "OK"})
-            ok_count += 1
-        except Exception as e:
-            results.append({"no": ln_no, "line": line, "ok": False, "message": str(e)})
+                okn += 1
+            except Exception as e:
+                out.append({"no": ln_no, "line": line, "ok": False, "message": str(e)})
+        return out, okn
+
+    results, ok_count = _mut(_run_batch)
     st = _state(_view(b))
     return {"ok": True, "script_ok": ok_count, "results": results, "elements": st["elements"], "count": st["count"]}
 
@@ -442,9 +502,9 @@ async def do_load(request: Request):
         text = (await request.body()).decode("utf-8", errors="replace")
         view = None
         if text.strip().startswith("{"):
-            view = cons.load_json(text)
+            view = _mut(cons.load_json, text)
         else:
-            cons.load_text(text)
+            _mut(cons.load_text, text)
         return {"ok": True, "message": "已加载", "view": view, **_state((-10, 10, -10, 10))}
     except Exception as e:
         return {"ok": False, "message": "加载失败: " + str(e), **_state((-10, 10, -10, 10))}
@@ -455,8 +515,7 @@ def _cas_cells():
     return [{k: v for k, v in c.items() if k != "sym"} for c in cas.cells]
 
 
-@app.get("/api/state3d")
-def state3d():
+def _state3d_full():
     """3D 视图数据：geo3d 对象 + 所有点/线段/圆/多边形等（2D 对象视为 z=0，在 xoy 平面显示）。"""
     out = []
     for lab in cons.order:
@@ -537,7 +596,38 @@ def state3d():
                 out.append({"label": lab, "kind": "geo3d", "objtype": "polyline2d", "visible": True,
                             "defn": el.defn,
                             "data": {"pts": [[p[0], p[1], 0] for p in pts]}})
-    return {"elements": _clean(out), "count": len(out)}
+    return {"elements": out, "count": len(out)}     # 原始 dict；响应时只 _clean 实际发送的部分
+
+
+@app.get("/api/state3d")
+def state3d(since: int = -1):
+    """3D 视图数据（增量）：?since=<上次 rev>
+    返回 {rev, unchanged:true} / {rev, changed, removed} / {rev, elements}（全量兜底）。"""
+    res = _state3d_full()          # {"elements": [...], "count": n}
+    full = res.get("elements") if isinstance(res, dict) else res
+    fp = {}
+    for d in full:
+        lab = d.get("label")
+        if lab:
+            fp[lab] = _state3d_fp(d)
+    with _SD["lock"]:
+        if fp != _SD["fp"]:
+            _SD["rev"] += 1
+            _SD["fp"] = fp
+            _SD["hist"][_SD["rev"]] = dict(fp)
+            if len(_SD["hist"]) > _SD_HIST_MAX:
+                for old in sorted(_SD["hist"].keys())[:-_SD_HIST_MAX]:
+                    _SD["hist"].pop(old, None)
+        rev = _SD["rev"]
+        if since == rev:
+            return {"rev": rev, "unchanged": True, "count": len(full)}
+        prev = _SD["hist"].get(since)
+        if prev is None:
+            return {"rev": rev, "elements": _clean(full), "count": len(full)}
+        changed = [d for d in full if prev.get(d.get("label")) != fp[d["label"]]]
+        removed = [lab for lab in prev if lab not in fp]
+        return {"rev": rev, "changed": _clean(changed), "removed": removed,
+                "count": len(full), "unchanged": False}
 
 
 @app.get("/api/cas")
