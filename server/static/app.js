@@ -12,7 +12,7 @@
   var I18N = {
     zh: {
       undo: '↶ 撤销', redo: '↷ 重做', snap: '吸附', demo: '示例', grid: '网格', axes: '坐标轴',
-      clear: '清空', save: '保存', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', gltf: 'GLTF', objin: '📥OBJ', load: '加载', cas: 'CAS', d3: '3D',
+      clear: '清空', save: '保存', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', gltf: 'GLTF', svg3d: 'SVG·3D', objin: '📥OBJ', load: '加载', cas: 'CAS', d3: '3D',
       help_t: '命令帮助', save_t: '保存为 .ggk（含样式与视口）', cas_t: '打开/关闭 CAS 视图',
       cmd_ph: '代数输入：A=(1,2)  f(x)=x^2  M=Midpoint[A,B]  c=Circle[A,B]  P=Intersect[c,g] …',
       hint: '拖拽自由点 · 滚轮缩放 · 空白处平移 · 输入后回车创建对象 · CAS 符号计算 · 3D 视图',
@@ -84,7 +84,7 @@
     },
     en: {
       undo: '↶ Undo', redo: '↷ Redo', snap: 'Snap', demo: 'Demo', grid: 'Grid', axes: 'Axes',
-      clear: 'Clear', save: 'Save', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', gltf: 'GLTF', objin: '📥OBJ', load: 'Load', cas: 'CAS', d3: '3D',
+      clear: 'Clear', save: 'Save', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', gltf: 'GLTF', svg3d: 'SVG·3D', objin: '📥OBJ', load: 'Load', cas: 'CAS', d3: '3D',
       help_t: 'Command help', save_t: 'Save as .ggk (styles + viewport)', cas_t: 'Toggle CAS panel',
       cmd_ph: 'Algebra input: A=(1,2)  f(x)=x^2  M=Midpoint[A,B]  c=Circle[A,B]  P=Intersect[c,g] …',
       hint: 'Drag free points · Scroll to zoom · Drag empty space to pan · Enter to create · CAS · 3D',
@@ -3518,6 +3518,9 @@
     a.click();
     document.body.removeChild(a);
   });
+  btn('btn-svg3d', function () {
+    window.location.href = '/api/export/svg?view3d=1';
+  });
   btn('btn-objin', function () {
     document.getElementById('objfile').click();
   });
@@ -4651,7 +4654,15 @@
         for (var j = 0; j < elements.length; j++) {
           if (elements[j].kind === 'point' && !prev[elements[j].label]) { cb(elements[j].label); return; }
         }
-        resetTool();
+        // 极快点击（down→up 无间隔）时元素列表可能尚未合并到本地：图片工具不能因此丢掉
+        // 已选好的图片，否则用户需要重新选文件；其余工具仍走完整重置。
+        if (activeTool === 'image' && pendingImage) {
+          toolSel = [];
+          updateToolButtons();
+          setToolStatus();
+        } else {
+          resetTool();
+        }
       }
       // 处理排队的下一次点击
       if (toolPointQueue.length) {

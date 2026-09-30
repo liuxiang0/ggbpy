@@ -183,6 +183,23 @@ function check(name, ok, detail) {
   await page.waitForTimeout(1200);
   const imgEls = (await state()).filter((e) => e.kind === 'image');
   check('两次点击基点后创建 Image 元素', imgEls.length >= 1, 'n=' + imgEls.length);
+  // 回归：0ms 快击（down→up 无间隔）曾导致待插入图片被清空。
+  // 注意用 UI 清空（会同步刷新客户端 elements），否则客户端仍持有旧标签，工具判定会失真。
+  await page.click('#btn-clear');
+  await page.waitForTimeout(500);
+  await page.click('#btn-image');
+  await page.setInputFiles('#imgfile', pngPath);
+  await page.waitForTimeout(700);
+  await page.mouse.click(700, 500);            // 不传 delay → 瞬时点击
+  await page.waitForTimeout(800);
+  const ts1 = await page.evaluate(() => window.__ggbpyDebug.toolState());
+  check('0ms 快击后仍保持待插入图片（pending=true）', ts1.pending === true, JSON.stringify(ts1));
+  await page.mouse.click(1000, 700);
+  await page.waitForTimeout(1100);
+  const fastImgs = (await state()).filter((e) => e.kind === 'image');
+  check('0ms 快击两次仍能插入图片', fastImgs.length >= 1, 'n=' + fastImgs.length);
+  await page.click('#btn-clear');
+  await page.waitForTimeout(400);
 
   // -------------------------------------------------------------------------
   section('G. 导出下载（SVG / PNG / .ggk）');

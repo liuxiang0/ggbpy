@@ -1320,8 +1320,13 @@ if e45 is None:
     c47, _e47 = build(["m=Mesh[" + _midx + "]"])
     w2 = []
     xml2 = c47.save_ggb(w2)
-    check("导入网格在 .ggb 中跳过并警告", bool(w2) and "跳过" in w2[0], str(w2)[:60])
-    check(".ggb 不写出来源不明的网格", 'label="m"' not in xml2)
+    check("导入网格随 .ggb 内嵌保存（不再跳过告警）", not w2 and "<ggbpyData" in xml2, str(w2)[:60])
+    check(".ggb 内容包含该网格元素", 'label="m"' in xml2)
+    c47b = Construction()
+    c47b.load_ggb(xml2)
+    check(".ggb 往返后网格仍可用",
+          c47b.elements.get("m") is not None and len(c47b.elements["m"].data["faces"]) == 1,
+          str(c47b.elements.get("m") is not None))
 
 # ---------------------------------------------------------------------------
 section("AH. 协方差椭球 / 曲面参数线")
@@ -1556,6 +1561,97 @@ for _i in range(140):
     _memo.put(("t", _i), {"data": {"verts": [[0, 0, 0]]}})
 check("计算记忆有条目上限（不会无限增长）", _memo.stats()["entries"] <= 96, str(_memo.stats()["entries"]))
 _memo.clear()
+
+# ---------------------------------------------------------------------------
+section("AN. .ggb 内嵌网格/图片数据（P2）")
+from kernel.mesh_io import parse_obj as _parse_obj  # noqa: E402
+import kernel.image_store as _img_store  # noqa: E402
+
+_OBJ_CUBE = """v 0 0 0
+v 2 0 0
+v 2 2 0
+v 0 2 0
+v 0 0 2
+v 2 0 2
+v 2 2 2
+v 0 2 2
+f 1 2 3 4
+f 5 6 7 8
+f 1 2 6 5
+f 2 3 7 6
+f 3 4 8 7
+f 4 1 5 8
+"""
+_v, _f, _w = _parse_obj(_OBJ_CUBE)
+_mid_embed = _ms.put(_v, _f)
+_png = ("data:image/png;base64,89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+        "0000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082")
+_iid_embed = _img_store.put(_png, 1, 1)
+c58, e58 = build(["m=Mesh[" + _mid_embed + "]", "V=Volume[m]", "A=(0,0)", "B=(3,0)",
+                  "pic=Image[A,B," + _iid_embed + "]", "sq=Cube[(0,0,0),(2,0,0)]"])
+check("内嵌数据用例构造", e58 is None, str(e58))
+if e58 is None:
+    warns58 = []
+    xml58 = c58.save_ggb(warns58)
+    check(".ggb 内嵌 ggbpyData 数据块", "<ggbpyData" in xml58)
+    check(".ggb 不再因网格/图片跳过并警告", not warns58, str(warns58))
+    check(".ggb 仍写出网格命令与图片命令", 'name="Mesh"' in xml58 or "Mesh[" in xml58,
+          "")
+    c59 = Construction()
+    c59.load_ggb(xml58)
+    m2 = c59.elements.get("m")
+    check(".ggb 往返后网格元素恢复（8/6）",
+          m2 is not None and len(m2.data["verts"]) == 8 and len(m2.data["faces"]) == 6,
+          "None" if m2 is None else "%d/%d" % (len(m2.data["verts"]), len(m2.data["faces"])))
+    check(".ggb 往返后依赖体积一致（=8）",
+          c59.elements.get("V") is not None and close(c59.elements["V"].value, 8.0, 1e-9),
+          str(getattr(c59.elements.get("V"), "value", None)))
+    pic2 = c59.elements.get("pic")
+    check(".ggb 往返后图片元素恢复（且图片数据可用）",
+          pic2 is not None and not pic2.error and _img_store.get(_iid_embed) is not None,
+          "err=%s" % (pic2.error if pic2 is not None else None))
+    check("混合构造（网格+图片+立方体）元素数一致",
+          len(c59.order) == len(c58.order), "%d vs %d" % (len(c59.order), len(c58.order)))
+    # 数据缺失时仍给出警告（防御路径）
+    _tmp_v = [[0, 0, 0], [1, 0, 0], [0, 1, 0]]
+    _tmp_id = _ms.put(_tmp_v, [[0, 1, 2]])
+    c60, _e60 = build(["g=Mesh[" + _tmp_id + "]"])
+    _ms.MESHES.pop(_tmp_id, None)          # 模拟"仓库里数据丢失"
+    w60 = []
+    xml60 = c60.save_ggb(w60)
+    check("网格数据缺失 → 仍有警告（防御路径）", bool(w60) and "跳过" in w60[0], str(w60)[:70])
+    check("数据缺失时不再写出该元素", 'label="g"' not in xml60)
+
+# ---------------------------------------------------------------------------
+section("AO. SVG 3D 投影导出（P2）")
+from kernel.svg_io import export_svg3d as _svg3d  # noqa: E402
+
+c61, e61 = build(["O=(0,0,0)", "cu=Cube[O,(2,0,0)]", "P=(1,1,1)", "sp=Sphere[(1,1,1),1.5]",
+                  "pl=Plane[O,(1,0,0),(0,1,0)]", "sec=Intersect[sp,pl]"])
+check("SVG3D 用例构造", e61 is None, str(e61))
+if e61 is None:
+    svg = _svg3d(c61)
+    check("输出合法 SVG 根节点", svg.startswith("<?xml") and "<svg" in svg and svg.rstrip().endswith("</svg>"))
+    check("立方体 6 面 + 平面 1 面 → polygon ≥ 7", svg.count("<polygon") >= 7, "n=%d" % svg.count("<polygon"))
+    check("球经纬线 + 交线 → polyline ≥ 4", svg.count("<polyline") >= 4, "n=%d" % svg.count("<polyline"))
+    check("点（O、P）输出为圆点与标签",
+          svg.count("<circle") >= 2 and svg.count("<text") >= 2,
+          "circle=%d text=%d" % (svg.count("<circle"), svg.count("<text")))
+    check("SVG 内无 nan/None 数值", "nan" not in svg and "None" not in svg)
+    check("画家算法：polygon 按深度排序输出（含 depth 递减的先后关系）",
+          svg.index("<polygon") < svg.rindex("<polygon"), "")
+    # 面预算
+    c62, _e62 = build(["big=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,24]"])
+    svg_big = _svg3d(c62, face_budget=500)
+    check("大网格按 face_budget 限制多边形数量（≤500）",
+          svg_big.count("<polygon") <= 500, "n=%d" % svg_big.count("<polygon"))
+    # 无 3D 时明确报错
+    c63, _e63 = build(["A=(0,0)", "c=Circle[A,2]"])
+    try:
+        _svg3d(c63)
+        check("无 3D 对象 → 明确报错", False, "未报错")
+    except Exception as _ex:
+        check("无 3D 对象 → 明确报错", "3D" in str(_ex), str(_ex)[:40])
 
 # ---------------------------------------------------------------------------
 print("\n" + "=" * 60)

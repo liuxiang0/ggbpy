@@ -264,3 +264,187 @@ def _split_nan(pts):
 
 def _esc(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+# ---------------------------------------------------------------------------
+# 3D 投影导出（P2）：把 3D 场景按固定视角做正交投影，输出矢量图
+# ---------------------------------------------------------------------------
+
+def _rot3(yaw: float, pitch: float):
+    """返回 (x,y,z) → 相机坐标 (u, v, depth) 的旋转（先绕 z 偏航，再绕 x 俯仰）。"""
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+
+    def f(p):
+        x, y, z = float(p[0]), float(p[1]), float(p[2] or 0.0)
+        # 绕 z 轴
+        x1 = x * cy - y * sy
+        y1 = x * sy + y * cy
+        # 绕 x 轴（俯仰）
+        y2 = y1 * cp - z * sp
+        z2 = y1 * sp + z * cp
+        return x1, y2, z2
+    return f
+
+
+def _scene_points(cons) -> List[List[float]]:
+    """收集 3D 场景里所有几何点的世界坐标（用于自动取景与范围判断）。"""
+    pts: List[List[float]] = []
+    for lab in cons.order:
+        el = cons.elements[lab]
+        if el.visible is False:
+            continue
+        if el.kind == "point":
+            pts.append([el.x, el.y, el.z if el.z is not None else 0.0])
+            continue
+        d = getattr(el, "data", None)
+        if isinstance(d, dict):
+            for v in (d.get("verts") or [])[:20000]:
+                if isinstance(v, (list, tuple)) and len(v) >= 3:
+                    pts.append([float(v[0]), float(v[1]), float(v[2])])
+            for key, off in (("segs", 0), ("pts", 0)):
+                for item in (d.get(key) or [])[:5000]:
+                    if isinstance(item, (list, tuple)) and len(item) >= 3 and all(
+                            isinstance(c, (int, float)) for c in item[:3]):
+                        pts.append([float(item[0]), float(item[1]), float(item[2])])
+        if getattr(el, "objtype", "") == "sphere" and isinstance(d, dict):
+            cx, cy, cz, r = float(d.get("cx", 0)), float(d.get("cy", 0)), float(d.get("cz", 0)), float(d.get("r", 0))
+            for k in range(8):
+                th = 2 * math.pi * k / 8
+                pts.append([cx + r * math.cos(th), cy + r * math.sin(th), cz])
+                pts.append([cx, cy + r * math.cos(th), cz + r * math.sin(th)])
+    return pts
+
+
+def export_svg3d(cons, width: int = 1000, height: int = 700, yaw: float = -0.62,
+                 pitch: float = 0.52, face_budget: int = 4000) -> str:
+    """把 3D 场景导出为 SVG（正交投影 + 画家算法）。
+
+    - 网格/多面体：按深度从远到近绘制多边形（超 face_budget 时只画面积最大的若干面）
+    - 球：经纬线；直线/线段/射线/交线：折线；点：圆点 + 标签
+    - 自动取景：按场景包围盒缩放到画布内
+    """
+    from .elements import GeoError
+
+    w, h = width, height
+    has3d = any(cons.elements[lab].kind == "geo3d" or
+                (cons.elements[lab].kind == "point" and getattr(cons.elements[lab], "z", None) is not None)
+                for lab in cons.order)
+    if not has3d:
+        raise GeoError("当前构造没有 3D 对象（3D 投影导出至少需要一个 3D 对象或三维点）")
+    rot = _rot3(yaw, pitch)
+    pts = _scene_points(cons)
+    if not pts:
+        raise GeoError("3D 场景为空（没有可投影的几何数据）")
+    us = [rot(p)[0] for p in pts]
+    vs = [rot(p)[1] for p in pts]
+    umin, umax = min(us), max(us)
+    vmin, vmax = min(vs), max(vs)
+    pad = 0.08
+    span_u = max(1e-6, umax - umin) * (1 + 2 * pad)
+    span_v = max(1e-6, vmax - vmin) * (1 + 2 * pad)
+    s = min((w - 40) / span_u, (h - 60) / span_v)
+    cu = (umin + umax) / 2.0
+    cv = (vmin + vmax) / 2.0
+
+    def P(p):
+        u, v, z = rot(p)
+        return (round((u - cu) * s + w / 2.0, 2), round(h / 2.0 - (v - cv) * s, 2), z)
+
+    polys: List[Tuple[float, str, str]] = []      # (depth, 多边形点串, 样式)
+    lines: List[Tuple[float, str, str]] = []      # (depth, 折线点串, 样式)
+    dots: List[Tuple[float, float, float, str]] = []   # (depth, x, y, 标签)
+
+    for lab in cons.order:
+        el = cons.elements[lab]
+        if el.visible is False:
+            continue
+        col = getattr(el, "color", "#1a1a1a") or "#1a1a1a"
+        if el.kind == "point":
+            x, y, z = P([el.x, el.y, el.z if el.z is not None else 0.0])
+            dots.append((z, x, y, lab))
+            continue
+        if el.kind != "geo3d":
+            continue
+        d = getattr(el, "data", None) or {}
+        obj = getattr(el, "objtype", "")
+        if obj in ("cube", "polyhedron") and isinstance(d.get("faces"), list):
+            verts = d.get("verts") or []
+            faces = d["faces"]
+            idxs = list(range(len(faces)))
+            if len(faces) > face_budget:
+                def _area(f):
+                    a0 = verts[f[0]]
+                    tot = 0.0
+                    for k in range(1, len(f) - 1):
+                        b, c = verts[f[k]], verts[f[k + 1]]
+                        ux, uy, uz = b[0] - a0[0], b[1] - a0[1], b[2] - a0[2]
+                        vx, vy, vz = c[0] - a0[0], c[1] - a0[1], c[2] - a0[2]
+                        nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+                        tot += 0.5 * math.sqrt(nx * nx + ny * ny + nz * nz)
+                    return tot
+                idxs = sorted(idxs, key=lambda i: -_area(faces[i]))[:face_budget]
+            for fi in idxs:
+                f = faces[fi]
+                pr = [P(verts[i]) for i in f]
+                zavg = sum(q[2] for q in pr) / max(1, len(pr))
+                pts_s = " ".join("%s,%s" % (q[0], q[1]) for q in pr)
+                polys.append((zavg, pts_s, col))
+            for e2 in (d.get("edges") or [])[:20000]:
+                a, b = verts[e2[0]], verts[e2[1]]
+                pa, pb = P(a), P(b)
+                lines.append(((pa[2] + pb[2]) / 2.0, "%s,%s %s,%s" % (pa[0], pa[1], pb[0], pb[1]), col))
+        elif obj == "sphere":
+            cx, cy, cz, r = (float(d.get("cx", 0)), float(d.get("cy", 0)), float(d.get("cz", 0)), float(d.get("r", 0)))
+            for ring in range(1, 5):
+                for axis in (0, 1):
+                    seq = []
+                    for k in range(37):
+                        th = 2 * math.pi * k / 36
+                        if axis == 0:
+                            p3 = [cx + r * math.cos(th), cy + r * math.sin(th), cz + r * (ring - 2.5) / 3.5]
+                        else:
+                            p3 = [cx + r * (ring - 2.5) / 3.5, cy + r * math.cos(th), cz + r * math.sin(th)]
+                        seq.append(P(p3))
+                    avg = sum(q[2] for q in seq) / len(seq)
+                    lines.append((avg, " ".join("%s,%s" % (q[0], q[1]) for q in seq), col))
+        elif obj == "plane":
+            a3 = [float(d.get("ax", 0)), float(d.get("ay", 0)), float(d.get("az", 0))]
+            u3 = [float(d.get("ux", 1)), float(d.get("uy", 0)), float(d.get("uz", 0))]
+            v3 = [float(d.get("vx", 0)), float(d.get("vy", 1)), float(d.get("vz", 0))]
+            quad = [[a3[i] + su * u3[i] + sv * v3[i] for i in range(3)]
+                    for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+            pr = [P(q) for q in quad]
+            polys.append((sum(q[2] for q in pr) / 4.0,
+                          " ".join("%s,%s" % (q[0], q[1]) for q in pr), col))
+        else:
+            # 线段/直线/射线/交线/空间圆/截面/曲面等：用 segs 折线
+            segs = d.get("segs")
+            if isinstance(segs, list):
+                for seg in segs[:6000]:
+                    if (isinstance(seg, (list, tuple)) and len(seg) == 2
+                            and all(isinstance(q, (list, tuple)) and len(q) >= 3 for q in seg)):
+                        pa, pb = P(seg[0]), P(seg[1])
+                        lines.append(((pa[2] + pb[2]) / 2.0,
+                                      "%s,%s %s,%s" % (pa[0], pa[1], pb[0], pb[1]), col))
+
+    polys.sort(key=lambda t: t[0])          # 远 → 近
+    lines.sort(key=lambda t: t[0])
+    out: List[str] = []
+    out.append('<?xml version="1.0" encoding="utf-8"?>')
+    out.append('<svg xmlns="http://www.w3.org/2000/svg" width="' + str(w) + '" height="' + str(h)
+               + '" viewBox="0 0 ' + str(w) + ' ' + str(h) + '">')
+    out.append('  <desc>ggbpy 3D 投影导出（yaw=%.3f pitch=%.3f）</desc>' % (yaw, pitch))
+    out.append('  <rect width="100%" height="100%" fill="#ffffff"/>')
+    for _z, pts_s, col in polys:
+        out.append('  <polygon points="' + pts_s + '" fill="' + col
+                   + '" fill-opacity="0.12" stroke="' + col + '" stroke-width="1" stroke-opacity="0.55"/>')
+    for _z, pts_s, col in lines:
+        out.append('  <polyline points="' + pts_s + '" fill="none" stroke="' + col
+                   + '" stroke-width="1.1" stroke-opacity="0.75"/>')
+    for z, x, y, lab in sorted(dots, key=lambda t: -t[0]):
+        out.append('  <circle cx="%s" cy="%s" r="3.2" fill="#111827"/>' % (x, y))
+        out.append('  <text x="%s" y="%s" font-size="12" fill="#111827">%s</text>'
+                   % (round(x + 6, 1), round(y - 6, 1), _esc(lab)))
+    out.append('</svg>')
+    return "\n".join(out)

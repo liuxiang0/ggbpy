@@ -860,6 +860,25 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   const pxE = await nonBgPixels();
   check('投影复用后渲染输出正常（像素 > 500）', pxE > 500, 'non-bg pixels=' + pxE);
 
+  // P2：SVG 3D 投影导出（真实下载 + 内容校验）
+  const svg3Btn = await page.$('#btn-svg3d');
+  check('SVG·3D 导出按钮存在', !!svg3Btn, svg3Btn ? 'ok' : 'missing');
+  if (svg3Btn) {
+    const [dl3] = await Promise.all([
+      page.waitForEvent('download', { timeout: 20000 }).catch(() => null),
+      page.click('#btn-svg3d'),
+    ]);
+    check('SVG·3D 触发下载 .svg', !!dl3 && /\.svg$/.test(dl3.suggestedFilename()),
+      dl3 ? dl3.suggestedFilename() : 'no download');
+    if (dl3) {
+      const p3 = await dl3.path();
+      const txt3 = p3 ? fs.readFileSync(p3, 'utf8') : '';
+      check('下载的 SVG 含 3D 投影多边形',
+        txt3.indexOf('<svg') !== -1 && txt3.indexOf('<polygon') !== -1,
+        'len=' + txt3.length + ' polygon=' + (txt3.split('<polygon').length - 1));
+    }
+  }
+
   // ---- H. JS 错误 ----
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));

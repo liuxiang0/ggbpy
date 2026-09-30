@@ -27,8 +27,11 @@ def _is_3d(el) -> bool:
 
 
 def _needs_external_data(el) -> bool:
-    """导出需要额外数据块、无法只靠 defn 重放的元素（OBJ/STL/glTF 导入的网格）。"""
-    return bool(getattr(el, "meshid", ""))
+    """导出需要额外数据块的元素（OBJ/STL/glTF 导入的网格、图片）。
+
+    这些数据现在会内嵌进 <ggbpyData>，因此不再跳过；仅当仓库里查不到数据时才警告。
+    """
+    return bool(getattr(el, "meshid", "")) or el.kind == "image"
 
 
 def _refs_label(defn: str, label: str) -> bool:
@@ -36,13 +39,53 @@ def _refs_label(defn: str, label: str) -> bool:
     return re.search(r"(?<![A-Za-z0-9_])" + re.escape(label) + r"(?![A-Za-z0-9_])", defn) is not None
 
 
-def _collect_3d_skips(cons) -> List[str]:
-    """需要从 .ggb 导出中跳过的标签：依赖外部网格数据（mesh_store）的元素 + 级联引用者。
+_IMG_ID_RE = re.compile(r"Image\[[^\]]*,\s*([A-Za-z0-9_]+)\s*\]")
 
-    3D 点/球/多面体/曲面等已能通过「3D 点坐标 + 命令重放」完整往返，
-    只有 OBJ/STL/glTF 导入的网格必须把数据放在 .ggk 里，因此单独跳过并警告。
-    """
-    skipped = [lab for lab in cons.order if _needs_external_data(cons.elements[lab])]
+
+def _mesh_ids(cons) -> List[str]:
+    """构造中引用到的网格 id（保持出现顺序、去重）。"""
+    out: List[str] = []
+    for lab in cons.order:
+        mid = getattr(cons.elements[lab], "meshid", "")
+        if mid and mid not in out:
+            out.append(mid)
+    return out
+
+
+def _image_ids(cons) -> List[str]:
+    """构造中引用到的图片 id（从 Image[基点A,基点B,图片id] 定义中提取）。"""
+    out: List[str] = []
+    for lab in cons.order:
+        el = cons.elements[lab]
+        if el.kind != "image":
+            continue
+        m = _IMG_ID_RE.search(el.defn or "")
+        if not m:
+            # 兜底：扫描 defn 里形如 img_xxx 的标识
+            m2 = re.search(r"\b(img_[0-9a-f]{8,})\b", el.defn or "")
+            if m2:
+                out.append(m2.group(1))
+            continue
+        if m.group(1) not in out:
+            out.append(m.group(1))
+    return out
+
+
+def _collect_3d_skips(cons) -> List[str]:
+    """需要从 .ggb 导出中跳过的标签：仅限「引用了网格/图片但仓库里查不到数据」的元素及级联引用者。"""
+    from . import image_store, mesh_store
+
+    skipped: List[str] = []
+    for lab in cons.order:
+        el = cons.elements[lab]
+        mid = getattr(el, "meshid", "")
+        if mid and mesh_store.get(mid) is None:
+            skipped.append(lab)
+            continue
+        if el.kind == "image":
+            ids = [i for i in _image_ids(cons) if True]
+            if not ids or all(image_store.get(i) is None for i in ids):
+                skipped.append(lab)
     skip_set = set(skipped)
     changed = True
     while changed:
@@ -56,6 +99,43 @@ def _collect_3d_skips(cons) -> List[str]:
                 skipped.append(lab)
                 changed = True
     return [lab for lab in cons.order if lab in skip_set]
+
+
+def _embed_data_block(cons) -> str:
+    """把引用到的网格与图片数据打成一行 <ggbpyData>（base64 内嵌 JSON）。"""
+    import base64 as _b64
+    import json as _json
+    from . import image_store, mesh_store
+
+    meshes = mesh_store.serialize(_mesh_ids(cons))
+    images = image_store.serialize(_image_ids(cons))
+    if not meshes and not images:
+        return ""
+    payload = _json.dumps({"meshes": meshes, "images": images}, ensure_ascii=False)
+    b64 = _b64.b64encode(payload.encode("utf-8")).decode("ascii")
+    return ('    <ggbpyData meshes="' + str(len(meshes)) + '" images="' + str(len(images))
+            + '" encoding="base64+json" data="' + b64 + '"/>')
+
+
+def _load_data_block(construction) -> None:
+    """从 <ggbpyData> 恢复网格与图片仓库（在重放命令之前调用）。"""
+    import base64 as _b64
+    import json as _json
+    from . import image_store, mesh_store
+
+    node = construction.find("ggbpyData")
+    if node is None:
+        return
+    raw = node.get("data", "")
+    if not raw:
+        return
+    try:
+        payload = _json.loads(_b64.b64decode(raw).decode("utf-8"))
+    except Exception as e:
+        raise GeoError("ggbpyData 解析失败: " + str(e)[:60])
+    if isinstance(payload, dict):
+        mesh_store.load(payload.get("meshes") or {})
+        image_store.load(payload.get("images") or {})
 
 
 def _parse_defn(defn: str) -> Tuple[str, str, List[str], Optional[int]]:
@@ -78,9 +158,8 @@ def export_ggb(cons, warnings: Optional[List[str]] = None) -> str:
     lines: List[str] = []
     skip = set(_collect_3d_skips(cons))
     if skip:
-        note = ("ggbpy 提示：以下元素依赖外部网格数据（OBJ/STL/glTF 导入），.ggb 子集无法承载，已跳过 " +
-                str(len(skip)) + " 个：" + ", ".join(lab for lab in cons.order if lab in skip) +
-                "。请用 .ggk 保存以保留这些网格。")
+        note = ("ggbpy 提示：以下元素引用的网格/图片数据在仓库中不存在，已跳过 " +
+                str(len(skip)) + " 个：" + ", ".join(lab for lab in cons.order if lab in skip) + "。")
         if warnings is not None:
             warnings.append(note)
         lines.append('<?xml version="1.0" encoding="utf-8"?>')
@@ -90,6 +169,9 @@ def export_ggb(cons, warnings: Optional[List[str]] = None) -> str:
     lines.append('<geogebra format="5.0" version="5.0.826.0" app="ggbpy" platform="python">')
     lines.append('  <gui show="true" />')
     lines.append("  <construction title=\"ggbpy\" author=\"ggbpy\">")
+    data_block = _embed_data_block(cons)
+    if data_block:
+        lines.append(data_block)
     for lab in cons.order:
         if lab in skip:
             continue
@@ -158,6 +240,7 @@ def import_ggb(cons, text: str) -> None:
     construction = root.find("construction")
     if construction is None:
         raise GeoError("缺少 <construction> 节点")
+    _load_data_block(construction)        # 先恢复网格/图片仓库，命令重放才能找到数据
     # 第一遍：自由元素
     pending_commands: List[Tuple[str, List[str], str]] = []
     for elem in construction.findall("element"):

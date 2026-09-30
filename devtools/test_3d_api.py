@@ -865,6 +865,103 @@ _st3, d3 = jget("/api/state")
 check("重做栈状态正确（can_redo=False）", (d3 or {}).get("can_redo") is False, str((d3 or {}).get("can_redo")))
 
 # ---------------------------------------------------------------------------
+section("R. P2：.ggb 内嵌网格/图片数据")
+clear()
+OBJ_R = """v 0 0 0
+v 2 0 0
+v 2 2 0
+v 0 2 0
+v 0 0 2
+v 2 0 2
+v 2 2 2
+v 0 2 2
+f 1 2 3 4
+f 5 6 7 8
+f 1 2 6 5
+f 2 3 7 6
+f 3 4 8 7
+f 4 1 5 8
+"""
+req_m = urllib.request.Request(BASE + "/api/mesh", data=OBJ_R.encode("utf-8"),
+                               headers={"Content-Type": "application/octet-stream"}, method="POST")
+with urllib.request.urlopen(req_m, timeout=30) as resp:
+    rm = json.loads(resp.read().decode("utf-8"))
+mid_r = (rm or {}).get("id")
+check("准备：导入 OBJ 网格", bool(mid_r), str(rm)[:60])
+if mid_r:
+    put("m2=Mesh[" + mid_r + "]")
+    put("V2=Volume[m2]")
+    png_b64 = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==")
+    _st_img, r_img = jpost("/api/image", {"data": "data:image/png;base64," + png_b64, "w": 1, "h": 1})
+    iid_r = (r_img or {}).get("id")
+    check("准备：上传图片", bool(iid_r), str(r_img)[:50])
+    if iid_r:
+        put("I1=(0,0)")
+        put("I2=(3,0)")
+        put("pic2=Image[I1,I2," + iid_r + "]")
+    _st, h_r, raw_r = http("/api/export/ggb")
+    xml_r = raw_r.decode("utf-8")
+    hdr_r = {k.lower(): v for k, v in h_r.items()}
+    check(".ggb 响应不再带跳过警告头", not hdr_r.get("x-ggb-warnings"),
+          str(hdr_r.get("x-ggb-warnings"))[:60])
+    check(".ggb 含内嵌数据块 ggbpyData", "<ggbpyData" in xml_r, "len=%d" % len(xml_r))
+    req_l = urllib.request.Request(BASE + "/api/load", data=xml_r.encode("utf-8"),
+                                   headers={"Content-Type": "text/plain"}, method="POST")
+    try:
+        with urllib.request.urlopen(req_l, timeout=30) as resp_l:
+            _st_l = resp_l.status
+            rl_r = json.loads(resp_l.read().decode("utf-8"))
+    except Exception as e:
+        _st_l, rl_r = 0, {"ok": False, "message": str(e)}
+    check(".ggb 载入成功", rl_r.get("ok") is True, str(rl_r)[:60])
+    els_r = state3d()
+    m2r = find(els_r, "m2")
+    check(".ggb 往返后网格 8 顶点/6 面仍在",
+          m2r is not None and len((m2r.get("data") or {}).get("verts", [])) == 8
+          and len((m2r.get("data") or {}).get("faces", [])) == 6,
+          "%s/%s" % (len((m2r.get("data") or {}).get("verts", [])) if m2r else None,
+                     len((m2r.get("data") or {}).get("faces", [])) if m2r else None))
+    _st_s, d_r = jget("/api/state")
+    vals_r = {e.get("label"): e.get("value") for e in (d_r or {}).get("elements", [])}
+    check(".ggb 往返后依赖体积仍为 8", _num_or_none(vals_r.get("V2")) is not None
+          and abs(_num_or_none(vals_r["V2"]) - 8.0) < 1e-9, str(vals_r.get("V2")))
+    if iid_r:
+        _st_i, _h_i, raw_i = http("/api/image/" + iid_r)
+        check(".ggb 往返后图片数据可用（可再次取图）", raw_i[:8] == b"\x89PNG\r\n\x1a\n",
+              "len=%d" % len(raw_i))
+
+# ---------------------------------------------------------------------------
+section("S. P2：SVG 3D 投影导出")
+clear()
+put("O=(0,0,0)")
+put("cu=Cube[O,(2,0,0)]")
+put("P=(1,1,1)")
+put("sp=Sphere[(1,1,1),1.5]")
+_st, h3, raw3 = http("/api/export/svg?view3d=1")
+svg3 = raw3.decode("utf-8", "replace")
+hdr3 = {k.lower(): v for k, v in h3.items()}
+check("view3d=1 返回 SVG", _st == 200 and svg3.startswith("<?xml") and "<svg" in svg3,
+      "HTTP %s len=%d" % (_st, len(raw3)))
+check("响应头标记 3D 模式与文件名", hdr3.get("x-svg-mode") == "3d"
+      and "ggbpy-3d.svg" in hdr3.get("content-disposition", ""),
+      str({k: hdr3.get(k) for k in ("x-svg-mode", "content-disposition")}))
+check("含多边形（立方体 6 面）与折线（球经纬线）",
+      svg3.count("<polygon") >= 6 and svg3.count("<polyline") >= 4,
+      "polygon=%d polyline=%d" % (svg3.count("<polygon"), svg3.count("<polyline")))
+check("含点标签", svg3.count("<circle") >= 1 and "<text" in svg3,
+      "circle=%d" % svg3.count("<circle"))
+_st2, h2d, raw2d = http("/api/export/svg")
+hdr2d = {k.lower(): v for k, v in h2d.items()}
+check("默认 2D 模式仍可用（X-Svg-Mode: 2d，无 polygon）",
+      _st2 == 200 and hdr2d.get("x-svg-mode") == "2d" and "<svg" in raw2d.decode("utf-8", "replace"),
+      "mode=%s" % hdr2d.get("x-svg-mode"))
+clear()
+put("A=(0,0)")
+_st3, _h3, raw3b = http("/api/export/svg?view3d=1")
+check("无 3D 对象时给出明确错误（HTTP 400 + 说明）",
+      _st3 == 400 and "3D" in raw3b.decode("utf-8", "replace"), "HTTP %s" % _st3)
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("3D API 检测矩阵 @ %s：%d 项断言，%d 失败" % (BASE, COUNT[0], len(FAILS)))
 for f in FAILS:
