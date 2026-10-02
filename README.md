@@ -126,7 +126,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **第十七批（2026-10-02 · P2 结构债）**：
   - **多会话隔离**（`server/sessions.py`）：每个会话拥有独立的构造 / CAS / state3d rev 历史 / 变更锁 / **宏表**；会话 id 解析顺序 `?sid=` > cookie `ggbpy_sid` > `default`；`server/main.py` 里的 `cons`/`cas`/`_SD` 改为**按当前请求解析的代理**，端点代码零改动；会话有上限（24）与 TTL（6h，超限淘汰最久未用，`default` 永不淘汰）；新增 `GET /api/session`、`POST /api/session/sweep`。浏览器端首次访问生成随机 sid 并写入 cookie —— **不同浏览器/上下文天然隔离**，会话内宏不跨用户泄漏；无 cookie 的脚本请求仍落到 `default` 会话（既有 API/脚本用法不变）
   - **内容寻址仓库统一**（`kernel/blob_store.py`）：图片仓库与网格仓库共用的「内容哈希 → 短 id / serialize / load」逻辑抽到通用模块，两者只保留各自领域规则（图片 data URL 校验、网格顶点去重与面索引重排）；公开 API 不变（`put/get/decode/edges_of/serialize/load`），坏记录逐条跳过并返回写入条数
-  - 新增 `devtools/test_stores.py`（18 断言）与 `devtools/test_sessions.py`（23 断言，含会话上限/TTL 单元级验证）；2D 前端矩阵补「cookie 会话持久 + 新上下文独立」4 断言
+  - 新增 `devtools/test_stores.py`（18 断言）与 `devtools/test_sessions.py`（23 断言，含会话上限/TTL 单元级验证）；2D 前端矩阵补「cookie 会话持久 + 新上下文独立」4 断言  - 新增 `devtools/test_stores.py`（18 断言）与 `devtools/test_sessions.py`（23 断言，含会话上限/TTL 单元级验证）；2D 前端矩阵补「cookie 会话持久 + 新上下文独立」4 断言
+- **第十八批（2026-10-02 · P2 内核/前端拆分）**：
+  - **内核拆分（`commands.py` 7,867 → 6,567 行）**：3D 几何算法抽为 **`kernel/geometry3d.py`**（33 个函数 / 849 行：网格规范化与体积面积、凸多面体半空间裁剪、面×面/线×面/平面×立体/球×平面·球·空间圆·立体·直线/立体×直线/立体×立体 等全部求交、空间圆基向量、射线-三角形、`_poly_state`）；立体构造数学抽为 **`kernel/solids.py`**（28 个函数 / 564 行：立方体三种构造、正四/六/八/十二/二十面体、棱柱/棱锥、圆锥/圆柱、球、正交基与解析元数据标注）。两者**只依赖 `elements`/`math`/`numpy`，不依赖命令层**，可独立导入与单测；`commands.py` 通过 re-export 保持全部调用方（含既有测试的 `from kernel.commands import _mesh_volume`）零改动
+  - **前端文案外置（`app.js` 5,680 → 5,537 行）**：186×2 条 zh/en 文案抽到 **`static/i18n.js`**（由 `index.html` 在 `app.js` 之前加载，`app.js` 读 `window.GGB_I18N`，缺文件时退化为显示原始 key）——改文案不再动逻辑代码
+  - **模块边界守卫（`devtools/test_modules.py`，25 断言）**：断言 `geometry3d`/`solids` 不 import 命令层、re-export 与源模块**同一函数对象**、新进程可独立导入（不拉起命令层）、规模预算，以及**静态防漏检查**（模块内调用的函数与引用的模块级常量必须已定义/导入 —— 本轮正是靠它抓到搬迁时漏掉的 `_poly_state` 与 `_PHI`）；前端侧校验 `i18n.js` 已加载、数据不再残留在 `app.js`、**中英词条键集合完全一致（186/186，无漏翻）**
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
@@ -140,10 +144,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 8 步：注册表 8 + 仓库 18 + 会话 23 + 2D 内核 124 + 2D API 31 + 3D 490/181/134 + 2D 前端 36 = 1045 断言
+bash devtools/run_all_detection.sh       # 全量 9 步：注册表 8 + 仓库 18 + 模块 25 + 会话 23 + 2D 内核 124 + 2D API 31 + 3D 490/181/134 + 2D 前端 36 = 1070 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
+python3 -B devtools/test_modules.py     # 模块边界（内核拆分/前端文案外置/词条一致性）
 ```
 
 - `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 显式/参数/隐式曲面 × FitPlane × OBJ·STL 导入 × 样式快照 × 序列化 × 3D 度量语义）

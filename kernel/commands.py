@@ -21,6 +21,76 @@ from .elements import (
 )
 from .parser import _split_commas, eval_number, parse_line
 
+# 3D 几何算法已抽到 kernel/geometry3d.py（P2 结构拆分）；此处 re-export 保持调用方兼容
+from .geometry3d import (  # noqa: F401
+    _tag3d,
+    _z_of,
+    _has_z,
+    _dist3,
+    _solve2,
+    _line_ends,
+    _circle3d_basis,
+    _ray_triangle,
+    _frame_from_axis,
+    _normalize_mesh,
+    _newell_normal,
+    _mesh_volume,
+    _mesh_area,
+    _solid_volume,
+    _solid_area,
+    _is_solid_el,
+    _solid_planes,
+    _clip_polyhedron,
+    _ix_plane_plane,
+    _ix_line_plane,
+    _ix_line3d_plane,
+    _ix_solid_plane,
+    _ix_sphere_sphere,
+    _ix_sphere_circle3d,
+    _ix_circle3d_circle3d,
+    _ix_circle3d_plane,
+    _ix_circle3d_solid,
+    _ix_sphere_solid,
+    _ix_sphere_plane,
+    _ix_solid_solid,
+    _ix_solid_line,
+    _ix_sphere_line,
+    _poly_state,
+)
+
+# 立体构造数学已抽到 kernel/solids.py（P2 结构拆分）；re-export 保持调用方兼容
+from .solids import _PHI as _solids_PHI  # noqa: F401
+from .solids import (  # noqa: F401
+    _sphere_check,
+    _sphere_state,
+    _sphere_state_r,
+    _sphere_state_fixed,
+    _cube_seg_pts,
+    _cube_from_edge,
+    _cube_from_poly,
+    _cube_build,
+    _cube_state,
+    _cube_state2,
+    _ortho_frame,
+    _with_analytic,
+    _cone_mesh_axis,
+    _cone_from_circle_state,
+    _cone_apex_center_radius_state,
+    _cone_state,
+    _cyl_mesh_axis,
+    _cylinder_from_circle_state,
+    _cylinder_centers_radius_state,
+    _cylinder_state,
+    _prism_state,
+    _pyramid_state,
+    _tetrahedron_state,
+    _regular_polyhedron,
+    _octahedron_state,
+    _hexahedron_state,
+    _icosahedron_state,
+    _dodecahedron_state,
+)
+
 DEG = math.pi / 180.0
 
 # 形如 "Circle[O,2]" / "Plane[A,B,C]" 的嵌套命令调用（不含赋值号）
@@ -111,27 +181,6 @@ def _lookup(cons, s: str):
     if _NESTED_CALL_RE.match(key):
         return _eval_nested(cons, key)
     return None
-
-
-def _tag3d(el, solid: str):
-    """给 Geo3D 元素标注具体立体类型（objtype 保持历史值不变）。"""
-    if el is not None:
-        el.solid = solid
-    return el
-
-
-def _z_of(el) -> float:
-    z = getattr(el, "z", None)
-    return 0.0 if z is None else float(z)
-
-
-def _has_z(*els) -> bool:
-    """任一元素带显式 z（即三维点）时为真；纯二维对象全为 None。"""
-    return any(getattr(e, "z", None) is not None for e in els)
-
-
-def _dist3(a, b) -> float:
-    return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (_z_of(a) - _z_of(b)) ** 2)
 
 
 # ---------------------------------------------------------------------------
@@ -623,385 +672,6 @@ def _cmd_intersect(cons, defn, args, idx=None):
     raise GeoError("Intersect 暂不支持 " + k1 + " 与 " + k2 + " 的组合")
 
 
-def _ix_plane_plane(p1, p2):
-    """两面交线：方向 = 法向叉积；线上一点解 2x2。"""
-    a1, b1, c1, d1 = p1.data["a"], p1.data["b"], p1.data["c"], p1.data["d"]
-    a2, b2, c2, d2 = p2.data["a"], p2.data["b"], p2.data["c"], p2.data["d"]
-    dx = b1 * c2 - c1 * b2
-    dy = c1 * a2 - a1 * c2
-    dz = a1 * b2 - b1 * a2
-    ln = math.sqrt(dx * dx + dy * dy + dz * dz)
-    if ln < 1e-12:
-        raise GeoError("两平面平行或重合，无唯一交线")
-    # 求交线上一点：消去分量最大的坐标
-    if abs(dz) > abs(dx) and abs(dz) > abs(dy):
-        x, y = _solve2(a1, b1, -d1, a2, b2, -d2)
-        px, py, pz = x, y, 0.0
-    elif abs(dy) > abs(dx):
-        x, z = _solve2(a1, c1, -d1, a2, c2, -d2)
-        px, py, pz = x, 0.0, z
-    else:
-        y, z = _solve2(b1, c1, -d1, b2, c2, -d2)
-        px, py, pz = 0.0, y, z
-    # 延展成线段（两端）
-    L = 15.0
-    return {"objtype": "line3d",
-            "data": {"x1": px - dx / ln * L, "y1": py - dy / ln * L, "z1": pz - dz / ln * L,
-                     "x2": px + dx / ln * L, "y2": py + dy / ln * L, "z2": pz + dz / ln * L}}
-
-
-def _solve2(a, b, e, c, f, g):
-    """解 ax+by=e, cx+fy=g。"""
-    det = a * f - c * b
-    if abs(det) < 1e-12:
-        raise GeoError("退化方程组")
-    return (e * f - b * g) / det, (a * g - e * c) / det
-
-
-def _ix_line_plane(seg, pl):
-    """线段与平面交点。"""
-    d = seg.data
-    x1, y1, z1 = d["x1"], d["y1"], d["z1"]
-    x2, y2, z2 = d["x2"], d["y2"], d["z2"]
-    a, b, c, dd = pl.data["a"], pl.data["b"], pl.data["c"], pl.data["d"]
-    ux, uy, uz = x2 - x1, y2 - y1, z2 - z1
-    denom = a * ux + b * uy + c * uz
-    if abs(denom) < 1e-12:
-        raise GeoError("线段与平面平行")
-    t = -(a * x1 + b * y1 + c * z1 + dd) / denom
-    if t < -1e-9 or t > 1 + 1e-9:
-        raise GeoError("交点不在线段上")
-    return {"x": x1 + t * ux, "y": y1 + t * uy, "z": z1 + t * uz}
-
-
-def _is_solid_el(el) -> bool:
-    """网格立体（立方体/多面体/锥/柱：objtype 为 cube 或 polyhedron）。"""
-    return getattr(el, "objtype", "") in ("cube", "polyhedron")
-
-
-def _line_ends(el):
-    d = el.data
-    return ([d["x1"], d["y1"], d["z1"]], [d["x2"], d["y2"], d["z2"]])
-
-
-def _ix_line3d_plane(lin, pl):
-    """三维直线（无限）与平面交点。"""
-    p, q = _line_ends(lin)
-    a, b, c, dd = pl.data["a"], pl.data["b"], pl.data["c"], pl.data["d"]
-    ux, uy, uz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
-    denom = a * ux + b * uy + c * uz
-    if abs(denom) < 1e-12:
-        raise GeoError("直线与平面平行")
-    t = -(a * p[0] + b * p[1] + c * p[2] + dd) / denom
-    return {"x": p[0] + t * ux, "y": p[1] + t * uy, "z": p[2] + t * uz}
-
-
-def _ix_solid_plane(solid, pl):
-    """凸立体与平面相交 → 截面多边形（objtype=section）。
-
-    沿网格边两两求交（端点异号），去重后在平面内按极角排序成环。
-    """
-    vs = solid.data["verts"]
-    edges = solid.data["edges"]
-    a, b, c, dd = pl.data["a"], pl.data["b"], pl.data["c"], pl.data["d"]
-
-    def _val(p):
-        return a * p[0] + b * p[1] + c * p[2] + dd
-
-    pts = []
-    for i, j in edges:
-        p, q = vs[i], vs[j]
-        fp, fq = _val(p), _val(q)
-        if abs(fp) < 1e-9 and abs(fq) < 1e-9:
-            continue                      # 整条边落在平面上：该面本身在平面内，交由其它边给出顶点
-        if abs(fp) < 1e-9:
-            pts.append([p[0], p[1], p[2]])
-            continue                      # 端点恰在平面上（如平面正好切过顶面）
-        if abs(fq) < 1e-9:
-            pts.append([q[0], q[1], q[2]])
-            continue
-        if (fp > 0) == (fq > 0):
-            continue
-        t = fp / (fp - fq)
-        pts.append([p[k] + t * (q[k] - p[k]) for k in range(3)])
-    uniq = []
-    for p in pts:
-        if not any(math.dist(p, q) < 1e-9 for q in uniq):
-            uniq.append(p)
-    if len(uniq) < 3:
-        raise GeoError("平面与立体的截面不足 3 个顶点（相切或不相交）")
-    ctr = [sum(p[k] for p in uniq) / len(uniq) for k in range(3)]
-    ln = math.sqrt(a * a + b * b + c * c)
-    nx, ny, nz = a / ln, b / ln, c / ln
-    ux = uy = uz = 0.0
-    for p in uniq:
-        dx, dy, dz = p[0] - ctr[0], p[1] - ctr[1], p[2] - ctr[2]
-        d = math.sqrt(dx * dx + dy * dy + dz * dz)
-        if d > 1e-12:
-            ux, uy, uz = dx / d, dy / d, dz / d
-            break
-    wx = ny * uz - nz * uy
-    wy = nz * ux - nx * uz
-    wz = nx * uy - ny * ux
-
-    def _ang(p):
-        dx, dy, dz = p[0] - ctr[0], p[1] - ctr[1], p[2] - ctr[2]
-        return math.atan2(dx * wx + dy * wy + dz * wz, dx * ux + dy * uy + dz * uz)
-
-    uniq.sort(key=_ang)
-    return {"objtype": "section",
-            "data": {"pts": uniq, "normal": [nx, ny, nz], "count": len(uniq)}}
-
-
-def _ray_triangle(orig, dirv, a, b, c):
-    """Möller–Trumbore：射线 orig + t·dirv 与三角形求交，返回 t 或 None。"""
-    e1 = [b[k] - a[k] for k in range(3)]
-    e2 = [c[k] - a[k] for k in range(3)]
-    h = [dirv[1] * e2[2] - dirv[2] * e2[1],
-         dirv[2] * e2[0] - dirv[0] * e2[2],
-         dirv[0] * e2[1] - dirv[1] * e2[0]]
-    det = e1[0] * h[0] + e1[1] * h[1] + e1[2] * h[2]
-    if abs(det) < 1e-12:
-        return None
-    inv = 1.0 / det
-    s = [orig[k] - a[k] for k in range(3)]
-    u = (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]) * inv
-    if u < -1e-9 or u > 1 + 1e-9:
-        return None
-    q = [s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]]
-    v = (dirv[0] * q[0] + dirv[1] * q[1] + dirv[2] * q[2]) * inv
-    if v < -1e-9 or u + v > 1 + 1e-9:
-        return None
-    t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv
-    # 容差：起点恰在面上（t=0）也算命中；由调用方按线段范围过滤
-    return t if t > -1e-9 else None
-
-
-def _circle3d_basis(d):
-    """空间圆的 (圆心, 半径, 法向, 基 u, 基 v)。"""
-    return ([d["cx"], d["cy"], d["cz"]], d["r"], d["normal"], d["u"], d["v"])
-
-
-def _ix_sphere_sphere(s1, s2):
-    """两球求交 → 交圆（空间圆）：交平面垂直于连心线，半径 √(r1²−a²)。"""
-    a1, b1, c1, r1 = s1.data["cx"], s1.data["cy"], s1.data["cz"], s1.data["r"]
-    a2, b2, c2, r2 = s2.data["cx"], s2.data["cy"], s2.data["cz"], s2.data["r"]
-    dx, dy, dz = a2 - a1, b2 - b1, c2 - c1
-    dist = math.sqrt(dx * dx + dy * dy + dz * dz)
-    if dist < 1e-9:
-        raise GeoError("同心球没有交线（球面重合或内含）")
-    if dist > r1 + r2 + 1e-9:
-        raise GeoError("两球相离，无交线")
-    if dist < abs(r1 - r2) - 1e-9:
-        raise GeoError("一球完全在另一球内部，无交线")
-    ux, uy, uz = dx / dist, dy / dist, dz / dist
-    t = (dist * dist + r1 * r1 - r2 * r2) / (2 * dist)      # 交平面到球心 1 的距离
-    rr2 = r1 * r1 - t * t
-    if rr2 <= 1e-18:
-        raise GeoError("两球相切（交线退化为一点）")
-    ox, oy, oz = a1 + t * ux, b1 + t * uy, c1 + t * uz
-    u, v, _n = _frame_from_axis([ux, uy, uz])
-    return {"objtype": "circle3d",
-            "data": {"cx": ox, "cy": oy, "cz": oz, "r": math.sqrt(rr2),
-                     "normal": [ux, uy, uz], "u": u, "v": v}}
-
-
-def _ix_sphere_circle3d(sph, cir, idx=None):
-    """球 ∩ 空间圆 → 交点（0/1/2 个）。圆上点 P(t)=C+r(cos t·u+sin t·v)，解 |P−S|²=R²。"""
-    c, r, _n0, u, v = _circle3d_basis(cir.data)
-    d = sph.data
-    S = [d["cx"], d["cy"], d["cz"]]
-    R = d["r"]
-    w = [c[0] - S[0], c[1] - S[1], c[2] - S[2]]
-    wu = w[0] * u[0] + w[1] * u[1] + w[2] * u[2]
-    wv = w[0] * v[0] + w[1] * v[1] + w[2] * v[2]
-    ww = w[0] * w[0] + w[1] * w[1] + w[2] * w[2]
-    D = (R * R - ww - r * r) / (2 * r)
-    R0 = math.sqrt(wu * wu + wv * wv)
-    if R0 < 1e-12:
-        if abs(D) < 1e-9:
-            raise GeoError("圆在球面上（无穷多交点）")
-        raise GeoError("圆与球不相交")
-    if abs(D) > R0 + 1e-12:
-        raise GeoError("圆与球不相交")
-    phi = math.atan2(wv, wu)
-    delta = math.acos(max(-1.0, min(1.0, D / R0)))
-    ts = sorted([phi + delta, phi - delta])
-    if len(ts) == 2 and abs(ts[0] - ts[1]) < 1e-12:
-        ts = [ts[0]]
-    k = idx or 1
-    if k > len(ts):
-        raise GeoError("交点只有 " + str(len(ts)) + " 个（请求第 " + str(k) + " 个）")
-    t = ts[k - 1]
-    return {"x": c[0] + r * (math.cos(t) * u[0] + math.sin(t) * v[0]),
-            "y": c[1] + r * (math.cos(t) * u[1] + math.sin(t) * v[1]),
-            "z": c[2] + r * (math.cos(t) * u[2] + math.sin(t) * v[2])}
-
-
-def _ix_circle3d_circle3d(c1_el, c2_el, idx=None):
-    """两空间圆求交 → 交点（共面走解析解，异面走采样 + 二分）。"""
-    c1, r1, n1, u1, v1 = _circle3d_basis(c1_el.data)
-    c2, r2, n2, u2, v2 = _circle3d_basis(c2_el.data)
-    dvec = [c2[i] - c1[i] for i in range(3)]
-    dot_n = n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]
-    plane_gap = n1[0] * dvec[0] + n1[1] * dvec[1] + n1[2] * dvec[2]
-    same_plane = abs(abs(dot_n) - 1.0) < 1e-9 and abs(plane_gap) < 1e-7
-
-    if same_plane:
-        # 平面内两圆（经典 2D 情形），以 c1 为原点、u1/v1 为基
-        px = dvec[0] * u1[0] + dvec[1] * u1[1] + dvec[2] * u1[2]
-        py = dvec[0] * v1[0] + dvec[1] * v1[1] + dvec[2] * v1[2]
-        dist = math.sqrt(px * px + py * py)
-        if dist < 1e-9:
-            if abs(r1 - r2) < 1e-9:
-                raise GeoError("两圆重合（无穷多交点）")
-            raise GeoError("同心圆无交点")
-        if dist > r1 + r2 + 1e-12 or dist < abs(r1 - r2) - 1e-12:
-            raise GeoError("两圆不相交")
-        a = (dist * dist + r1 * r1 - r2 * r2) / (2 * dist)
-        h2 = r1 * r1 - a * a
-        ux, uy = px / dist, py / dist
-        bx = c1[0] + a * ux * u1[0] + a * uy * v1[0]
-        by = c1[1] + a * ux * u1[1] + a * uy * v1[1]
-        bz = c1[2] + a * ux * u1[2] + a * uy * v1[2]
-        if h2 <= 1e-18:
-            pts = [[bx, by, bz]]
-        else:
-            h = math.sqrt(h2)
-            perp = [-uy * u1[0] + ux * v1[0], -uy * u1[1] + ux * v1[1], -uy * u1[2] + ux * v1[2]]
-            pts = [[bx + h * perp[0], by + h * perp[1], bz + h * perp[2]],
-                   [bx - h * perp[0], by - h * perp[1], bz - h * perp[2]]]
-    else:
-        # 平面不平行：圆2 与平面1 恰好交于 2 点，再筛「到 c1 距离 = r1」。
-        # （若用 |P−c1|²−r1² 作判别函数，两圆共球面/同轴时该函数恒为 0，会漏判。）
-        nx = n1[1] * n2[2] - n1[2] * n2[1]
-        ny = n1[2] * n2[0] - n1[0] * n2[2]
-        nz = n1[0] * n2[1] - n1[1] * n2[0]
-        if math.sqrt(nx * nx + ny * ny + nz * nz) < 1e-9:
-            raise GeoError("两圆所在平面平行，无交点")
-        dvec2 = [c2[i] - c1[i] for i in range(3)]
-        E = n1[0] * dvec2[0] + n1[1] * dvec2[1] + n1[2] * dvec2[2]
-        A = r2 * (n1[0] * u2[0] + n1[1] * u2[1] + n1[2] * u2[2])
-        B = r2 * (n1[0] * v2[0] + n1[1] * v2[1] + n1[2] * v2[2])
-        R0 = math.sqrt(A * A + B * B)
-        if abs(E) > R0 + 1e-12:
-            raise GeoError("两圆不相交")
-        phi = math.atan2(B, A)
-        delta = math.acos(max(-1.0, min(1.0, -E / R0)))
-        ts = sorted([phi + delta, phi - delta])
-        if len(ts) == 2 and abs(ts[0] - ts[1]) < 1e-12:
-            ts = [ts[0]]
-
-        def _p2(t):
-            return [c2[0] + r2 * (math.cos(t) * u2[0] + math.sin(t) * v2[0]),
-                    c2[1] + r2 * (math.cos(t) * u2[1] + math.sin(t) * v2[1]),
-                    c2[2] + r2 * (math.cos(t) * u2[2] + math.sin(t) * v2[2])]
-
-        pts = []
-        for t in ts:
-            p = _p2(t)
-            ddx, ddy, ddz = p[0] - c1[0], p[1] - c1[1], p[2] - c1[2]
-            if abs(math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) - r1) < 1e-7:
-                pts.append(p)
-        if not pts:
-            raise GeoError("两圆不相交")
-
-    k = idx or 1
-    if k > len(pts):
-        raise GeoError("交点只有 " + str(len(pts)) + " 个（请求第 " + str(k) + " 个）")
-    p = pts[k - 1]
-    return {"x": p[0], "y": p[1], "z": p[2]}
-
-
-def _ix_circle3d_plane(cir, pl, idx=None):
-    """空间圆 ∩ 平面 → 交点（0/1/2 个，按 idx 取第 n 个，默认第 1 个）。"""
-    c, r, _n0, u, v = _circle3d_basis(cir.data)
-    a, b, cc, dd = pl.data["a"], pl.data["b"], pl.data["c"], pl.data["d"]
-    ln = math.sqrt(a * a + b * b + cc * cc)
-    if ln < 1e-12:
-        raise GeoError("平面退化")
-    nx, ny, nz = a / ln, b / ln, cc / ln
-    dpl = dd / ln
-    E = nx * c[0] + ny * c[1] + nz * c[2] + dpl          # 圆心到平面的有符号距离
-    A = r * (nx * u[0] + ny * u[1] + nz * u[2])
-    B = r * (nx * v[0] + ny * v[1] + nz * v[2])
-    R = math.sqrt(A * A + B * B)
-    if R < 1e-12:
-        if abs(E) < 1e-9:
-            raise GeoError("圆与平面共面（交线为整个圆）")
-        raise GeoError("圆所在平面与给定平面平行，无交点")
-    if abs(E) > R + 1e-12:
-        raise GeoError("平面与圆不相交")
-    phi = math.atan2(B, A)
-    delta = math.acos(max(-1.0, min(1.0, -E / R)))
-    ts = [phi + delta, phi - delta]
-    ts.sort()
-    if len(ts) == 2 and abs(ts[0] - ts[1]) < 1e-12:
-        ts = [ts[0]]
-    k = idx or 1
-    if k > len(ts):
-        raise GeoError("交点只有 " + str(len(ts)) + " 个（请求第 " + str(k) + " 个）")
-    t = ts[k - 1]
-    return {"x": c[0] + r * (math.cos(t) * u[0] + math.sin(t) * v[0]),
-            "y": c[1] + r * (math.cos(t) * u[1] + math.sin(t) * v[1]),
-            "z": c[2] + r * (math.cos(t) * u[2] + math.sin(t) * v[2])}
-
-
-def _ix_circle3d_solid(cir, solid, idx=None):
-    """空间圆 ∩ 凸立体 → 交点（沿圆周采样 + 二分细化；相切时用最近点兜底）。"""
-    c, r, _n0, u, v = _circle3d_basis(cir.data)
-    planes = _solid_planes(solid)
-
-    def pt(t):
-        return [c[0] + r * (math.cos(t) * u[0] + math.sin(t) * v[0]),
-                c[1] + r * (math.cos(t) * u[1] + math.sin(t) * v[1]),
-                c[2] + r * (math.cos(t) * u[2] + math.sin(t) * v[2])]
-
-    def inside(p):
-        return all(n[0] * p[0] + n[1] * p[1] + n[2] * p[2] + dd <= 1e-9 for n, dd in planes)
-
-    N = 720
-    crossings = []
-    prev_t, prev_ins = 0.0, inside(pt(0.0))
-    for k in range(1, N + 1):
-        t = 2 * math.pi * k / N
-        ins = inside(pt(t))
-        if ins != prev_ins:
-            lo, hi, ilo = prev_t, t, prev_ins
-            for _ in range(60):
-                mid = 0.5 * (lo + hi)
-                if inside(pt(mid)) == ilo:
-                    lo = mid
-                else:
-                    hi = mid
-            crossings.append(0.5 * (lo + hi))
-        prev_t, prev_ins = t, ins
-    if not crossings:
-        # 相切兜底：找圆周上距某面最近且整体在体内的点
-        best = None
-        for k in range(N):
-            t = 2 * math.pi * k / N
-            p = pt(t)
-            if not inside(p):
-                continue
-            dist = min(abs(n[0] * p[0] + n[1] * p[1] + n[2] * p[2] + dd) for n, dd in planes)
-            if best is None or dist < best[0]:
-                best = (dist, t)
-        if best is not None and best[0] < 1e-6:
-            crossings = [best[1]]
-        else:
-            raise GeoError("圆与立体无交点（整圆在立体内部或外部）")
-    # 去重（相切会成对出现）
-    uniq = []
-    for t in sorted(crossings):
-        if not uniq or abs(t - uniq[-1]) > 1e-6:
-            uniq.append(t)
-    k = idx or 1
-    if k > len(uniq):
-        raise GeoError("交点只有 " + str(len(uniq)) + " 个（请求第 " + str(k) + " 个）")
-    return dict(zip(("x", "y", "z"), pt(uniq[k - 1])))
-
-
 def _cmd_bbox(cons, defn, args):
     """BoundingBox[点列表]：点云轴对齐包围盒（8 顶点/6 面/12 棱，可求体积/面积）。"""
     if len(args) != 1:
@@ -1348,252 +1018,7 @@ def _fitsphere_state(items):
             "data": {"cx": cx, "cy": cy, "cz": cz, "r": r}}
 
 
-def _ix_sphere_solid(sph, solid):
-    """球面 ∩ 凸立体 → 交线（objtype=curve3d：按立体各面分段的折线集合）。
-
-    用 numpy 一次性对所有半空间做内点判定（此前逐点 Python 循环是 O(面数²)）。
-    """
-    import numpy as np
-    d = sph.data
-    c = np.array([float(d["cx"]), float(d["cy"]), float(d["cz"])])
-    r = float(d["r"])
-    planes = _solid_planes(solid)
-    faces = solid.data["faces"]
-    if len(planes) > 4000:
-        raise GeoError("立体的面数过多（%d > 4000），球×复杂网格暂不支持；请改用凸多面体或降低网格分辨率"
-                       % len(planes))
-    N = 180
-    P = np.array([p[0] for p in planes], dtype=float)
-    Q = np.array([p[1] for p in planes], dtype=float)
-    th = np.linspace(0.0, 2 * math.pi, N, endpoint=False)
-    ct, st = np.cos(th), np.sin(th)
-    segs = []
-    for (n, dd), face in zip(planes, faces):
-        nv = np.asarray(n, dtype=float)
-        sdist = float(nv @ c + dd)
-        if abs(sdist) > r - 1e-9:
-            continue                      # 平面与球不相交/相切
-        rr = math.sqrt(max(0.0, r * r - sdist * sdist))
-        cen = c - sdist * nv
-        u, v, _nn = _frame_from_axis(list(nv))
-        U = np.asarray(u, dtype=float)
-        V = np.asarray(v, dtype=float)
-        pts = cen[None, :] + rr * (ct[:, None] * U[None, :] + st[:, None] * V[None, :])
-        maxv = (pts @ P.T + Q[None, :]).max(axis=1)      # 到所有半空间的最大值 ≤ 0 → 在体内
-        keep = pts[maxv <= 1e-7]
-        if len(keep) < 2:
-            continue
-        for k in range(len(keep) - 1):
-            segs.append([list(keep[k]), list(keep[k + 1])])
-    if not segs:
-        raise GeoError("球面与立体不相交（或交线退化）")
-    return {"objtype": "curve3d", "data": {"segs": segs, "count": len(segs)}}
-
-
-def _ix_sphere_plane(sph, pl):
-    """球 ∩ 平面 → 3D 圆（objtype=circle3d，带圆心/半径/所在平面法向与基）。"""
-    d = sph.data
-    cx, cy, cz, r = d["cx"], d["cy"], d["cz"], d["r"]
-    a, b, c, dd = pl.data["a"], pl.data["b"], pl.data["c"], pl.data["d"]
-    ln = math.sqrt(a * a + b * b + c * c)
-    if ln < 1e-12:
-        raise GeoError("平面退化")
-    nx, ny, nz = a / ln, b / ln, c / ln
-    sdist = nx * cx + ny * cy + nz * cz + dd / ln          # 球心到平面的有符号距离（平面：n·x+d=0）
-    if abs(sdist) > r + 1e-9:
-        raise GeoError("平面与球不相交（球心距 %.6f > 半径 %.6f）" % (abs(sdist), r))
-    rr = math.sqrt(max(0.0, r * r - sdist * sdist))
-    if rr < 1e-9:
-        raise GeoError("平面与球相切（交线退化为一点）")
-    ox, oy, oz = cx - sdist * nx, cy - sdist * ny, cz - sdist * nz   # 圆心 = 球心在平面上的投影
-    u, v, _n = _frame_from_axis([nx, ny, nz])
-    return {"objtype": "circle3d",
-            "data": {"cx": ox, "cy": oy, "cz": oz, "r": rr,
-                     "normal": [nx, ny, nz], "u": u, "v": v}}
-
-
 # ---- 凸多面体半空间裁剪（体∩体） ----
-
-def _solid_planes(el):
-    """把凸立体转成外向半空间列表 [(n, d)]：内部满足 n·x + d ≤ 0。"""
-    vs = el.data["verts"]
-    faces = el.data["faces"]
-    planes = []
-    for f in faces:
-        nx, ny, nz = _newell_normal(vs, f)
-        ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-        if ln < 1e-12:
-            continue
-        nx, ny, nz = nx / ln, ny / ln, nz / ln
-        p = vs[f[0]]
-        planes.append(((nx, ny, nz), -(nx * p[0] + ny * p[1] + nz * p[2])))
-    return planes
-
-
-def _clip_polyhedron(verts, faces, plane):
-    """用一个半空间 n·x + d ≤ 0 裁剪凸多面体（顶点/面表），返回新的 (verts, faces)。"""
-    n, d = plane
-
-    def inside(p):
-        return n[0] * p[0] + n[1] * p[1] + n[2] * p[2] + d <= 1e-12
-
-    def cut_point(p, q):
-        fp = n[0] * p[0] + n[1] * p[1] + n[2] * p[2] + d
-        fq = n[0] * q[0] + n[1] * q[1] + n[2] * q[2] + d
-        t = fp / (fp - fq)
-        return [p[k] + t * (q[k] - p[k]) for k in range(3)]
-
-    out_faces = []
-    cut_pts = []
-    for f in faces:
-        pts = [verts[i] for i in f]
-        newpoly = []
-        m = len(pts)
-        for i in range(m):
-            p, q = pts[i], pts[(i + 1) % m]
-            ip, iq = inside(p), inside(q)
-            if ip:
-                newpoly.append(p)
-            if ip != iq:
-                cp = cut_point(p, q)
-                newpoly.append(cp)
-                cut_pts.append(cp)
-        # 去重（相邻重复点）
-        dedup = []
-        for p in newpoly:
-            if not dedup or math.dist(p, dedup[-1]) > 1e-9:
-                dedup.append(p)
-        if len(dedup) >= 3:
-            if math.dist(dedup[0], dedup[-1]) < 1e-9:
-                dedup.pop()
-            out_faces.append(dedup)
-    if not out_faces:
-        return [], []
-    # 顶点表（按坐标去重）
-    new_verts = []
-    for f in out_faces:
-        for p in f:
-            if not any(math.dist(p, q) < 1e-9 for q in new_verts):
-                new_verts.append(p)
-    idx_faces = [[next(i for i, q in enumerate(new_verts) if math.dist(p, q) < 1e-9) for p in f] for f in out_faces]
-    # 截面封盖：把裁剪产生的点按平面内极角排序
-    if len(cut_pts) >= 3:
-        uniq = []
-        for p in cut_pts:
-            if not any(math.dist(p, q) < 1e-9 for q in uniq):
-                uniq.append(p)
-        if len(uniq) >= 3:
-            ctr = [sum(p[k] for p in uniq) / len(uniq) for k in range(3)]
-            ux = uy = uz = 0.0
-            for p in uniq:
-                dx, dy, dz = p[0] - ctr[0], p[1] - ctr[1], p[2] - ctr[2]
-                dd = math.sqrt(dx * dx + dy * dy + dz * dz)
-                if dd > 1e-12:
-                    ux, uy, uz = dx / dd, dy / dd, dz / dd
-                    break
-            wx = n[1] * uz - n[2] * uy
-            wy = n[2] * ux - n[0] * uz
-            wz = n[0] * uy - n[1] * ux
-
-            def _ang(p):
-                dx, dy, dz = p[0] - ctr[0], p[1] - ctr[1], p[2] - ctr[2]
-                return math.atan2(dx * wx + dy * wy + dz * wz, dx * ux + dy * uy + dz * uz)
-
-            uniq.sort(key=_ang)
-            cap = []
-            for p in uniq:
-                if not any(math.dist(p, q) < 1e-9 for q in [new_verts[i] for i in range(len(new_verts))]):
-                    new_verts.append(p)
-                cap.append(next(i for i, q in enumerate(new_verts) if math.dist(p, q) < 1e-9))
-            idx_faces.append(cap)
-    return new_verts, idx_faces
-
-
-def _ix_solid_solid(s1, s2):
-    """两个凸立体求交 → 凸多面体（半空间裁剪）。"""
-    verts = [list(v) for v in s1.data["verts"]]
-    faces = [list(f) for f in s1.data["faces"]]
-    for pl in _solid_planes(s1) + _solid_planes(s2):
-        verts, faces = _clip_polyhedron(verts, faces, pl)
-        if len(verts) < 4 or not faces:
-            raise GeoError("两个立体的交集为空或退化为面/点")
-    # 由面表恢复边表
-    edges = []
-    for f in faces:
-        for i in range(len(f)):
-            a, b = f[i], f[(i + 1) % len(f)]
-            if a == b:
-                continue
-            key = (min(a, b), max(a, b))
-            if key not in edges:
-                edges.append(key)
-    if not edges:
-        raise GeoError("两个立体的交集退化")
-    mesh = {"verts": [list(v) for v in verts], "faces": [list(f) for f in faces], "edges": [list(e) for e in edges]}
-    if _mesh_volume(mesh) < 1e-9:
-        raise GeoError("两个立体的交集退化为零体积（面/点接触）")
-    return {"objtype": "polyhedron", "data": mesh}
-
-
-def _ix_solid_line(solid, lin, idx, bounded):
-    """凸立体与直线/线段求交 → 按 idx 取第 idx 个交点（1-based，默认第 1 个）。"""
-    vs = solid.data["verts"]
-    p, q = _line_ends(lin)
-    dirv = [q[k] - p[k] for k in range(3)]
-    ts = []
-    for face in solid.data["faces"]:
-        a = vs[face[0]]
-        for i in range(1, len(face) - 1):
-            t = _ray_triangle(p, dirv, a, vs[face[i]], vs[face[i + 1]])
-            if t is None:
-                continue
-            if bounded and (t < -1e-9 or t > 1 + 1e-9):
-                continue
-            ts.append(min(1.0, max(0.0, t)) if bounded else t)
-    if not ts:
-        raise GeoError("线段与立体无交点（整段在立体内部或外部）" if bounded else "直线与立体不相交")
-    ts.sort()
-    uniq = []
-    for t in ts:
-        if not uniq or abs(t - uniq[-1]) > 1e-7:
-            uniq.append(t)
-    k = (idx or 1)
-    if k > len(uniq):
-        raise GeoError("交点只有 " + str(len(uniq)) + " 个（请求第 " + str(k) + " 个）")
-    t = uniq[k - 1]
-    return {"x": p[0] + t * dirv[0], "y": p[1] + t * dirv[1], "z": p[2] + t * dirv[2]}
-
-
-def _ix_sphere_line(sph, lin, idx, bounded):
-    """球与直线/线段求交 → 按 idx 取第 idx 个交点。"""
-    d = sph.data
-    cx, cy, cz, r = d["cx"], d["cy"], d["cz"], d["r"]
-    p, q = _line_ends(lin)
-    dx, dy, dz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
-    fx, fy, fz = p[0] - cx, p[1] - cy, p[2] - cz
-    A = dx * dx + dy * dy + dz * dz
-    if A < 1e-18:
-        raise GeoError("直线退化")
-    B = 2 * (fx * dx + fy * dy + fz * dz)
-    C = fx * fx + fy * fy + fz * fz - r * r
-    disc = B * B - 4 * A * C
-    if disc < -1e-12:
-        raise GeoError("直线与球不相交")
-    disc = max(0.0, disc)
-    sq = math.sqrt(disc)
-    ts = [(-B - sq) / (2 * A), (-B + sq) / (2 * A)]
-    ts = [t for t in ts if (not bounded) or (-1e-9 <= t <= 1 + 1e-9)]
-    if not ts:
-        raise GeoError("交点不在线段上")
-    ts.sort()
-    if len(ts) == 2 and abs(ts[0] - ts[1]) < 1e-9:
-        ts = [ts[0]]          # 相切：判别式≈0 时两根重合，只算一个交点
-    k = (idx or 1)
-    if k > len(ts):
-        raise GeoError("交点只有 " + str(len(ts)) + " 个（请求第 " + str(k) + " 个）")
-    t = ts[k - 1]
-    return {"x": p[0] + t * dx, "y": p[1] + t * dy, "z": p[2] + t * dz}
-
 
 def _ix_fn_fn(cons, defn, f, g, idx):
     """函数与函数求交（可多交点）。"""
@@ -4688,25 +4113,6 @@ def _cmd_sphere(cons, defn, args):
     return _mk(cons, Geo3D, "geo3d", defn, [c], lambda d: _sphere_state_fixed(d[0], r))
 
 
-def _sphere_check(r):
-    if r <= 1e-12:
-        raise GeoError("球半径需为正")
-    return r
-
-
-def _sphere_state(c, p):
-    r = math.sqrt((p.x - c.x) ** 2 + (p.y - c.y) ** 2 + ((p.z or 0) - (c.z or 0)) ** 2)
-    return {"objtype": "sphere", "solid": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r)}}
-
-
-def _sphere_state_r(c, r):
-    return {"objtype": "sphere", "solid": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r.value)}}
-
-
-def _sphere_state_fixed(c, r):
-    return {"objtype": "sphere", "solid": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r)}}
-
-
 def _cmd_plane(cons, defn, args):
     if len(args) != 3:
         raise GeoError("Plane 需要三个点")
@@ -4738,17 +4144,6 @@ def _is_segment_el(el) -> bool:
     return el.kind == "segment" or (el.kind == "geo3d" and getattr(el, "objtype", "") == "segment")
 
 
-def _cube_seg_pts(el):
-    """取线段两端点（3D 元组），支持 2D 线段与 3D 线段。"""
-    if el.kind == "segment":
-        return (el.x1, el.y1, 0.0), (el.x2, el.y2, 0.0)
-    if el.kind == "geo3d" and getattr(el, "objtype", "") == "segment":
-        d = el.data
-        return ((d.get("x1", 0.0), d.get("y1", 0.0), d.get("z1", 0.0)),
-                (d.get("x2", 0.0), d.get("y2", 0.0), d.get("z2", 0.0)))
-    raise GeoError("需要一个线段对象")
-
-
 def _elem_or_point(cons, s: str):
     """参数解析：优先按已有元素标签；否则尝试 (x,y) / (x,y,z) 字面量点。"""
     txt = s.strip()
@@ -4758,83 +4153,6 @@ def _elem_or_point(cons, s: str):
     if txt.startswith("("):
         return _point_arg(cons, txt)
     raise GeoError("找不到对象 " + txt)
-
-
-def _cube_from_edge(p1, p2, dirpt=None):
-    """由一条棱 p1→p2 构建立方体；dirpt 为相邻顶点方向（可选，缺省系统自选）。
-
-    - 2D 线段且未给方向点：底面在 xy 平面、AB 垂直方向补全，向 +z 挤出（与 Cube[A,B] 一致）；
-    - 其它情况：把方向点（或 z 轴）对 AB 取垂直分量并缩放到边长，得到相邻棱方向。
-    """
-    u = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]]
-    L = math.sqrt(u[0] ** 2 + u[1] ** 2 + u[2] ** 2)
-    if L < 1e-12:
-        raise GeoError("线段退化，无法构建立方体")
-    n = [u[0] / L, u[1] / L, u[2] / L]
-    # 经典 2D 情形
-    if dirpt is None and abs(p1[2]) < 1e-12 and abs(p2[2]) < 1e-12:
-        v = [-u[1], u[0], 0.0]
-        base = [list(p1), list(p2),
-                [p2[0] + v[0], p2[1] + v[1], p2[2] + v[2]],
-                [p1[0] + v[0], p1[1] + v[1], p1[2] + v[2]]]
-        return _cube_build(base, (0.0, 0.0, 1.0), L)
-    # 一般情形：确定相邻棱方向
-    if dirpt is not None:
-        w = [dirpt[0] - p1[0], dirpt[1] - p1[1], dirpt[2] - p1[2]]
-    else:
-        w = [0.0, 0.0, 1.0]
-        if abs(n[2]) > 0.999:
-            w = [1.0, 0.0, 0.0]
-    dot = w[0] * n[0] + w[1] * n[1] + w[2] * n[2]
-    v = [w[0] - dot * n[0], w[1] - dot * n[1], w[2] - dot * n[2]]
-    lv = math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2)
-    if lv < 1e-9:
-        # 方向与棱共线：换参考轴
-        ref = [1.0, 0.0, 0.0] if abs(n[0]) < 0.9 else [0.0, 1.0, 0.0]
-        dot2 = ref[0] * n[0] + ref[1] * n[1] + ref[2] * n[2]
-        v = [ref[0] - dot2 * n[0], ref[1] - dot2 * n[1], ref[2] - dot2 * n[2]]
-        lv = math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2)
-        if lv < 1e-12:
-            raise GeoError("无法确定立方体方向")
-    v = [v[0] / lv * L, v[1] / lv * L, v[2] / lv * L]
-    base = [list(p1), list(p2),
-            [p2[0] + v[0], p2[1] + v[1], p2[2] + v[2]],
-            [p1[0] + v[0], p1[1] + v[1], p1[2] + v[2]]]
-    vn = [v[0] / L, v[1] / L, v[2] / L]
-    nx = n[1] * vn[2] - n[2] * vn[1]
-    ny = n[2] * vn[0] - n[0] * vn[2]
-    nz = n[0] * vn[1] - n[1] * vn[0]
-    ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if ln < 1e-12:
-        raise GeoError("底面退化，无法构建立方体")
-    return _cube_build(base, (nx / ln, ny / ln, nz / ln), L)
-
-
-def _cube_from_poly(poly):
-    """由 4 顶点正方形多边形构建立方体（底面 = 该正方形，高度 = 边长）。"""
-    pts = [[x, y, 0.0] for x, y in zip(poly.xs, poly.ys)]
-    if len(pts) != 4:
-        raise GeoError("Cube[正方形] 需要 4 个顶点的正方形")
-    def _sub(a, b):
-        return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-    def _dot(a, b):
-        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-    def _norm(a):
-        return math.sqrt(_dot(a, a))
-    e = [_sub(pts[(i + 1) % 4], pts[i]) for i in range(4)]
-    lens = [_norm(x) for x in e]
-    if min(lens) < 1e-9:
-        raise GeoError("正方形边长退化")
-    if max(lens) - min(lens) > 1e-6 * max(lens):
-        raise GeoError("Cube[正方形] 的四边形边长不等，不是正方形")
-    if abs(_dot(e[0], e[1])) > 1e-6 * (lens[0] * lens[1]):
-        raise GeoError("Cube[正方形] 的相邻边不垂直，不是正方形")
-    u, v = e[0], e[1]
-    nv = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
-    ln = _norm(nv)
-    if ln < 1e-12:
-        raise GeoError("正方形退化")
-    return _cube_build(pts, (nv[0] / ln, nv[1] / ln, nv[2] / ln), lens[0])
 
 
 def _cmd_cube(cons, defn, args):
@@ -4890,132 +4208,15 @@ def _cmd_cube(cons, defn, args):
     raise GeoError("Cube 需要 两点 / 三点 / 线段 / 线段+点 / 正方形")
 
 
-def _cube_build(base_verts, n, h):
-    """由底面 4 顶点 + 单位法向 n + 高度 h 构建立方体（8 顶点/6 面/12 边）。"""
-    verts = [list(v) for v in base_verts]
-    for v in base_verts:
-        verts.append([v[0] + n[0] * h, v[1] + n[1] * h, v[2] + n[2] * h])
-    # 底面 0,1,2,3；顶面 4,5,6,7（对应）
-    faces = [
-        [0, 1, 2, 3], [4, 6, 7, 5], [0, 1, 5, 4],
-        [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7],
-    ]
-    edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4],
-             [0, 4], [1, 5], [2, 6], [3, 7]]
-    return {"objtype": "cube", "solid": "cube",
-            "data": {"verts": verts, "faces": _normalize_mesh(verts, faces), "edges": edges}}
-
-
-def _cube_state(a, b, c):
-    """三点构成立方体底面正方形：自动识别哪一点是角点（两条最短边共用的顶点），
-    另两点为相邻顶点；高度 = 边长，沿底面法向垂直延伸。
-    支持：角点+两相邻、连续三点（中间为角点）、对角两点+角点 三种输入顺序。"""
-    pts = [[a.x, a.y, a.z or 0], [b.x, b.y, b.z or 0], [c.x, c.y, c.z or 0]]
-
-    def _d2(p, q):
-        return (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2
-
-    d01 = _d2(pts[0], pts[1])
-    d02 = _d2(pts[0], pts[2])
-    d12 = _d2(pts[1], pts[2])
-    # 找出角点：它到另外两点的距离相等且最短（两条边），第三条距离最长（对角线）
-    # 角点 i：到 j、k 的平方距离相等（d_ij == d_ik），且小于 d_jk（对角线最长）
-    corner = -1
-    if abs(d01 - d02) < 1e-9 and d01 < d12:
-        corner = 0          # a 是角点
-    elif abs(d01 - d12) < 1e-9 and d01 < d02:
-        corner = 1          # b 是角点
-    elif abs(d02 - d12) < 1e-9 and d02 < d01:
-        corner = 2          # c 是角点
-    if corner < 0:
-        raise GeoError("三点不能确定正方形底面（需两点距离相等为边、第三点在对角）")
-    # 角点 → 相邻两顶点（环绕顺序 角点, 邻1, 对顶点, 邻2）
-    o = pts[corner]
-    n1 = pts[(corner + 1) % 3]
-    n2 = pts[(corner + 2) % 3]
-    u = [n1[0] - o[0], n1[1] - o[1], n1[2] - o[2]]
-    v = [n2[0] - o[0], n2[1] - o[1], n2[2] - o[2]]
-    # 环绕顺序：o, n1, o+u+v(=对角), n2
-    base = [o,
-            [o[0] + u[0], o[1] + u[1], o[2] + u[2]],
-            [o[0] + u[0] + v[0], o[1] + u[1] + v[1], o[2] + u[2] + v[2]],
-            [o[0] + v[0], o[1] + v[1], o[2] + v[2]]]
-    # 法向 = u × v（归一化）
-    nx = u[1] * v[2] - u[2] * v[1]
-    ny = u[2] * v[0] - u[0] * v[2]
-    nz = u[0] * v[1] - u[1] * v[0]
-    ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if ln < 1e-12:
-        raise GeoError("三点共线/重合，无法确定底面")
-    nx, ny, nz = nx / ln, ny / ln, nz / ln
-    # 边长 = |u|（正方形两邻边等长）
-    h = math.sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2])
-    return _cube_build(base, (nx, ny, nz), h)
-
-
-def _cube_state2(a, b):
-    """两点：AB 为底面正方形的一条边，正方形在 AB 垂直方向（xy 平面内），高 = 边长。"""
-    ax, ay, az = a.x, a.y, a.z or 0
-    ux, uy, uz = b.x - ax, b.y - ay, (b.z or 0) - az
-    h = math.sqrt(ux * ux + uy * uy + uz * uz)
-    if h < 1e-12:
-        raise GeoError("两点重合，无法构成底面")
-    # 底面正方形在 AB 的垂直方向补全：v = rot90(u)（xy 平面内）
-    vx, vy, vz = -uy, ux, 0.0
-    lv = math.sqrt(vx * vx + vy * vy)
-    if lv < 1e-12:
-        # AB 竖直：退化为水平方向补全
-        vx, vy, vz = h, 0.0, 0.0
-    else:
-        vx, vy = vx / lv * h, vy / lv * h
-    base = [[ax, ay, az],
-            [ax + ux, ay + uy, az + uz],
-            [ax + ux + vx, ay + uy + vy, az + uz + vz],   # D：环绕顺序 A→B→D→C
-            [ax + vx, ay + vy, az + vz]]
-    # 法向 = u × v（归一化，垂直底面）
-    nx = uy * vz - uz * vy
-    ny = uz * vx - ux * vz
-    nz = ux * vy - uy * vx
-    ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if ln < 1e-12:
-        nx, ny, nz = 0.0, 0.0, 1.0
-    else:
-        nx, ny, nz = nx / ln, ny / ln, nz / ln
-    return _cube_build(base, (nx, ny, nz), h)
-
-
 # ---------------------------------------------------------------------------
 # 3D 多面体：圆锥/圆柱/棱柱/棱锥/正四面体/正八面体/正二十面体/正十二面体
 # 统一数据模型：{verts: [[x,y,z]...], faces: [[idx...]...], edges: [[i,j]...]}
 # ---------------------------------------------------------------------------
 
-def _poly_state(verts, faces, edges):
-    return {"objtype": "polyhedron",
-            "data": {"verts": verts, "faces": _normalize_mesh(verts, faces), "edges": edges}}
-
-
 def _poly3_points(cons, args, n, name):
     if len(args) != n:
         raise GeoError(name + " 需要 " + str(n) + " 个点")
     return [_point_arg(cons, a) for a in args]
-
-
-def _ortho_frame(a, b, c):
-    """由三点构造正交基 (u, v, n)：u 沿 B-A，v 在 ABC 平面内，n = u×v。"""
-    u = [b.x - a.x, b.y - a.y, (b.z or 0) - (a.z or 0)]
-    lu = math.sqrt(u[0] ** 2 + u[1] ** 2 + u[2] ** 2)
-    if lu < 1e-12:
-        raise GeoError("基准两点重合，无法确定立体方向")
-    u = [u[0] / lu, u[1] / lu, u[2] / lu]
-    w = [c.x - a.x, c.y - a.y, (c.z or 0) - (a.z or 0)]
-    n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]
-    ln = math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
-    if ln < 1e-12:
-        n = [0.0, 0.0, 1.0]
-    else:
-        n = [n[0] / ln, n[1] / ln, n[2] / ln]
-    v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]]
-    return u, v, n
 
 
 def _poly_register(cons, defn, deps, fn, objtype):
@@ -5051,232 +4252,7 @@ def _vector3_arg(cons, s):
     return None
 
 
-def _frame_from_axis(d):
-    """由轴向构造正交基 (u, v, n)：n 为单位轴，u/v 为垂直平面的基。"""
-    n = math.sqrt(d[0] ** 2 + d[1] ** 2 + d[2] ** 2)
-    if n < 1e-12:
-        raise GeoError("方向向量退化")
-    n = [d[0] / n, d[1] / n, d[2] / n]
-    ref = [0.0, 0.0, 1.0]
-    if abs(n[2]) > 0.9:
-        ref = [1.0, 0.0, 0.0]
-    dot = ref[0] * n[0] + ref[1] * n[1] + ref[2] * n[2]
-    u = [ref[0] - dot * n[0], ref[1] - dot * n[1], ref[2] - dot * n[2]]
-    ln = math.sqrt(u[0] ** 2 + u[1] ** 2 + u[2] ** 2)
-    if ln < 1e-12:
-        ref = [0.0, 1.0, 0.0]
-        dot = ref[0] * n[0] + ref[1] * n[1] + ref[2] * n[2]
-        u = [ref[0] - dot * n[0], ref[1] - dot * n[1], ref[2] - dot * n[2]]
-        ln = math.sqrt(u[0] ** 2 + u[1] ** 2 + u[2] ** 2)
-    u = [u[0] / ln, u[1] / ln, u[2] / ln]
-    v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]]
-    return u, v, n
-
-
 # ---- 立体体积 / 表面积（网格散度定理 + 解析优先）----
-
-def _with_analytic(state, **kw):
-    """给网格状态附加解析参数，供 Volume/Area 取精确值（锥/柱为旋转体）。"""
-    st = dict(state)
-    data = dict(st.get("data", {}))
-    data["analytic"] = kw
-    st["data"] = data
-    return st
-
-
-def _newell_normal(vs, face):
-    """Newell 法向（模长 = 2×面积）；对面顶点环序不敏感程度优于简单叉积。"""
-    nx = ny = nz = 0.0
-    n = len(face)
-    for i in range(n):
-        a = vs[face[i]]
-        b = vs[face[(i + 1) % n]]
-        nx += (a[1] - b[1]) * (a[2] + b[2])
-        ny += (a[2] - b[2]) * (a[0] + b[0])
-        nz += (a[0] - b[0]) * (a[1] + b[1])
-    return nx, ny, nz
-
-
-def _normalize_mesh(verts, faces):
-    """把网格面统一为「平面内正确环序（凸多边形）+ 外向法向」。
-
-    历史构造器的面顶点顺序/朝向并不一致（例如立方体顶面是 [4,6,7,5] 的蝴蝶结序、
-    二十面体 20 个面里 10 个朝内），会导致体积计算相互抵消、遮挡判断异常。
-    这里以顶点质心为内点统一修正——所有立体都是凸体，此规则成立。
-    """
-    if not verts or not faces:
-        return faces
-    cx = sum(v[0] for v in verts) / len(verts)
-    cy = sum(v[1] for v in verts) / len(verts)
-    cz = sum(v[2] for v in verts) / len(verts)
-    out = []
-    for f in faces:
-        idx = list(f)
-        if len(idx) < 3:
-            out.append(idx)
-            continue
-        nx, ny, nz = _newell_normal(verts, idx)
-        ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-        if ln < 1e-12 and len(idx) < 3:
-            continue
-        if ln < 1e-12:
-            # 蝴蝶结/乱序面（如立方体顶面 [4,6,7,5]）Newell 法向会抵消为 0：
-            # 改用「最大面积三角形」的叉积作平面法向，再走同一套排序 + 外向判定。
-            best = (0.0, 0.0, 0.0, 0.0)
-            n = len(idx)
-            for i in range(n):
-                for j in range(i + 1, n):
-                    for k in range(j + 1, n):
-                        ax, ay, az = verts[idx[i]]
-                        bx, by, bz = verts[idx[j]]
-                        qx, qy, qz = verts[idx[k]]
-                        ux_, uy_, uz_ = bx - ax, by - ay, bz - az
-                        vx_, vy_, vz_ = qx - ax, qy - ay, qz - az
-                        mx = uy_ * vz_ - uz_ * vy_
-                        my = uz_ * vx_ - ux_ * vz_
-                        mz = ux_ * vy_ - uy_ * vx_
-                        area = 0.5 * math.sqrt(mx * mx + my * my + mz * mz)
-                        if area > best[0]:
-                            best = (area, mx, my, mz)
-            if best[0] < 1e-12:
-                continue          # 退化面（面积≈0）直接丢弃，避免污染体积/遮挡计算
-            nx, ny, nz = best[1], best[2], best[3]
-            ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-        hx, hy, hz = nx / ln, ny / ln, nz / ln
-        fx = sum(verts[i][0] for i in idx) / len(idx)
-        fy = sum(verts[i][1] for i in idx) / len(idx)
-        fz = sum(verts[i][2] for i in idx) / len(idx)
-        # 面内正交基：u 指向第一个不重合顶点，w = n × u
-        ux = uy = uz = 0.0
-        for i in idx:
-            dx, dy, dz = verts[i][0] - fx, verts[i][1] - fy, verts[i][2] - fz
-            if math.sqrt(dx * dx + dy * dy + dz * dz) > 1e-12:
-                d = math.sqrt(dx * dx + dy * dy + dz * dz)
-                ux, uy, uz = dx / d, dy / d, dz / d
-                break
-        wx = hy * uz - hz * uy
-        wy = hz * ux - hx * uz
-        wz = hx * uy - hy * ux
-        # 按面内极角排序 → 正确环序（凸多边形）
-        def _ang(i):
-            dx, dy, dz = verts[i][0] - fx, verts[i][1] - fy, verts[i][2] - fz
-            return math.atan2(dx * wx + dy * wy + dz * wz, dx * ux + dy * uy + dz * uz)
-        idx = sorted(idx, key=_ang)
-        # 外向：法向应背离体内一点（顶点质心）
-        nx2, ny2, nz2 = _newell_normal(verts, idx)
-        if nx2 * (fx - cx) + ny2 * (fy - cy) + nz2 * (fz - cz) < 0:
-            idx.reverse()
-        out.append(idx)
-    return out
-
-
-def _mesh_volume(data) -> float:
-    """闭合三角网格体积：Σ det(a,b,c)/6（面片环绕一致，取绝对值兜底）。"""
-    vs = data.get("verts") or []
-    V = 0.0
-    for face in data.get("faces") or []:
-        if len(face) < 3:
-            continue
-        a = vs[face[0]]
-        for i in range(1, len(face) - 1):
-            b, c = vs[face[i]], vs[face[i + 1]]
-            V += (a[0] * (b[1] * c[2] - b[2] * c[1])
-                  - a[1] * (b[0] * c[2] - b[2] * c[0])
-                  + a[2] * (b[0] * c[1] - b[1] * c[0]))
-    return abs(V) / 6.0
-
-
-def _mesh_area(data) -> float:
-    """闭合网格表面积：各面三角扇面积之和。"""
-    vs = data.get("verts") or []
-    A = 0.0
-    for face in data.get("faces") or []:
-        if len(face) < 3:
-            continue
-        a = vs[face[0]]
-        for i in range(1, len(face) - 1):
-            b, c = vs[face[i]], vs[face[i + 1]]
-            ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
-            vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
-            nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
-            A += 0.5 * math.sqrt(nx * nx + ny * ny + nz * nz)
-    return A
-
-
-def _solid_volume(el) -> float:
-    d = getattr(el, "data", None) or {}
-    an = d.get("analytic") or {}
-    t = an.get("type")
-    if t == "cone":
-        return math.pi * an["r"] ** 2 * an["h"] / 3.0
-    if t == "cylinder":
-        return math.pi * an["r"] ** 2 * an["h"]
-    if t == "infinite_cone":
-        raise GeoError("无限圆锥没有有限体积")
-    if getattr(el, "objtype", "") == "sphere":
-        return 4.0 / 3.0 * math.pi * d["r"] ** 3
-    if getattr(el, "solid", "") == "surface":
-        raise GeoError("曲面没有体积（可用 Area 求曲面面积）")
-    if "verts" in d:
-        return _mesh_volume(d)
-    raise GeoError("Volume 不支持该对象（需要球/圆锥/圆柱/棱柱/棱锥/正多面体）")
-
-
-def _solid_area(el) -> float:
-    d = getattr(el, "data", None) or {}
-    an = d.get("analytic") or {}
-    t = an.get("type")
-    if t == "cone":
-        r, h = an["r"], an["h"]
-        return math.pi * r * (r + math.sqrt(r * r + h * h))     # 底 + 侧
-    if t == "cylinder":
-        r, h = an["r"], an["h"]
-        return 2.0 * math.pi * r * (r + h)                      # 两侧盖 + 侧面
-    if t == "infinite_cone":
-        raise GeoError("无限圆锥没有有限表面积")
-    if getattr(el, "objtype", "") == "sphere":
-        return 4.0 * math.pi * d["r"] ** 2
-    if "verts" in d:
-        return _mesh_area(d)
-    raise GeoError("Area 不支持该对象（需要多边形/圆/椭圆/函数或 3D 立体）")
-
-
-def _cone_mesh_axis(apex, base_center, radius, N=48, cap=True):
-    """由 顶点 / 底面中心 / 半径 构造有限圆锥网格（底面垂直于 顶点-底心 轴）。"""
-    if radius <= 1e-12:
-        raise GeoError("半径需为正")
-    axis = [apex[0] - base_center[0], apex[1] - base_center[1], apex[2] - base_center[2]]
-    u, v, _ = _frame_from_axis(axis)
-    base = []
-    for i in range(N):
-        a = 2 * math.pi * i / N
-        base.append([base_center[0] + radius * (math.cos(a) * u[0] + math.sin(a) * v[0]),
-                     base_center[1] + radius * (math.cos(a) * u[1] + math.sin(a) * v[1]),
-                     base_center[2] + radius * (math.cos(a) * u[2] + math.sin(a) * v[2])])
-    verts = base + [list(apex)]
-    faces = ([list(range(N))] if cap else []) + [[i, (i + 1) % N, N] for i in range(N)]
-    edges = [[i, (i + 1) % N] for i in range(N)] + [[i, N] for i in range(N)]
-    return _poly_state(verts, faces, edges)
-
-
-def _cone_from_circle_state(cir, h):
-    """Cone[圆, 高]：底面为该圆（xy 平面），沿 +z 方向高度 h。"""
-    if getattr(cir, "error", None):
-        raise GeoError("底面圆无效：" + str(cir.error))
-    if cir.kind == "conic":
-        cx, cy, r = cir.cx, cir.cy, cir.semi_a
-    else:
-        cx, cy, r = cir.cx, cir.cy, cir.r
-    if h <= 1e-12:
-        raise GeoError("高度需为正")
-    return _with_analytic(_cone_mesh_axis([cx, cy, h], [cx, cy, 0.0], r), type="cone", r=r, h=h)
-
-
-def _cone_apex_center_radius_state(apex, base_center, radius):
-    """Cone[顶点, 底心, 半径]。"""
-    h = math.sqrt(sum((apex[i] - base_center[i]) ** 2 for i in range(3)))
-    return _with_analytic(_cone_mesh_axis(apex, base_center, radius), type="cone", r=radius, h=h)
-
 
 def _infinite_cone_state(apex, dirv, ang_deg, N=36):
     """Cone[顶点, 方向向量, 角]：以顶点为公共点的无限双圆锥（半角为 ang_deg°）。"""
@@ -5365,63 +4341,6 @@ def _cmd_cone(cons, defn, args):
     raise GeoError("Cone 支持 Cone[圆,高] / Cone[顶点,底心,半径] / Cone[顶点,方向向量,角] / Cone[三点]")
 
 
-def _cone_state(a, b, c):
-    """A 底面中心、B 底面半径点（半径 = |AB|）、C 顶点；底面垂直于轴 AC。"""
-    r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    h = math.sqrt((c.x - a.x) ** 2 + (c.y - a.y) ** 2 + ((c.z or 0) - (a.z or 0)) ** 2)
-    return _with_analytic(_cone_mesh_axis([c.x, c.y, c.z or 0], [a.x, a.y, a.z or 0], r),
-                          type="cone", r=r, h=h)
-
-
-def _cyl_mesh_axis(base_center, axis, radius, N=48):
-    """由 底面中心 / 轴向向量（长度=高）/ 半径 构造圆柱网格。"""
-    if radius <= 1e-12:
-        raise GeoError("半径需为正")
-    h = [axis[0], axis[1], axis[2]]
-    if math.sqrt(h[0] ** 2 + h[1] ** 2 + h[2] ** 2) < 1e-12:
-        raise GeoError("圆柱高度退化")
-    u, v, _n = _frame_from_axis(h)
-    verts, edges, faces = [], [], []
-    for i in range(N):
-        ang = 2 * math.pi * i / N
-        x0 = radius * math.cos(ang)
-        y0 = radius * math.sin(ang)
-        bx = base_center[0] + x0 * u[0] + y0 * v[0]
-        by = base_center[1] + x0 * u[1] + y0 * v[1]
-        bz = base_center[2] + x0 * u[2] + y0 * v[2]
-        verts.append([bx, by, bz])
-        verts.append([bx + h[0], by + h[1], bz + h[2]])
-    for i in range(N):
-        j = (i + 1) % N
-        faces.append([2 * i, 2 * j, 2 * j + 1, 2 * i + 1])   # 侧面四边形
-        edges.append([2 * i, 2 * j])
-        edges.append([2 * i + 1, 2 * j + 1])
-        edges.append([2 * i, 2 * i + 1])
-    faces.append([2 * i for i in range(N)])                  # 底面
-    faces.append([2 * i + 1 for i in range(N)])              # 顶面
-    return _poly_state(verts, faces, edges)
-
-
-def _cylinder_from_circle_state(cir, h):
-    """Cylinder[圆, 高]：底面为该圆（z=0 平面），沿 +z 方向高 h。"""
-    if getattr(cir, "error", None):
-        raise GeoError("底面圆无效：" + str(cir.error))
-    if cir.kind == "conic":
-        cx, cy, r = cir.cx, cir.cy, cir.semi_a
-    else:
-        cx, cy, r = cir.cx, cir.cy, cir.r
-    if h <= 1e-12:
-        raise GeoError("高度需为正")
-    return _with_analytic(_cyl_mesh_axis([cx, cy, 0.0], [0.0, 0.0, h], r), type="cylinder", r=r, h=h)
-
-
-def _cylinder_centers_radius_state(base_center, top_center, radius):
-    """Cylinder[底心, 顶心, 半径]。"""
-    axis = [top_center[0] - base_center[0], top_center[1] - base_center[1], top_center[2] - base_center[2]]
-    h = math.sqrt(sum(v * v for v in axis))
-    return _with_analytic(_cyl_mesh_axis(base_center, axis, radius), type="cylinder", r=radius, h=h)
-
-
 def _cmd_cylinder(cons, defn, args):
     """Cylinder[圆, 高] / Cylinder[底心, 顶心, 半径] / Cylinder[三点]。
 
@@ -5460,29 +4379,9 @@ def _cmd_cylinder(cons, defn, args):
     raise GeoError("Cylinder 支持 Cylinder[圆,高] / Cylinder[底心,顶心,半径] / Cylinder[三点]")
 
 
-def _cylinder_state(a, b, c):
-    """A 底面中心、B 底面半径点（半径 = |AB|）、C 顶面中心；底面垂直于轴 AC。"""
-    r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    axis = [c.x - a.x, c.y - a.y, (c.z or 0) - (a.z or 0)]
-    h = math.sqrt(sum(v * v for v in axis))
-    return _with_analytic(_cyl_mesh_axis([a.x, a.y, a.z or 0], axis, r), type="cylinder", r=r, h=h)
-
-
 def _cmd_prism(cons, defn, args):
     a, b, c = _poly3_points(cons, args, 3, "Prism")
     return _poly_register(cons, defn, [a, b, c], lambda d: _prism_state(d[0], d[1], d[2]), "prism")
-
-
-def _prism_state(a, b, c):
-    u, v, n = _ortho_frame(a, b, c)
-    L = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    hgt = L   # 高度 = 底边 AB 长度
-    base = [[a.x, a.y, a.z or 0], [b.x, b.y, b.z or 0], [c.x, c.y, c.z or 0]]
-    top = [[p[0] + hgt * n[0], p[1] + hgt * n[1], p[2] + hgt * n[2]] for p in base]
-    verts = base + top
-    faces = [[0, 1, 2], [3, 5, 4], [0, 1, 4, 3], [1, 2, 5, 4], [2, 0, 3, 5]]
-    edges = [[0, 1], [1, 2], [2, 0], [3, 4], [4, 5], [5, 3], [0, 3], [1, 4], [2, 5]]
-    return _poly_state(verts, faces, edges)
 
 
 def _cmd_pyramid(cons, defn, args):
@@ -5490,55 +4389,13 @@ def _cmd_pyramid(cons, defn, args):
     return _poly_register(cons, defn, [a, b, c], lambda d: _pyramid_state(d[0], d[1], d[2]), "pyramid")
 
 
-def _pyramid_state(a, b, c):
-    u, v, n = _ortho_frame(a, b, c)
-    L = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    cx = (a.x + b.x + c.x) / 3
-    cy = (a.y + b.y + c.y) / 3
-    cz = ((a.z or 0) + (b.z or 0) + (c.z or 0)) / 3
-    apex = [cx + L * n[0], cy + L * n[1], cz + L * n[2]]
-    base = [[a.x, a.y, a.z or 0], [b.x, b.y, b.z or 0], [c.x, c.y, c.z or 0]]
-    verts = base + [apex]
-    faces = [[0, 1, 2], [0, 1, 3], [1, 2, 3], [2, 0, 3]]
-    edges = [[0, 1], [1, 2], [2, 0], [0, 3], [1, 3], [2, 3]]
-    return _poly_state(verts, faces, edges)
-
-
 def _cmd_tetrahedron(cons, defn, args):
     a, b, c = _poly3_points(cons, args, 3, "Tetrahedron")
     return _poly_register(cons, defn, [a, b, c], lambda d: _tetrahedron_state(d[0], d[1], d[2]), "tetrahedron")
 
 
-def _tetrahedron_state(a, b, c):
-    """正四面体：AB 为棱，C 决定朝向（C 所在侧）。"""
-    u, v, n = _ortho_frame(a, b, c)
-    L = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    ax, ay, az = a.x, a.y, a.z or 0
-    # 等边底第三点 P = A + L/2·u + √3/2·L·v
-    p = [ax + L / 2 * u[0] + L * math.sqrt(3) / 2 * v[0],
-         ay + L / 2 * u[1] + L * math.sqrt(3) / 2 * v[1],
-         az + L / 2 * u[2] + L * math.sqrt(3) / 2 * v[2]]
-    # 顶点 D = A + L/2·u + L/(2√3)·v + L·√(2/3)·n
-    d = [ax + L / 2 * u[0] + L / (2 * math.sqrt(3)) * v[0] + L * math.sqrt(2.0 / 3.0) * n[0],
-         ay + L / 2 * u[1] + L / (2 * math.sqrt(3)) * v[1] + L * math.sqrt(2.0 / 3.0) * n[1],
-         az + L / 2 * u[2] + L / (2 * math.sqrt(3)) * v[2] + L * math.sqrt(2.0 / 3.0) * n[2]]
-    verts = [[ax, ay, az], [b.x, b.y, b.z or 0], p, d]
-    faces = [[0, 1, 2], [0, 1, 3], [1, 2, 3], [2, 0, 3]]
-    edges = [[0, 1], [1, 2], [2, 0], [0, 3], [1, 3], [2, 3]]
-    return _poly_state(verts, faces, edges)
-
-
-def _regular_polyhedron(center, radius, u, v, n, unit_verts, faces, edges):
-    """按正交基把单位正多面体顶点缩放/旋转到以 center 为中心、radius 为外接半径。"""
-    verts = []
-    for p in unit_verts:
-        verts.append([center[0] + radius * (p[0] * u[0] + p[1] * v[0] + p[2] * n[0]),
-                      center[1] + radius * (p[0] * u[1] + p[1] * v[1] + p[2] * n[1]),
-                      center[2] + radius * (p[0] * u[2] + p[1] * v[2] + p[2] * n[2])])
-    return _poly_state(verts, faces, edges)
-
-
-_PHI = (1 + math.sqrt(5)) / 2
+# _PHI 已随立体构造数学移至 kernel/solids.py（此处 re-export 兼容）
+_PHI = _solids_PHI
 
 
 def _cmd_octahedron(cons, defn, args):
@@ -5546,32 +4403,9 @@ def _cmd_octahedron(cons, defn, args):
     return _poly_register(cons, defn, [a, b, c], lambda d: _octahedron_state(d[0], d[1], d[2]), "octahedron")
 
 
-def _octahedron_state(a, b, c):
-    u, v, n = _ortho_frame(a, b, c)
-    r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    unit = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
-    faces = [[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4], [0, 3, 5], [3, 1, 5], [1, 2, 5], [2, 0, 5]]
-    edges = [[0, 2], [0, 4], [0, 3], [2, 1], [2, 4], [1, 4], [1, 3], [3, 4], [3, 5], [1, 5], [2, 5], [0, 5]]
-    return _regular_polyhedron([a.x, a.y, a.z or 0], r, u, v, n, unit, faces, edges)
-
-
 def _cmd_hexahedron(cons, defn, args):
     a, b, c = _poly3_points(cons, args, 3, "Hexahedron")
     return _poly_register(cons, defn, [a, b, c], lambda d: _hexahedron_state(d[0], d[1], d[2]), "hexahedron")
-
-
-def _hexahedron_state(a, b, c):
-    """正六面体（立方体）：8 个标准顶点 (±1,±1,±1) 归一化，6 正方形面、12 边。"""
-    u, v, n = _ortho_frame(a, b, c)
-    r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    unit = [[s1, s2, s3] for s1 in (-1, 1) for s2 in (-1, 1) for s3 in (-1, 1)]
-    norm = math.sqrt(3)
-    unit = [[p[0] / norm, p[1] / norm, p[2] / norm] for p in unit]
-    # 顶点索引（s1 外层循环生成）：0=(-,-,-) 1=(-,-,+) 2=(-,+,-) 3=(-,+,+) 4=(+,-,-) 5=(+,-,+) 6=(+,+,-) 7=(+,+,+)
-    faces = [[0, 2, 6, 4], [1, 3, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 1, 3, 2], [4, 5, 7, 6]]
-    edges = [[0, 2], [2, 6], [6, 4], [4, 0], [1, 3], [3, 7], [7, 5], [5, 1],
-             [0, 1], [2, 3], [4, 5], [6, 7]]
-    return _regular_polyhedron([a.x, a.y, a.z or 0], r, u, v, n, unit, faces, edges)
 
 
 def _cmd_icosahedron(cons, defn, args):
@@ -5579,143 +4413,9 @@ def _cmd_icosahedron(cons, defn, args):
     return _poly_register(cons, defn, [a, b, c], lambda d: _icosahedron_state(d[0], d[1], d[2]), "icosahedron")
 
 
-def _icosahedron_state(a, b, c):
-    """正二十面体：标准 12 顶点（黄金比），面/边由最短邻接自动生成（保证全等边长）。"""
-    u, v, n = _ortho_frame(a, b, c)
-    r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    ph = _PHI
-    unit = [[0, 1, ph], [0, -1, ph], [0, 1, -ph], [0, -1, -ph],
-            [1, ph, 0], [-1, ph, 0], [1, -ph, 0], [-1, -ph, 0],
-            [ph, 0, 1], [-ph, 0, 1], [ph, 0, -1], [-ph, 0, -1]]
-    norm = math.sqrt(1 + ph * ph)
-    unit = [[p[0] / norm, p[1] / norm, p[2] / norm] for p in unit]
-    # 自动邻接：最短顶点对距离 = 边长
-    def _d3(i, j):
-        return math.sqrt(sum((unit[i][k] - unit[j][k]) ** 2 for k in range(3)))
-    dmin = min(_d3(i, j) for i in range(12) for j in range(i + 1, 12))
-    adj = {i: [j for j in range(12) if j != i and _d3(i, j) < dmin * 1.05] for i in range(12)}
-    # 面：每条边 (i,j) 的公共邻居 k → 三角形 (i,j,k)，去重
-    faces_set = set()
-    for i in range(12):
-        for j in adj[i]:
-            for k in adj[i]:
-                if k in adj[j]:
-                    faces_set.add(tuple(sorted((i, j, k))))
-    faces = [list(fc) for fc in sorted(faces_set)]
-    # 边：面边去重
-    seen = set()
-    edges = []
-    for fc in faces:
-        for i2 in range(len(fc)):
-            e0, e1 = fc[i2], fc[(i2 + 1) % len(fc)]
-            key = (min(e0, e1), max(e0, e1))
-            if key not in seen:
-                seen.add(key)
-                edges.append([key[0], key[1]])
-    return _regular_polyhedron([a.x, a.y, a.z or 0], r, u, v, n, unit, faces, edges)
-
-
 def _cmd_dodecahedron(cons, defn, args):
     a, b, c = _poly3_points(cons, args, 3, "Dodecahedron")
     return _poly_register(cons, defn, [a, b, c], lambda d: _dodecahedron_state(d[0], d[1], d[2]), "dodecahedron")
-
-
-def _dodecahedron_state(a, b, c):
-    """正十二面体：作为正二十面体的对偶（面心 → 顶点，顶点周围面环 → 五边形面）。"""
-    u, v, n = _ortho_frame(a, b, c)
-    r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
-    # 正二十面体单位顶点与面（与 _icosahedron_state 一致）
-    ph = _PHI
-    unit = [[0, 1, ph], [0, -1, ph], [0, 1, -ph], [0, -1, -ph],
-            [1, ph, 0], [-1, ph, 0], [1, -ph, 0], [-1, -ph, 0],
-            [ph, 0, 1], [-ph, 0, 1], [ph, 0, -1], [-ph, 0, -1]]
-    norm = math.sqrt(1 + ph * ph)
-    unit = [[p[0] / norm, p[1] / norm, p[2] / norm] for p in unit]
-    # 正二十面体面：最短邻接自动生成（与 _icosahedron_state 一致，保证正确）
-    def _d3b(i, j):
-        return math.sqrt(sum((unit[i][k] - unit[j][k]) ** 2 for k in range(3)))
-    dmin = min(_d3b(i, j) for i in range(12) for j in range(i + 1, 12))
-    adjb = {i: [j for j in range(12) if j != i and _d3b(i, j) < dmin * 1.05] for i in range(12)}
-    faces_setb = set()
-    for i in range(12):
-        for j in adjb[i]:
-            for k in adjb[i]:
-                if k in adjb[j]:
-                    faces_setb.add(tuple(sorted((i, j, k))))
-    ifaces = [list(fc) for fc in sorted(faces_setb)]
-    # 对偶：正十二面体顶点 = 二十面体每个面的质心（20 个）
-    face_centers = []
-    for fc in ifaces:
-        c0 = [0.0, 0.0, 0.0]
-        for idx in fc:
-            c0[0] += unit[idx][0]; c0[1] += unit[idx][1]; c0[2] += unit[idx][2]
-        c0 = [c0[0] / 3, c0[1] / 3, c0[2] / 3]
-        ln = math.sqrt(c0[0] ** 2 + c0[1] ** 2 + c0[2] ** 2) or 1
-        face_centers.append([c0[0] / ln, c0[1] / ln, c0[2] / ln])
-    # 每个二十面体顶点周围的面环 → 一个五边形面（5 个面心）
-    # 用扇环行走保证循环顺序一致：相邻面共享含 vi 的边
-    vert_faces = {}
-    for fi, fc in enumerate(ifaces):
-        for vi in fc:
-            vert_faces.setdefault(vi, []).append(fi)
-    face_edge = {}
-    for fi, fc in enumerate(ifaces):
-        for i in range(len(fc)):
-            e0, e1 = fc[i], fc[(i + 1) % len(fc)]
-            face_edge.setdefault((min(e0, e1), max(e0, e1)), []).append(fi)
-    dodeca_faces = []
-    for vi in range(12):
-        ring = vert_faces[vi]
-        if len(ring) != 5:
-            continue
-        # 扇环行走：从 ring 任一面开始，每次找共享"含 vi 边"的下一面
-        ordered = [ring[0]]
-        visited = {ring[0]}
-        while len(ordered) < 5:
-            cur = ordered[-1]
-            # 当前三角形含 vi 的两条边（边也含 vi）
-            fc_cur = ifaces[cur]
-            cand = None
-            for i in range(3):
-                e0, e1 = fc_cur[i], fc_cur[(i + 1) % 3]
-                if vi not in (e0, e1):
-                    continue
-                for nf in face_edge.get((min(e0, e1), max(e0, e1)), []):
-                    if nf != cur and nf in vert_faces[vi] and nf not in visited:
-                        cand = nf
-                        break
-                if cand is not None:
-                    break
-            if cand is None:
-                break
-            ordered.append(cand)
-            visited.add(cand)
-        if len(ordered) == 5:
-            dodeca_faces.append(ordered)
-    # 边：由二十面体边直接构造（每条二十面体边 ↔ 一条十二面体边：两个共享该边的面心）
-    face_of_edge = {}
-    for fi, fc in enumerate(ifaces):
-        for i in range(len(fc)):
-            e0, e1 = fc[i], fc[(i + 1) % len(fc)]
-            key = (min(e0, e1), max(e0, e1))
-            face_of_edge.setdefault(key, []).append(fi)
-    seen = set()
-    edges = []
-    for key, fpair in face_of_edge.items():
-        if len(fpair) == 2:
-            e0, e1 = min(fpair), max(fpair)
-            if (e0, e1) not in seen:
-                seen.add((e0, e1))
-                edges.append([e0, e1])
-    # 若面环不完整导致缺边，补充：同一面的相邻面心也连边（保证封闭）
-    for fc in dodeca_faces:
-        for i in range(len(fc)):
-            e0, e1 = fc[i], fc[(i + 1) % len(fc)]
-            key = (min(e0, e1), max(e0, e1))
-            if key not in seen:
-                seen.add(key)
-                edges.append([e0, e1])
-    return _regular_polyhedron([a.x, a.y, a.z or 0], r, u, v, n, face_centers, dodeca_faces, edges)
 
 
 # ---------------------------------------------------------------------------

@@ -25,14 +25,15 @@ step() {
 }
 
 cd "$ROOT"
-step "1/8 命令注册表一致性" python3 -B devtools/test_registry.py
-step "2/8 内容寻址仓库检测" python3 -B devtools/test_stores.py
-step "3/8 多会话隔离检测" python3 -B devtools/test_sessions.py --base "$BASE"
-step "4/8 2D 内核检测矩阵" python3 -B devtools/test_2d_matrix.py
-step "5/8 2D/平台 API 检测矩阵" python3 -B devtools/test_2d_api.py --base "$BASE"
-step "6/8 3D 三层检测矩阵（内核/API/浏览器）" bash devtools/run_3d_detection.sh
-step "7/8 2D 前端回归矩阵（编辑栏/CAS/分享/图片/导出/工具）" node devtools/verify_2d_ui_matrix.js
-step "8/8 微积分/求根回归" python3 -B devtools/test_mixed_smoke.py 2>/dev/null || true
+step "1/9 命令注册表一致性" python3 -B devtools/test_registry.py
+step "2/9 内容寻址仓库检测" python3 -B devtools/test_stores.py
+step "3/9 模块边界检测（内核拆分/前端文案外置）" python3 -B devtools/test_modules.py
+step "4/9 多会话隔离检测" python3 -B devtools/test_sessions.py --base "$BASE"
+step "5/9 2D 内核检测矩阵" python3 -B devtools/test_2d_matrix.py
+step "6/9 2D/平台 API 检测矩阵" python3 -B devtools/test_2d_api.py --base "$BASE"
+step "7/9 3D 三层检测矩阵（内核/API/浏览器）" bash devtools/run_3d_detection.sh
+step "8/9 2D 前端回归矩阵（编辑栏/CAS/分享/图片/导出/工具）" node devtools/verify_2d_ui_matrix.js
+step "9/9 微积分/求根回归" python3 -B devtools/test_mixed_smoke.py 2>/dev/null || true
 
 echo ""
 echo "==================================================================="
