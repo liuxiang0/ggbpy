@@ -110,6 +110,19 @@ from .geo2d import (  # noqa: F401
     _conic_t,
     _dilated_line,
 )
+
+# 统计/拟合已抽到 kernel/stats.py（P2 结构拆分）；re-export 保持调用方兼容
+from .stats import (  # noqa: F401
+    _median,
+    _mode,
+    _variance,
+    _fit_silent_fit,
+    _fitline_state,
+    _barchart_state,
+    _fitsphere_state,
+    _fitplane_state,
+)
+from .stats import _REF_DOT, _REF_X  # noqa: F401
 from .tolerance import EPSILON, TIGHT, COORD, ZERO_SQ, LOOSE, COARSE, NEGLIGIBLE, ROOT_TOL, OPT_XATOL, OPT_FATOL  # 统一数值容差（见 kernel/tolerance.py）
 
 DEG = math.pi / 180.0
@@ -974,27 +987,6 @@ def _cmd_fitsphere(cons, defn, args):
     if L.itemkind not in ("point", "point3d"):
         raise GeoError("FitSphere 需要三维点列表")
     return _mk(cons, Geo3D, "geo3d", defn, [L], lambda d: _fitsphere_state(d[0].items))
-
-
-def _fitsphere_state(items):
-    import numpy as np
-    pts = np.array([[float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)] for p in items])
-    if len(pts) < 4:
-        raise GeoError("FitSphere 至少需要 4 个点")
-    A = np.hstack([2.0 * pts, np.ones((len(pts), 1))])
-    bvec = (pts ** 2).sum(axis=1)
-    sol, *_ = np.linalg.lstsq(A, bvec, rcond=None)
-    cx, cy, cz, dd = (float(v) for v in sol)
-    r2 = dd + cx * cx + cy * cy + cz * cz
-    if r2 <= EPSILON:
-        raise GeoError("球拟合退化（点云过于集中）")
-    r = math.sqrt(r2)
-    # 残差检查：偏离球面过大说明点云不共球
-    dev = float(np.max(np.abs(np.linalg.norm(pts - np.array([cx, cy, cz]), axis=1) - r)))
-    if dev > COARSE * max(1.0, r):
-        raise GeoError("点云不共球（最大偏差 %.6g）" % dev)
-    return {"objtype": "sphere", "solid": "sphere",
-            "data": {"cx": cx, "cy": cy, "cz": cz, "r": r}}
 
 
 # ---- 凸多面体半空间裁剪（体∩体） ----
@@ -2891,40 +2883,14 @@ def _cmd_median(cons, defn, args):
     return _mk(cons, GeoNumber, "number", defn, [L], lambda d: {"value": _median(d[0].items)})
 
 
-def _median(items):
-    s = sorted(items)
-    n = len(s)
-    if n == 0:
-        return 0.0
-    if n % 2 == 1:
-        return float(s[n // 2])
-    return float((s[n // 2 - 1] + s[n // 2]) / 2.0)
-
-
 def _cmd_mode(cons, defn, args):
     L = _list_arg(cons, args[0])
     return _mk(cons, GeoNumber, "number", defn, [L], lambda d: {"value": _mode(d[0].items)})
 
 
-def _mode(items):
-    if not items:
-        return 0.0
-    from collections import Counter
-    c = Counter(items)
-    return float(max(c, key=c.get))
-
-
 def _cmd_variance(cons, defn, args):
     L = _list_arg(cons, args[0])
     return _mk(cons, GeoNumber, "number", defn, [L], lambda d: {"value": _variance(d[0].items)})
-
-
-def _variance(items):
-    n = len(items)
-    if n == 0:
-        return 0.0
-    m = sum(items) / n
-    return float(sum((v - m) ** 2 for v in items) / n)
 
 
 def _cmd_stdev(cons, defn, args):
@@ -2965,26 +2931,6 @@ def _cmd_fitline(cons, defn, args):
     if L.itemkind != "point":
         raise GeoError("FitLine 需要点列表，如 {(1,2),(2,3)}")
     return _mk(cons, GeoLine, "line", defn, [L], lambda d: _fitline_state(d[0].items))
-
-
-def _fitline_state(items):
-    import numpy as np
-    xs = np.array([p[0] for p in items])
-    ys = np.array([p[1] for p in items])
-    if len(xs) < 2:
-        raise GeoError("至少需要两个点")
-    k, b = np.polyfit(xs, ys, 1)
-    return _line_state(float(-k), 1.0, float(-b))
-
-
-
-def _fit_silent_fit(*a, **kw):
-    """curve_fit 包装：参数协方差无法估计时的 OptimizeWarning 属正常噪声，不外泄到服务日志。"""
-    import warnings
-    from scipy.optimize import curve_fit as _cf
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        return _cf(*a, **kw)
 
 
 def _fit_expr(cons, defn, body):
@@ -3730,42 +3676,6 @@ def _cmd_fitplane(cons, defn, args):
     if L.itemkind not in ("point", "point3d"):
         raise GeoError("FitPlane 需要点列表（三维点，如 {(0,0,0),(1,0,0),(0,1,1)}）")
     return _mk(cons, Geo3D, "geo3d", defn, [L], lambda d: _fitplane_state(d[0].items))
-
-
-def _fitplane_state(items):
-    import numpy as np
-    pts = np.array([[float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)] for p in items])
-    if len(pts) < 3:
-        raise GeoError("FitPlane 至少需要 3 个点")
-    ctr = pts.mean(axis=0)
-    q = pts - ctr
-    cov = q.T @ q
-    w, v = np.linalg.eigh(cov)        # 升序：w[0] ≤ w[1] ≤ w[2]
-    if w[2] <= EPSILON:
-        raise GeoError("点云重合，无法确定平面")
-    if w[1] <= COORD * w[2]:
-        raise GeoError("点云共线（秩 1），无法确定平面")
-    nrm = v[:, 0]                     # 最小特征值对应法向
-    ln = float(np.linalg.norm(nrm))
-    if ln < EPSILON:
-        raise GeoError("点云退化，无法确定法向")
-    nx, ny, nz = (nrm / ln).tolist()
-    dd = -(nx * ctr[0] + ny * ctr[1] + nz * ctr[2])
-    # 平面内正交基（供渲染/面片使用）
-    ref = [1.0, 0.0, 0.0] if abs(nx) < 0.9 else [0.0, 1.0, 0.0]
-    ux = ref[1] * nz - ref[2] * ny
-    uy = ref[2] * nx - ref[0] * nz
-    uz = ref[0] * ny - ref[1] * nx
-    lu = math.sqrt(ux * ux + uy * uy + uz * uz)
-    ux, uy, uz = ux / lu, uy / lu, uz / lu
-    vx = ny * uz - nz * uy
-    vy = nz * ux - nx * uz
-    vz = nx * uy - ny * ux
-    return {"objtype": "plane", "solid": "plane",
-            "data": {"a": nx, "b": ny, "c": nz, "d": dd,
-                     "ax": float(ctr[0]), "ay": float(ctr[1]), "az": float(ctr[2]),
-                     "ux": ux, "uy": uy, "uz": uz, "vx": vx, "vy": vy, "vz": vz,
-                     "fit": True}}
 
 
 def _cmd_sphere(cons, defn, args):
@@ -5027,21 +4937,6 @@ def _anon_list(items):
     L.items = items
     L.itemkind = "number"
     return L
-
-
-def _barchart_state(L):
-    from collections import Counter
-    items = L.items
-    if not items:
-        raise GeoError("空列表")
-    vals = sorted(set(items))
-    counts = [items.count(v) for v in vals]
-    width = 0.8 * (vals[1] - vals[0]) if len(vals) > 1 else 1.0
-    return {"bins": vals, "counts": counts, "width": width}
-
-
-_REF_X = re.compile(r"^([xyXY])\((.+)\)$")
-_REF_DOT = re.compile(r"^(.+)\.([xyXY])$")
 
 
 def _txt_num(v: float) -> str:

@@ -110,7 +110,7 @@ def undefined_refs(path):
     return miss
 
 
-for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py"):
+for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py"):
     miss = undefined_refs(mod)
     check(mod + " 无未定义引用（函数与常量跨模块防漏）", not miss, "缺: " + str(miss[:8]))
 
@@ -130,6 +130,64 @@ check("变换/基元入口仍可用",
       all(hasattr(C, n) for n in ("_transform_fn", "_line_state", "_line_through", "_conic_t")), "")
 check("geo2d.py 规模合理（300–700 行）", 300 <= len(geo2d_src.splitlines()) <= 700,
       str(len(geo2d_src.splitlines())))
+
+print("\n=== A4. stats 模块（统计/拟合） ===")
+stats_src = (ROOT / "kernel" / "stats.py").read_text(encoding="utf-8")
+check("stats 不 import 命令层", "from .commands" not in stats_src, "")
+check("stats 依赖白名单（tolerance/geo2d）",
+      set(re.findall(r"^from \.(\w+) import", stats_src, re.M)) <= {"tolerance", "geo2d"},
+      str(sorted(set(re.findall(r"^from \.(\w+) import", stats_src, re.M)))))
+import kernel.stats as ST  # noqa: E402
+
+st_moved = list(ST.__all__)
+check("stats 搬迁函数数量 ≥ 8（统计/拟合）", len(st_moved) >= 8, "n=%d" % len(st_moved))
+check("stats 与 commands re-export 一致",
+      all(getattr(C, n, None) is getattr(ST, n, None) for n in st_moved), "")
+check("统计入口仍可用（中位数/方差/拟合/球面拟合）",
+      all(hasattr(C, n) for n in ("_median", "_variance", "_fitline_state", "_fitsphere_state")), "")
+check("_REF_X/_REF_DOT 常量随 stats 迁移且 re-export 一致",
+      getattr(C, "_REF_X", None) is ST._REF_X and getattr(C, "_REF_DOT", None) is ST._REF_DOT, "")
+check("stats.py 规模合理（80–260 行）", 80 <= len(stats_src.splitlines()) <= 260,
+      str(len(stats_src.splitlines())))
+
+print("\n=== B0. 前端：数据表外置（CAS/工具定义/工具分类） ===")
+app_src = (ROOT / "server" / "static" / "app.js").read_text(encoding="utf-8")
+index_src = (ROOT / "server" / "static" / "index.html").read_text(encoding="utf-8")
+data_path = ROOT / "server" / "static" / "data.js"
+data_src = data_path.read_text(encoding="utf-8") if data_path.exists() else ""
+check("data.js 存在", data_path.exists(), "")
+check("app.js 引用 window.GGB_DATA", "window.GGB_DATA" in app_src, "")
+check("数据表已外置（app.js 不再含 CAS 命令表）",
+      "'PartialFractions'" not in app_src and "'PartialFractions'" in data_src, "")
+check("index.html 在 app.js 之前加载 data.js",
+      index_src.index("/static/data.js") < index_src.index("/static/app.js"), "")
+check("index.html 在 i18n.js 之后加载 data.js",
+      index_src.index("/static/i18n.js") < index_src.index("/static/data.js"), "")
+node_data = (
+    "const fs=require('fs');global.window={};"
+    "eval(fs.readFileSync(%r,'utf8'));"
+    "const d=window.GGB_DATA||{};const t=d.TOOLS||{};const cats=d.TOOL_CATS||[];"
+    "const listed=new Set();cats.forEach(c=>(c.tools||[]).forEach(k=>listed.add(k)));"
+    "const missing=[...listed].filter(k=>!t[k]);const extra=Object.keys(t).filter(k=>!listed.has(k));"
+    "console.log(JSON.stringify({cas:(d.CAS_COMMANDS||[]).length,tools:Object.keys(t).length,"
+    "cats:cats.length,missing,extra}));"
+) % str(data_path)
+try:
+    out3 = subprocess.run(["node", "-e", node_data], capture_output=True, text=True, timeout=30)
+    d3 = json.loads(out3.stdout.strip().splitlines()[-1]) if out3.returncode == 0 else None
+except Exception:
+    d3 = None
+if d3 is None:
+    check("可解析 data.js 数据表", False, "node 执行失败")
+else:
+    check("data.js 含 CAS 命令表（≥10 条）与工具定义（≥30 个）",
+          d3["cas"] >= 10 and d3["tools"] >= 30, "cas=%d tools=%d" % (d3["cas"], d3["tools"]))
+    check("TOOL_CATS 里列出的工具都在 TOOLS 中有定义（无悬空）", not d3["missing"], str(d3["missing"][:6]))
+    # TOOLS 里未列入分类面板的工具，必须能在顶栏找到按钮（如 image 只在 #btn-image）
+    orphan = [k for k in d3["extra"] if ('id="btn-%s"' % k) not in index_src]
+    check("未列入分类的工具都有顶栏按钮（无孤儿工具）", not orphan,
+          "无分类且无按钮=%s；仅顶栏=%s" % (orphan, d3["extra"][:6]))
+check("app.js 行数继续下降（< 5600）", len(app_src.splitlines()) < 5600, str(len(app_src.splitlines())))
 
 print("\n=== B. 前端：文案表外置 ===")
 app = (ROOT / "server" / "static" / "app.js").read_text(encoding="utf-8")

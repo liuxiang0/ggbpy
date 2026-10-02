@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第二十四批（2026-10-02 · 第十八批收尾：统计子模块 + 前端数据表外置）**：
+  - **补齐第十八批（内核/前端拆分）尚未完成的范围**：新增 **`kernel/stats.py`**（8 函数 / 139 行：`_median`/`_mode`/`_variance`、`_fitline_state`/`_fit_silent_fit`、`_barchart_state`、`_fitsphere_state`/`_fitplane_state`）与随迁常量 `_REF_X`/`_REF_DOT`；只依赖 `math`/`re`/`tolerance`/`geo2d`，`commands.py` **6,192 → 6,086 行**
+  - 前端新增 **`static/data.js`**（纯数据 102 行：`CAS_COMMANDS` 11 条 / `TOOLS` 工具定义 / `TOOL_CATS` 分类），`app.js` **5,631 → 5,542 行**；加载顺序 `i18n.js → data.js → app.js`，缺文件时退化为空表
+  - 模块边界检测扩到 **50 断言**：stats 独立性/re-export 同一性/常量随迁/规模预算；data.js 存在与加载顺序、数据不再内联、**`TOOL_CATS` 与 `TOOLS` 双向一致性**（无悬空、无孤儿——孤儿工具必须有顶栏按钮，实测 `image` 属顶栏）
+  - 已确认第十八批剩余未做的部分：**CAS 子模块**、**前端 renderer/panels 拆分**（`app.js` 仍混装渲染与面板逻辑，属大工程，建议单独开批）
 - **第二十三批（2026-10-02 · 反演命名规则）**：
   - **问题**：`Invert` 在结果类型表里登记为 `point`，无标签时统一走「点」的字母池 → 反演出来的圆/直线/曲线/多边形被命名成 `A`、`B`…（而绝大多数反演像并不是点）
   - **新规则**：新增命名类型 `invert` —— **点反演仍用点命名（`A`,`B`,…）**，其余反演像统一用 **`inv1`, `inv2`, …小写前缀**（与既有前缀风格一致：`pl1` 折线 / `bc1` 条形图 / `tx1` 文本 / `lo1` 轨迹 / `mat1` 矩阵）；序号自动跳过已占用标签，显式标签 `q=Invert[…]` 不受影响，`.ggk` 往返保留 `inv*` 名
@@ -164,7 +169,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 33 + 会话 23 + 2D 内核 138 + 2D API 31 + 3D 490/181/134 + 2D 前端 46 = 1122 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 50 + 会话 23 + 2D 内核 138 + 2D API 31 + 3D 490/181/134 + 2D 前端 46 = 1139 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
