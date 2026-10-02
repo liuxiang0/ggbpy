@@ -324,6 +324,26 @@ function check(name, ok, detail) {
   }
   check('靠边悬停时提示框完整可见（自动翻转/夹取）', edgeOk === edgeCases.length + (hoverableBottom > 40 ? 1 : 0),
     edgeDetail.join(' '));
+  // 3) 可用区：提示框必须避开停靠面板（面板是 DOM 浮层，画在画布内也会被盖住）
+  const area = await page.evaluate(() => window.__ggbpyDebug.tipArea());
+  const panelOverlaps = area.bottom < geo.cssH - 1 || area.left > 1 || area.right < geo.cssW - 1;
+  check('可用区计算已扣除停靠面板（收缩了可见范围）', panelOverlaps, JSON.stringify(area));
+  const areaBottomWorld = await page.evaluate(([cx, cy]) => {
+    const d = window.__ggbpyDebug.toScreen(0, 0);
+    const xmin = -d.x / d.scale, ymin = -(d.cssH - d.y) / d.scale;
+    return { x: xmin + cx / d.scale, y: ymin + (d.cssH - cy) / d.scale };
+  }, [geo.cssW * 0.5, area.bottom - 6]);
+  await typeCmd('HTarea=(' + areaBottomWorld.x.toFixed(2) + ',' + areaBottomWorld.y.toFixed(2) + ')');
+  const areaScreen = await page.evaluate(([wx, wy]) => window.__ggbpyDebug.toScreen(wx, wy),
+    [areaBottomWorld.x, areaBottomWorld.y]);
+  await page.mouse.move(cvBox.x + areaScreen.x, cvBox.y + areaScreen.y);
+  await page.waitForTimeout(320);
+  const areaInfo = await page.evaluate(() => ({ rect: window.__ggbpyDebug.tipRect(), tip: window.__ggbpyDebug.hoverTip() }));
+  const rArea = areaInfo.rect;
+  const inArea = !!rArea && rArea.x >= area.left && rArea.y >= area.top
+    && rArea.x + rArea.w <= area.right && rArea.y + rArea.h <= area.bottom;
+  check('面板上沿附近悬停：提示框落在可用区内（不再被抓一半）', inArea && !!areaInfo.tip,
+    (rArea ? JSON.stringify(rArea) : 'null') + ' 可用区=' + JSON.stringify(area));
 
   // -------------------------------------------------------------------------
   section('K. 会话隔离（cookie 持久 + 新上下文独立）');

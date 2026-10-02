@@ -209,6 +209,43 @@
     view.ymax = cy + h / (2 * s);
   }
 
+  // 画布上"实际可见可用区"（Canvas 坐标）：扣除停靠在底/左/右的对象面板浮层，
+  // 否则画在画布内、但被 DOM 面板盖住的提示只露出一半。
+  function usableCanvasRect() {
+    var cr = canvas.getBoundingClientRect();
+    var rect = { left: 4, top: 4, right: cssW - 4, bottom: cssH - 4 };
+    var panel = document.getElementById('panel');
+    if (!panel) return rect;
+    var st = window.getComputedStyle(panel);
+    if (st.display === 'none' || st.visibility === 'hidden') return rect;   // fixed 定位元素 offsetParent 为 null，不能用它判断
+    var pr = panel.getBoundingClientRect();
+    if (pr.width <= 0 || pr.height <= 0) return rect;
+    var overlapsX = Math.min(pr.right, cr.right) - Math.max(pr.left, cr.left);
+    var overlapsY = Math.min(pr.bottom, cr.bottom) - Math.max(pr.top, cr.top);
+    if (overlapsX <= 0 || overlapsY <= 0) return rect;
+    // 按"面板贴住画布的哪条边"收缩可用区（面板可停靠上/下/左/右，也可能是浮动框）
+    var touchesBottom = pr.bottom >= cr.bottom - 1 && pr.top > cr.top + 1;
+    var touchesTop = pr.top <= cr.top + 1 && pr.bottom < cr.bottom - 1;
+    var touchesLeft = pr.left <= cr.left + 1 && pr.right < cr.right - 1;
+    var touchesRight = pr.right >= cr.right - 1 && pr.left > cr.left + 1;
+    if (touchesBottom) rect.bottom = Math.min(rect.bottom, pr.top - cr.top - 4);
+    if (touchesTop) rect.top = Math.max(rect.top, pr.bottom - cr.top + 4);
+    if (touchesLeft) rect.left = Math.max(rect.left, pr.right - cr.left + 4);
+    if (touchesRight) rect.right = Math.min(rect.right, pr.left - cr.left - 4);
+    if (!touchesBottom && !touchesTop && !touchesLeft && !touchesRight) {
+      // 浮动面板：按中心偏向收缩对应一侧
+      if ((pr.left + pr.right) / 2 < (cr.left + cr.right) / 2) {
+        rect.left = Math.max(rect.left, pr.right - cr.left + 4);
+      } else {
+        rect.right = Math.min(rect.right, pr.left - cr.left - 4);
+      }
+    }
+    // 兜底：异常布局下至少保留画布主体，避免可用区变成负宽高
+    if (rect.right - rect.left < cssW * 0.5) { rect.left = 4; rect.right = cssW - 4; }
+    if (rect.bottom - rect.top < cssH * 0.4) { rect.top = 4; rect.bottom = cssH - 4; }
+    return rect;
+  }
+
   function sxp(x) { return (x - view.xmin) * scale; }
   function syp(y) { return cssH - (y - view.ymin) * scale; }
   function wxp(sx) { return view.xmin + sx / scale; }
@@ -892,15 +929,17 @@
       else htxt += ' = (' + fmtNum(hoverTip.x) + ', ' + fmtNum(hoverTip.y) + ')';
       ctx.font = '12px sans-serif';
       var hw = ctx.measureText(htxt).width + 14;
-      var hh = 20, gap = 12, pad = 4;
-      // 默认放在锚点右上方；靠近画布边缘时自动翻到另一侧并夹住，保证提示框完整可见
+      var hh = 20, gap = 14;
+      // 优先放在光标上方（避免遮住对象本身），并始终夹在"可见可用区"内：
+      // 顶部放不下 → 翻到下方；下方也放不下（含被面板遮挡）→ 向上顶到可见区上沿
+      var area = usableCanvasRect();
       var tx = hx + gap;
       var ty = hy - gap - hh;
-      if (tx + hw > cssW - pad) tx = hx - gap - hw;          // 右边放不下 → 移到左侧
-      if (ty < pad) ty = hy + gap;                            // 顶部放不下 → 移到下方
-      if (ty + hh > cssH - pad) ty = hy - gap - hh;           // 下方也放不下 → 回到上方
-      tx = Math.max(pad, Math.min(tx, Math.max(pad, cssW - hw - pad)));
-      ty = Math.max(pad, Math.min(ty, Math.max(pad, cssH - hh - pad)));
+      if (tx + hw > area.right) tx = hx - gap - hw;           // 右侧放不下 → 移到左侧
+      if (ty < area.top) ty = hy + gap;                        // 上方放不下 → 移到下方
+      if (ty + hh > area.bottom) ty = hy - gap - hh;           // 下方放不下 → 回到上方
+      tx = Math.max(area.left, Math.min(tx, Math.max(area.left, area.right - hw)));
+      ty = Math.max(area.top, Math.min(ty, Math.max(area.top, area.bottom - hh)));
       ctx.fillStyle = C.tipBg;
       ctx.fillRect(tx, ty, hw, hh);
       ctx.fillStyle = C.tipFg;
@@ -1983,6 +2022,7 @@
     toScreen: function (x, y) { return { x: sxp(x), y: syp(y), scale: scale, cssW: cssW, cssH: cssH }; },
     hoverTip: function () { return hoverTip ? { label: hoverTip.label, x: hoverTip.x, y: hoverTip.y } : null; },
     tipRect: function () { return dbgTipRect; },
+    tipArea: function () { return usableCanvasRect(); },
     faceBudget: function () { return MESH_FACE_BUDGET; },
     cacheSize: function () { return Object.keys(meshFaceCache).length; },
     projCalls: function () { return dbgProjCalls; },
