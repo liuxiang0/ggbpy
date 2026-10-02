@@ -635,45 +635,8 @@
       ctx.textBaseline = 'bottom';
       ctx.fillText(e.content, tx, ty);
     }
-    if (e.kind === 'barchart') {
-      var bc = e;
-      var maxC = 1;
-      for (var bi = 0; bi < bc.counts.length; bi++) if (bc.counts[bi] > maxC) maxC = bc.counts[bi];
-      var barW = Math.max(8, bc.width * scale * 0.6);
-      ctx.fillStyle = 'rgba(59,130,246,.75)';
-      ctx.strokeStyle = '#2563eb';
-      ctx.lineWidth = 1;
-      for (var bj = 0; bj < bc.bins.length; bj++) {
-        var bx0, bxW;
-        if (bc.hist && bc.edges && bc.edges[bj + 1] !== undefined) {
-          bx0 = sxp(bc.edges[bj]);
-          bxW = Math.max(2, (bc.edges[bj + 1] - bc.edges[bj]) * scale * 0.96);
-        } else {
-          bx0 = sxp(bc.bins[bj]) - barW / 2;
-          bxW = barW;
-        }
-        var bh = (bc.counts[bj] / maxC) * cssH * 0.45;
-        ctx.fillRect(bx0, cssH - bh, bxW, bh);
-        ctx.strokeRect(bx0 + 0.5, cssH - bh + 0.5, bxW - 1, bh - 1);
-      }
-    }
-    if (e.kind === 'boxplot' && e.five) {
-      var fv = e.five, bpy = syp(e.base_y), bph = Math.max(6, e.box_h * scale);
-      var xMn = sxp(fv[0]), xQ1 = sxp(fv[1]), xMd = sxp(fv[2]), xQ3 = sxp(fv[3]), xMx = sxp(fv[4]);
-      ctx.strokeStyle = '#0f766e';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(xMn, bpy); ctx.lineTo(xMx, bpy);
-      ctx.moveTo(xMn, bpy - bph / 2); ctx.lineTo(xMn, bpy + bph / 2);
-      ctx.moveTo(xMx, bpy - bph / 2); ctx.lineTo(xMx, bpy + bph / 2);
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(15,118,110,.18)';
-      ctx.fillRect(xQ1, bpy - bph / 2, Math.max(1, xQ3 - xQ1), bph);
-      ctx.strokeRect(xQ1, bpy - bph / 2, Math.max(1, xQ3 - xQ1), bph);
-      ctx.beginPath();
-      ctx.moveTo(xMd, bpy - bph / 2); ctx.lineTo(xMd, bpy + bph / 2);
-      ctx.stroke();
-    }
+    if (e.kind === 'barchart') drawBarChart(e);
+    if (e.kind === 'boxplot' && e.five) drawBoxPlot(e);
     if (e.kind === 'sumrect' && e.rects && e.rects.length) {
       // 黎曼和条带（矩形/梯形）；函数曲线另由 function 分支绘制
       ctx.fillStyle = 'rgba(15,118,110,.20)';
@@ -691,28 +654,10 @@
         ctx.strokeRect(rx0p + 0.5, rtp + 0.5, rw - 1, rh - 1);
       }
     }
-    if (e.kind === 'piechart' && e.items && e.items.length) {
-      var PIE_PAL = ['#ef4444', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#64748b'];
-      var pCx = cssW * 0.5, pCy = cssH * 0.48, pR = Math.min(cssW, cssH) * 0.3;
-      var a0 = -Math.PI / 2, pieTot = e.total > 0 ? e.total : 1;
-      for (var pj = 0; pj < e.items.length; pj++) {
-        var a1 = a0 + (e.items[pj] / pieTot) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(pCx, pCy);
-        ctx.arc(pCx, pCy, pR, a0, a1);
-        ctx.closePath();
-        ctx.fillStyle = PIE_PAL[pj % PIE_PAL.length];
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        a0 = a1;
-      }
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(pCx, pCy, pR * 0.35, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    if (e.kind === 'piechart' && e.items && e.items.length) drawPieChart(e);
+    if (e.kind === 'linechart' && e.xs && e.xs.length) drawLineChart(e);
+    if (e.kind === 'scatterplot' && e.pts && e.pts.length) drawScatterPlot(e);
+    if (e.kind === 'dotplot' && e.stacks && e.stacks.length) drawDotPlot(e);
     if (e.kind === 'list' && e.itemkind === 'point' && e.items && e.items.length) {
       // 点列表 → 散点（如 Sequence[(i, i^2), i, 1, 10] 或 {(1,2),(3,4)}）
       ctx.fillStyle = '#dc2626';
@@ -826,6 +771,7 @@
   }
 
   function render() {
+    chartBoxes = {};
     ctx.clearRect(0, 0, cssW, cssH);
     drawGrid();
     // 先画非点对象，点最后画（不被线覆盖）；跳过 3D 元素
@@ -964,6 +910,175 @@
     }
     renderList();
     populateEditBar();
+  }
+
+  // ---------- 统计图绘制（统一 offset 平移 + 拖拽命中盒） ----------
+  // 每张统计图都可作为一个整体在平面上移动：offset 是它的世界坐标偏移，
+  // 绘制时整体平移（ctx.translate），拖动时只改 offset（与图内数据无关）。
+  var chartBoxes = {};                    // label → 屏幕包围盒（整体拖动命中用）
+  var PIE_PAL = ['#ef4444', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#64748b'];
+
+  function chartOff(e) {
+    var o = e.offset || [0, 0];
+    return { x: (o[0] || 0) * scale, y: -(o[1] || 0) * scale };
+  }
+
+  function chartBoxPut(e, co, x0, y0, x1, y1) {
+    chartBoxes[e.label] = {
+      x0: Math.min(x0, x1) + co.x, y0: Math.min(y0, y1) + co.y,
+      x1: Math.max(x0, x1) + co.x, y1: Math.max(y0, y1) + co.y
+    };
+  }
+
+  function chartAt(sx, sy) {
+    for (var k in chartBoxes) {
+      if (!Object.prototype.hasOwnProperty.call(chartBoxes, k)) continue;
+      var b = chartBoxes[k];
+      if (sx >= b.x0 - 2 && sx <= b.x1 + 2 && sy >= b.y0 - 2 && sy <= b.y1 + 2) return k;
+    }
+    return null;
+  }
+
+  function drawBarChart(e) {
+    var co = chartOff(e);
+    var maxC = 1;
+    for (var bi = 0; bi < e.counts.length; bi++) if (e.counts[bi] > maxC) maxC = e.counts[bi];
+    var barW = Math.max(8, e.width * scale * 0.6);
+    var bx0s = 1e9, bx1s = -1e9, maxH = 0;
+    // 基线取"可用区底边"（扣除停靠面板遮挡），否则默认贴画布最底会被面板盖住
+    var barBase = usableCanvasRect().bottom - 4;
+    ctx.save();
+    ctx.translate(co.x, co.y);
+    ctx.fillStyle = 'rgba(59,130,246,.75)';
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 1;
+    for (var bj = 0; bj < e.bins.length; bj++) {
+      var x0, w;
+      if (e.hist && e.edges && e.edges[bj + 1] !== undefined) {
+        x0 = sxp(e.edges[bj]);
+        w = Math.max(2, (e.edges[bj + 1] - e.edges[bj]) * scale * 0.96);
+      } else {
+        x0 = sxp(e.bins[bj]) - barW / 2;
+        w = barW;
+      }
+      var h = (e.counts[bj] / maxC) * (barBase * 0.45);
+      ctx.fillRect(x0, barBase - h, w, h);
+      ctx.strokeRect(x0 + 0.5, barBase - h + 0.5, w - 1, h - 1);
+      bx0s = Math.min(bx0s, x0); bx1s = Math.max(bx1s, x0 + w); maxH = Math.max(maxH, h);
+    }
+    ctx.restore();
+    if (bx1s > bx0s) chartBoxPut(e, co, bx0s, barBase - maxH, bx1s, barBase);
+  }
+
+  function drawBoxPlot(e) {
+    var co = chartOff(e);
+    var fv = e.five, bpy = syp(e.base_y), bph = Math.max(6, e.box_h * scale);
+    var xMn = sxp(fv[0]), xQ1 = sxp(fv[1]), xMd = sxp(fv[2]), xQ3 = sxp(fv[3]), xMx = sxp(fv[4]);
+    ctx.save();
+    ctx.translate(co.x, co.y);
+    ctx.strokeStyle = '#0f766e';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(xMn, bpy); ctx.lineTo(xMx, bpy);
+    ctx.moveTo(xMn, bpy - bph / 2); ctx.lineTo(xMn, bpy + bph / 2);
+    ctx.moveTo(xMx, bpy - bph / 2); ctx.lineTo(xMx, bpy + bph / 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(15,118,110,.18)';
+    ctx.fillRect(xQ1, bpy - bph / 2, Math.max(1, xQ3 - xQ1), bph);
+    ctx.strokeRect(xQ1, bpy - bph / 2, Math.max(1, xQ3 - xQ1), bph);
+    ctx.beginPath();
+    ctx.moveTo(xMd, bpy - bph / 2); ctx.lineTo(xMd, bpy + bph / 2);
+    ctx.stroke();
+    ctx.restore();
+    chartBoxPut(e, co, Math.min(xMn, xQ1, xMd, xQ3, xMx), bpy - bph, Math.max(xMn, xQ1, xMd, xQ3, xMx), bpy + bph);
+  }
+
+  function drawPieChart(e) {
+    var co = chartOff(e);
+    var pCx = cssW * 0.5, pCy = cssH * 0.48, pR = Math.min(cssW, cssH) * 0.3;
+    var a0 = -Math.PI / 2, pieTot = e.total > 0 ? e.total : 1;
+    ctx.save();
+    ctx.translate(co.x, co.y);
+    for (var pj = 0; pj < e.items.length; pj++) {
+      var a1 = a0 + (e.items[pj] / pieTot) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(pCx, pCy);
+      ctx.arc(pCx, pCy, pR, a0, a1);
+      ctx.closePath();
+      ctx.fillStyle = PIE_PAL[pj % PIE_PAL.length];
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      a0 = a1;
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(pCx, pCy, pR * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    chartBoxPut(e, co, pCx - pR, pCy - pR, pCx + pR, pCy + pR);
+  }
+
+  function drawLineChart(e) {
+    var co = chartOff(e), i, x, y;
+    var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    ctx.save();
+    ctx.translate(co.x, co.y);
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (i = 0; i < e.xs.length; i++) {
+      if (e.ys[i] === null || !isFinite(e.ys[i])) continue;
+      x = sxp(e.xs[i]); y = syp(e.ys[i]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#1d4ed8';
+    for (i = 0; i < e.xs.length; i++) {
+      if (e.ys[i] === null || !isFinite(e.ys[i])) continue;
+      ctx.beginPath();
+      ctx.arc(sxp(e.xs[i]), syp(e.ys[i]), 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    if (x1 > x0) chartBoxPut(e, co, x0 - 4, y0 - 4, x1 + 4, y1 + 4);
+  }
+
+  function drawScatterPlot(e) {
+    var co = chartOff(e), i;
+    var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    ctx.save();
+    ctx.translate(co.x, co.y);
+    ctx.fillStyle = '#dc2626';
+    for (i = 0; i < e.pts.length; i++) {
+      var sx2 = sxp(e.pts[i][0]), sy2 = syp(e.pts[i][1]);
+      ctx.beginPath();
+      ctx.arc(sx2, sy2, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      x0 = Math.min(x0, sx2); x1 = Math.max(x1, sx2); y0 = Math.min(y0, sy2); y1 = Math.max(y1, sy2);
+    }
+    ctx.restore();
+    if (x1 > x0) chartBoxPut(e, co, x0 - 4, y0 - 4, x1 + 4, y1 + 4);
+  }
+
+  function drawDotPlot(e) {
+    var co = chartOff(e), i;
+    var step = e.step || 1.0;
+    var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    ctx.save();
+    ctx.translate(co.x, co.y);
+    ctx.fillStyle = '#7c3aed';
+    for (i = 0; i < e.stacks.length; i++) {
+      var sx3 = sxp(e.stacks[i][0]), sy3 = syp(e.stacks[i][1] * step);
+      ctx.beginPath();
+      ctx.arc(sx3, sy3, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      x0 = Math.min(x0, sx3); x1 = Math.max(x1, sx3); y0 = Math.min(y0, sy3); y1 = Math.max(y1, sy3);
+    }
+    ctx.restore();
+    if (x1 > x0) chartBoxPut(e, co, x0 - 4, y0 - 4, x1 + 4, y1 + 4);
   }
 
   function strokePoly(pts, color, lw) {
@@ -1286,8 +1401,9 @@
   }
 
   // 会显示"仅名称"提示的对象类型（复用已有的 hitObject 命中检测）
+  var CHART_KINDS = ['barchart', 'histogram', 'boxplot', 'piechart', 'linechart', 'scatterplot', 'dotplot'];
   var TIP_NAME_KINDS = ['segment', 'line', 'ray', 'vector', 'polygon', 'polyline', 'function',
-                        'parametric', 'polar', 'implicit', 'conic', 'image'];
+                        'parametric', 'polar', 'implicit', 'conic', 'image'].concat(CHART_KINDS);
 
   function hitForTip(sx, sy) {
     for (var i = 0; i < elements.length; i++) {
@@ -1343,12 +1459,24 @@
       return;
     }
     var label = hitFreePoint(sx, sy);
+    var chartHit = label ? null : chartAt(sx, sy);
+    if (chartHit && !selectMode && !addSelModifier(ev)) {
+      // 统计图：整张图作为一个对象拖动 —— 记录起手时的世界坐标与当前 offset
+      var chEl = null;
+      for (var ci = 0; ci < elements.length; ci++) if (elements[ci].label === chartHit) { chEl = elements[ci]; break; }
+      var chOff = (chEl && chEl.offset) || [0, 0];
+      drag = { label: chartHit, chart: true, off0: [chOff[0] || 0, chOff[1] || 0],
+               grab: [wxp(sx), wyp(sy)] };
+      dragPending = false;
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
     if (label && !selectMode && !addSelModifier(ev)) {
       drag = { label: label };
       dragPending = false;
       canvas.style.cursor = 'grabbing';
     } else {
-      var selHit = hitAnyPoint(sx, sy) || hitObject(sx, sy, ['segment', 'circle', 'line', 'polygon', 'arc', 'text', 'vector', 'ray', 'image']);
+      var selHit = hitAnyPoint(sx, sy) || hitObject(sx, sy, ['segment', 'circle', 'line', 'polygon', 'arc', 'text', 'vector', 'ray', 'image'].concat(CHART_KINDS));
       if (selHit && (selHit === selected || selectedMulti.indexOf(selHit) !== -1) && !addSelModifier(ev)) {
         // 选中对象整体拖动；动点（PointOnPath/PointOnCircle）改为沿母体移动
         var _selEl = null;
@@ -1471,6 +1599,28 @@
         var snapped = snapPoint(wx, wy, niceStep(), ev.offsetX, ev.offsetY);
         wx = snapped[0];
         wy = snapped[1];
+      }
+      if (drag.chart) {
+        // 图表整体平移：新 offset = 起手 offset + 光标位移（世界坐标）
+        wx = drag.off0[0] + (wx - drag.grab[0]);
+        wy = drag.off0[1] + (wy - drag.grab[1]);
+        for (var ci2 = 0; ci2 < elements.length; ci2++) {
+          if (elements[ci2].label === drag.label) { elements[ci2].offset = [wx, wy]; break; }
+        }
+        render();
+        if (!dragPending) {
+          dragPending = true;
+          api('POST', '/api/drag', {
+            label: drag.label, x: wx, y: wy,
+            xmin: view.xmin, xmax: view.xmax, ymin: view.ymin, ymax: view.ymax,
+            push: first
+          }, function (d) {
+            dragPending = false;
+            if (d && d.elements) { elements = d.elements; render(); }
+            if (d && d.message && !d.ok) setMsg(d.message, true);
+          });
+        }
+        return;
       }
       // 本地乐观更新
       for (var i = 0; i < elements.length; i++) {
@@ -2044,6 +2194,9 @@
     tipRect: function () { return dbgTipRect; },
     tipArea: function () { return usableCanvasRect(); },
     tipColors: function () { return { bg: C.tipBg, fg: C.tipFg }; },
+    chartBox: function (label) { return chartBoxes[label] || null; },
+    selectMode: function () { return !!selectMode; },
+    chartBoxes: function () { return chartBoxes; },
     faceBudget: function () { return MESH_FACE_BUDGET; },
     cacheSize: function () { return Object.keys(meshFaceCache).length; },
     projCalls: function () { return dbgProjCalls; },
@@ -4881,6 +5034,10 @@
         for (var csi = 0; csi < e.segs.length; csi++) {
           if (distToSeg(sx, sy, sxp(e.segs[csi][0]), syp(e.segs[csi][1]), sxp(e.segs[csi][2]), syp(e.segs[csi][3])) <= 10) return e.label;
         }
+      } else if (CHART_KINDS.indexOf(e.kind) !== -1) {
+        // 统计图：整张图一个命中盒（绘制时记录），拖拽/选中都按整体处理
+        var cb = chartBoxes[e.label];
+        if (cb && sx >= cb.x0 - 2 && sx <= cb.x1 + 2 && sy >= cb.y0 - 2 && sy <= cb.y1 + 2) return e.label;
       } else if (e.kind === 'conic' && conicPathPts(e)) {
         var cpath = conicPathPts(e);
         for (var cpi = 0; cpi < cpath.length; cpi++) {

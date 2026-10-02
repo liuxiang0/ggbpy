@@ -19,7 +19,9 @@ KINDS = {"number", "point", "list", "matrix", "boolean", "function", "complex", 
          "geo3d", "polygon", "circle", "conic", "segment", "line", "ray", "vector", "arc",
          "polyline", "locus", "barchart", "boxplot", "result", "image", "angle", "slope",
          # 自动标签专用类型（未命名曲线/统计图）
-         "implicit", "parametric", "polar", "piechart", "sumrect"}
+         "implicit", "parametric", "polar", "piechart", "sumrect",
+         # 统计图家族（本批新增：折线/散点/点图）
+         "linechart", "scatterplot", "dotplot"}
 
 # 多词命令识别用的词根：出现在非首位即说明是拼接词，显示名在该处必须大写
 WORD_ROOTS = ("coefficient", "polygon", "create", "delete", "bisector", "between",

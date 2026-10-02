@@ -263,6 +263,45 @@ check("SVG 导出跳过 3D 对象（仍返回 2D 内容）", st == 200 and "<svg
       "warn=%s" % (hget(h, "X-GGB-Warnings") or hget(h, "X-Svg-Warnings") or "-"))
 
 # ---------------------------------------------------------------------------
+section("I. 统计图：创建 / 整体拖动 / 撤销 / state3d")
+clear()
+post("/api/input", {"text": "D={3,1,4,1,5,9,2,6}"})
+for line in ("bc=BarChart[D]", "lc=LineChart[D]", "sc=ScatterPlot[{(1,2),(2,4),(3,3)}]",
+             "dp=DotPlot[{1,2,2,3}]", "pi=PieChart[{3,5,2,4}]", "bp=BoxPlot[D]"):
+    st, js = post("/api/input", {"text": line})
+    check("创建 " + line.split("=")[0], js.get("ok") is True, (js.get("message") or "")[:30])
+els = {e["label"]: e for e in state()}
+chart_labels = ["bc", "lc", "sc", "dp", "pi", "bp"]
+check("六种统计图都在状态里且带 offset",
+      all(l in els and els[l].get("offset") == [0, 0] for l in chart_labels),
+      str({l: els.get(l, {}).get("offset") for l in chart_labels}))
+st, js = post("/api/drag", {"label": "bc", "x": 4.0, "y": -2.5,
+                            "xmin": -16, "xmax": 16, "ymin": -9, "ymax": 9, "push": True})
+check("/api/drag 可整体移动统计图（offset 落库）",
+      js.get("ok") is True and {e["label"]: e for e in js["elements"]}["bc"]["offset"] == [4.0, -2.5],
+      str({e["label"]: e.get("offset") for e in js.get("elements", []) if e["label"] == "bc"}))
+st, js = post("/api/undo", {})
+bc_off = {e["label"]: e for e in js.get("elements", [])}.get("bc", {}).get("offset")
+check("撤销可回退统计图整体移动", bc_off == [0, 0], str(bc_off))
+# 3D 统计图：state3d 里应出现网格
+post("/api/input", {"text": "b3=BarChart3D[{1,3,2}]"})
+post("/api/input", {"text": "s3=ScatterPlot3D[{(1,1,1),(2,2,3)}]"})
+post("/api/input", {"text": "f3=SurfaceChart3D[{1,2,3,2,3,4,3,4,5},3]"})
+st, _h3, _raw3, js = get("/api/state3d")
+m3 = {e["label"]: e for e in js.get("elements", [])}
+check("3D 柱状图出现在 state3d（32 顶点网格）",
+      m3.get("b3", {}).get("objtype") == "polyhedron" and len((m3.get("b3", {}).get("data") or {}).get("verts", [])) == 24,
+      str((m3.get("b3", {}).get("data") or {}).get("verts", [])[:1]))
+check("3D 散点图出现在 state3d（2 个标记）",
+      len((m3.get("s3", {}).get("data") or {}).get("verts", [])) == 12,
+      str(len((m3.get("s3", {}).get("data") or {}).get("verts", []))))
+check("3D 高度场出现在 state3d（3×3 网格）",
+      len((m3.get("f3", {}).get("data") or {}).get("verts", [])) == 9,
+      str(len((m3.get("f3", {}).get("data") or {}).get("verts", []))))
+# 图表含在 CSV/SVG 导出里不应报错
+st, _h, raw = req("/api/export/svg", raw=True)[0:3]
+check("统计图存在时 SVG 导出仍成功", st == 200 and b"<svg" in raw, "HTTP %s" % st)
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

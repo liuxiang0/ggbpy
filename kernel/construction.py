@@ -15,7 +15,7 @@ import json
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
-from .elements import GeoElement, GeoError
+from .elements import GeoChart2D, GeoElement, GeoError
 from .tolerance import EPSILON  # 统一数值容差（见 kernel/tolerance.py）
 
 DEFAULT_VIEW = (-10.0, 10.0, -10.0, 10.0)
@@ -89,7 +89,7 @@ class Construction:
     def auto_label(self, kind: str) -> str:
         """按 GGB 习惯：点 A,B,C..；线/线段/射线 a,b,c..；圆 c,d,e..；
         函数 f,g,h..；向量 u,v,w..；数值 n1,n2..；多边形 poly1..；
-        反演像（非点）inv1,inv2.."""
+        反演像（非点）inv1,inv2..；统计图 bc1/bp1/pie1/lc1/sc1/dp1.."""
         pools = {
             "point": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "line": "abcdefghijklmnopqrstuvwxyz",
@@ -119,6 +119,10 @@ class Construction:
             "complex": "z",
             "image": "pqrstuvwxyz",
             "invert": "",          # 反演像（非点）：用 inv1, inv2 … 前缀，见下
+            # 统计图家族（2D）：用可辨识前缀，避免落到默认字母池（曾是 a/b/c…）
+            "piechart": "", "boxplot": "", "linechart": "", "scatterplot": "", "dotplot": "",
+            # 三维统计图：bc3 / sc3 / sf3
+            "chart3dbar": "", "chart3dscatter": "", "chart3dsurface": "",
         }
         pool = pools.get(kind, "abcdefghijklmnopqrstuvwxyz")
         idx = self._counters.get(kind, 0)
@@ -147,6 +151,22 @@ class Construction:
                 cand = "mat" + str(idx + 1)
             elif kind == "invert":
                 cand = "inv" + str(idx + 1)     # 反演像：小写前缀（点反演仍走点的 A,B,C…）
+            elif kind == "piechart":
+                cand = "pie" + str(idx + 1)
+            elif kind == "boxplot":
+                cand = "bp" + str(idx + 1)
+            elif kind == "linechart":
+                cand = "lc" + str(idx + 1)
+            elif kind == "scatterplot":
+                cand = "sc" + str(idx + 1)
+            elif kind == "dotplot":
+                cand = "dp" + str(idx + 1)
+            elif kind == "chart3dbar":
+                cand = "bc3_" + str(idx + 1)     # 三维柱状图（bc 已被条形图占用）
+            elif kind == "chart3dscatter":
+                cand = "sc3_" + str(idx + 1)
+            elif kind == "chart3dsurface":
+                cand = "sf3_" + str(idx + 1)
             else:
                 cand = "poly" + str(idx + 1)
             idx += 1
@@ -279,6 +299,10 @@ class Construction:
         el = self.get(label)
         if el.locked:
             raise GeoError(label + " 已锁定，不能移动")
+        if isinstance(el, GeoChart2D):
+            # 统计图：整体平移 —— (x, y) 解释为图表的世界坐标偏移 offset
+            el.move_chart(x, y)
+            return True
         if not el.free:
             raise GeoError(label + " 是派生对象，不能直接移动")
         if el.kind == "point":
@@ -403,6 +427,11 @@ class Construction:
         el = self.get(label)
         if el.locked:
             raise GeoError(label + " 已锁定，不能移动")
+        if isinstance(el, GeoChart2D):
+            # 统计图：整体平移 → 偏移量累加（图内数据不变）
+            el.move_chart((el.offset[0] if el.offset else 0.0) + float(dx),
+                          (el.offset[1] if el.offset else 0.0) + float(dy))
+            return True
         # 刚性多边形：拖动"非首顶点" → 绕第一个顶点旋转（保距/保形）
         if el.kind == "point":
             grp = None
@@ -659,12 +688,15 @@ class Construction:
                    if getattr(self.elements[lab], "kind", "") == "image"]
         return json.dumps({
             "format": "ggk",
-            "version": 3,
+            "version": 4,          # v4：styles 增加统计图 offset（第 5 项，旧文件兼容）
             "order": self.order,
             "defns": {lab: self.elements[lab].defn for lab in self.order},
             "styles": {lab: [self.elements[lab].color, self.elements[lab].visible,
                              self.elements[lab].locked,
-                             bool(getattr(self.elements[lab], "wire", False))] for lab in self.order},
+                             bool(getattr(self.elements[lab], "wire", False)),
+                             (list(self.elements[lab].offset)
+                              if isinstance(self.elements[lab], GeoChart2D) else None)]
+                       for lab in self.order},
             "images": image_store.serialize(img_ids),
             "meshes": mesh_store.serialize([getattr(self.elements[lab], "meshid", "")
                                             for lab in self.order]),
@@ -701,6 +733,12 @@ class Construction:
                     if len(st) > 3 and st[3]:
                         try:
                             self.elements[lab].wire = True
+                        except Exception:
+                            pass
+                    if len(st) > 4 and st[4] and isinstance(self.elements[lab], GeoChart2D):
+                        # 统计图的整体偏移（旧 .ggk 无第 5 项 → 保持默认 0,0）
+                        try:
+                            self.elements[lab].move_chart(float(st[4][0]), float(st[4][1]))
                         except Exception:
                             pass
         from . import macro

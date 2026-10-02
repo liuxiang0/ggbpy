@@ -941,7 +941,31 @@ class Geo3D(GeoElement):
 # 第二优先级补充：直方图 / 文本 / 轨迹
 # ---------------------------------------------------------------------------
 
-class GeoBarChart(GeoElement):
+class GeoChart2D(GeoElement):
+    """二维统计图基类：带世界坐标 ``offset``，可整体拖动/平移。
+
+    前端按 offset 平移绘制整张图（柱/箱/扇区/折线一起走），因此"拖动图表"=
+    修改 offset，而不是挪动图里的每个元素。
+    """
+    kind = "chart"
+
+    def __init__(self, label: str, defn: str, free: bool = False) -> None:
+        super().__init__(label, defn, free)
+        self.offset = [0.0, 0.0]
+
+    def move_chart(self, dx: float, dy: float) -> None:
+        """整体平移（世界坐标偏移）。"""
+        self.offset = [float(dx), float(dy)]
+
+    def draw(self, view):
+        d = super().draw(view)
+        if d is None:
+            return None
+        d["offset"] = list(self.offset)
+        return d
+
+
+class GeoBarChart(GeoChart2D):
     """条形/直方图：离散值频数（count 模式）或分组区间频数（hist 模式）。"""
     kind = "barchart"
 
@@ -967,7 +991,7 @@ class GeoBarChart(GeoElement):
         return d
 
 
-class GeoBoxPlot(GeoElement):
+class GeoBoxPlot(GeoChart2D):
     """箱线图：数据五数概括（min, Q1, 中位, Q3, max）。"""
     kind = "boxplot"
 
@@ -1014,7 +1038,7 @@ class GeoSumRect(GeoElement):
         return d
 
 
-class GeoPie(GeoElement):
+class GeoPie(GeoChart2D):
     """饼图：分类数值占比。"""
     kind = "piechart"
 
@@ -1030,6 +1054,63 @@ class GeoPie(GeoElement):
         d["items"] = self.items
         d["total"] = self.total
         d["value"] = "共 " + _fmt(self.total)
+        return d
+
+
+class GeoLineChart(GeoChart2D):
+    """折线图：数据序列按 (i, v) 连成折线（i 默认从 1 起，也可显式给 x 序列）。"""
+    kind = "linechart"
+
+    def __init__(self, label: str, defn: str, free: bool = False) -> None:
+        super().__init__(label, defn, free)
+        self.xs: List[float] = []
+        self.ys: List[float] = []
+
+    def draw(self, view):
+        d = super().draw(view)
+        if d is None:
+            return None
+        d["xs"] = self.xs
+        d["ys"] = self.ys
+        d["value"] = "n = " + str(len(self.xs))
+        return d
+
+
+class GeoScatterPlot(GeoChart2D):
+    """散点图：(x, y) 点集（世界坐标绘制，可整体拖动）。"""
+    kind = "scatterplot"
+
+    def __init__(self, label: str, defn: str, free: bool = False) -> None:
+        super().__init__(label, defn, free)
+        self.pts: List[List[float]] = []
+
+    def draw(self, view):
+        d = super().draw(view)
+        if d is None:
+            return None
+        d["pts"] = self.pts
+        d["value"] = "n = " + str(len(self.pts))
+        return d
+
+
+class GeoDotPlot(GeoChart2D):
+    """点图（点阵图）：同一取值重复出现时向上叠点。"""
+    kind = "dotplot"
+
+    def __init__(self, label: str, defn: str, free: bool = False) -> None:
+        super().__init__(label, defn, free)
+        self.values: List[float] = []      # 原始数据（排序后）
+        self.stacks: List[List[float]] = []  # [x, level]（level=0,1,2…，单位 1）
+        self.step = 1.0                    # 叠点纵向间距（世界单位）
+
+    def draw(self, view):
+        d = super().draw(view)
+        if d is None:
+            return None
+        d["values"] = self.values
+        d["stacks"] = self.stacks
+        d["step"] = self.step
+        d["value"] = "n = " + str(len(self.values))
         return d
 
 

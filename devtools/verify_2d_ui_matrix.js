@@ -453,6 +453,98 @@ function check(name, ok, detail) {
     (rArea ? JSON.stringify(rArea) : 'null') + ' 可用区=' + JSON.stringify(area));
 
   // -------------------------------------------------------------------------
+  section('K3. 统计图：整张图可拖动 + 新图型渲染');
+  await clear();
+  await page.waitForTimeout(300);
+  for (const line of ['D={3,1,4,1,5,9,2,6}', 'bc=BarChart[D]', 'lc=LineChart[D]',
+                      'sc=ScatterPlot[{(1,2),(2,4),(3,3),(4,6)}]', 'dp=DotPlot[{1,2,2,3,1,3,3}]',
+                      'bp=BoxPlot[D]']) {
+    await typeCmd(line);
+  }
+  await page.waitForTimeout(300);
+  // 1) 六种统计图都有命中盒、且渲染出各自颜色
+  const chartBoxes = await page.evaluate(() => window.__ggbpyDebug.chartBoxes());
+  check('五种统计图（柱/箱/折线/散点/点图）都有拖拽命中盒',
+    ['bc', 'lc', 'sc', 'dp', 'bp'].every((l) => !!chartBoxes[l]),
+    Object.keys(chartBoxes).join(','));
+  const chartPx = await page.evaluate(() => {
+    const cv = document.getElementById('cv');
+    const ctx = cv.getContext('2d');
+    const img = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    let line = 0, scat = 0, dot = 0;
+    for (let i = 0; i < img.length; i += 4) {
+      const r = img[i], g = img[i + 1], b = img[i + 2];
+      if (Math.abs(r - 37) < 26 && Math.abs(g - 99) < 26 && Math.abs(b - 235) < 26) line++;
+      if (Math.abs(r - 220) < 26 && Math.abs(g - 38) < 26 && Math.abs(b - 38) < 26) scat++;
+      if (Math.abs(r - 124) < 26 && Math.abs(g - 58) < 26 && Math.abs(b - 237) < 26) dot++;
+    }
+    return { line, scat, dot };
+  });
+  check('折线/散点/点图都绘出了各自颜色',
+    chartPx.line > 50 && chartPx.scat > 30 && chartPx.dot > 30, JSON.stringify(chartPx));
+  // 饼图单独建（它很大，会盖住其它小图），再查像素
+  await typeCmd('pi=PieChart[{3,5,2,4}]');
+  await page.waitForTimeout(300);
+  const piePx = await page.evaluate(() => {
+    const cv = document.getElementById('cv');
+    const ctx = cv.getContext('2d');
+    const img = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    let pie = 0;
+    for (let i = 0; i < img.length; i += 4) {
+      const r = img[i], g = img[i + 1], b = img[i + 2];
+      if (Math.abs(r - 239) < 30 && Math.abs(g - 68) < 30 && Math.abs(b - 68) < 30) pie++;
+    }
+    return pie;
+  });
+  check('饼图绘出扇区', piePx > 200, String(piePx));
+  const pieBox = await page.evaluate(() => window.__ggbpyDebug.chartBoxes().pi);
+  check('饼图也有拖拽命中盒', !!pieBox, JSON.stringify(pieBox));
+  // 2) 拖动柱状图：offset 与命中盒同步位移
+  // 清场：退出选择模式 + 取消任何激活的作图工具（否则 pointerdown 会被工具拦截）
+  if (await page.evaluate(() => window.__ggbpyDebug.selectMode())) {
+    await page.click('#btn-select');
+    await page.waitForTimeout(200);
+  }
+  const tsDrag = await page.evaluate(() => window.__ggbpyDebug.toolState());
+  if (tsDrag && tsDrag.activeTool) {
+    const tbtn = await page.$('#cat-tools .tool-btn[data-tool="' + tsDrag.activeTool + '"]');
+    if (tbtn) { await tbtn.click(); await page.waitForTimeout(200); }
+  }
+  const box0 = (await page.evaluate(() => window.__ggbpyDebug.chartBoxes())).bc;
+  const cx0 = cvBox.x + (box0.x0 + box0.x1) / 2, cy0 = cvBox.y + (box0.y0 + box0.y1) / 2;
+  const beforeOff = await (await page.request.get(BASE + '/api/state')).json();
+  const off0 = (beforeOff.elements.find((e) => e.label === 'bc') || {}).offset;
+  await page.mouse.move(cx0, cy0);
+  await page.mouse.down();
+  await page.mouse.move(cx0 + 130, cy0 - 70, { steps: 8 });
+  await page.waitForTimeout(400);
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const afterState = await (await page.request.get(BASE + '/api/state')).json();
+  const off1 = (afterState.elements.find((e) => e.label === 'bc') || {}).offset;
+  const box1 = await page.evaluate(() => window.__ggbpyDebug.chartBoxes().bc);
+  const dBoxX = Math.round(box1.x0 - box0.x0), dBoxY = Math.round(box1.y0 - box0.y0);
+  check('拖动统计图 → 整张图整体位移（命中盒位移 = 鼠标位移）',
+    off1 && (off1[0] !== off0[0] || off1[1] !== off0[1]) && Math.abs(dBoxX - 130) <= 3 && Math.abs(dBoxY + 70) <= 3,
+    'offset ' + JSON.stringify(off0) + '→' + JSON.stringify(off1) + ' 盒位移=' + dBoxX + ',' + dBoxY);
+  // 3) 撤销回退整体移动
+  await page.evaluate(() => fetch('/api/undo', { method: 'POST' }));
+  await page.waitForTimeout(300);
+  const undoState = await (await page.request.get(BASE + '/api/state')).json();
+  const off2 = (undoState.elements.find((e) => e.label === 'bc') || {}).offset;
+  check('撤销回退统计图整体移动', off2 && Math.abs(off2[0] - off0[0]) < 1e-6 && Math.abs(off2[1] - off0[1]) < 1e-6,
+    JSON.stringify(off2));
+  // 4) 悬停统计图 → 只提示名称
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  const box2 = await page.evaluate(() => window.__ggbpyDebug.chartBoxes().bc);
+  await page.mouse.move(cvBox.x + (box2.x0 + box2.x1) / 2, cvBox.y + (box2.y0 + box2.y1) / 2);
+  await page.waitForTimeout(320);
+  const chTip = await page.evaluate(() => window.__ggbpyDebug.hoverTip());
+  check('悬停统计图提示名称（不堆数据）',
+    !!chTip && chTip.nameOnly === true, JSON.stringify(chTip));
+
+  // -------------------------------------------------------------------------
   section('K. 会话隔离（cookie 持久 + 新上下文独立）');
   await clear();
   await page.waitForTimeout(300);

@@ -5,6 +5,9 @@
 - 拟合状态：_fitline_state（最小二乘直线）、_fit_silent_fit（静默调用 scipy，避免 OptimizeWarning）
 - 条形图：_barchart_state（解析 x(y)=v 形式的标签，引用 _REF_X/_REF_DOT）
 - 3D 统计：_fitsphere_state（最小二乘球）、_fitplane_state（最小二乘平面）
+- 统计图状态：_linechart_state（折线）/ _scatter_state（散点）/ _dotplot_state（点图）
+- 三维统计图网格：_bars3d_mesh（柱）/ _scatter3d_mesh（散点标记）/ _surface3d_mesh（高度场）
+  注：统计图网格**非凸**，不能用 _normalize_mesh（其按质心判外向），面序在此手工保证外向。
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ import math
 import re
 from typing import Dict, List, Optional, Tuple
 
+from .elements import GeoError
 from .tolerance import COARSE, COORD, EPSILON
 
 from .geo2d import _line_state
@@ -22,6 +26,12 @@ _REF_X = re.compile(r"^([xyXY])\((.+)\)$")
 _REF_DOT = re.compile(r"^(.+)\.([xyXY])$")
 
 __all__ = [
+    "_linechart_state",
+    "_scatter_state",
+    "_dotplot_state",
+    "_bars3d_mesh",
+    "_scatter3d_mesh",
+    "_surface3d_mesh",
     "_median",
     "_mode",
     "_variance",
@@ -137,3 +147,119 @@ def _fitplane_state(items):
                      "ax": float(ctr[0]), "ay": float(ctr[1]), "az": float(ctr[2]),
                      "ux": ux, "uy": uy, "uz": uz, "vx": vx, "vy": vy, "vz": vz,
                      "fit": True}}
+
+
+# ---------------------------------------------------------------------------
+# 统计图状态（LineChart / ScatterPlot / DotPlot）
+# ---------------------------------------------------------------------------
+
+def _linechart_state(el, d):
+    """折线图状态：单序列（x 默认 1..n）或 x/y 双序列。
+
+    注意：必须**返回**完整状态（而不是只改元素属性后返回 {}）——计算记忆命中时
+    只会 apply_state(缓存字典)，不会再调用本函数，否则新元素的数据会空。
+    """
+    if not d:
+        return {}
+    if len(d) == 1:
+        ys = [float(v) for v in d[0].items]
+        xs = [float(i + 1) for i in range(len(ys))]
+    else:
+        xs = [float(v) for v in d[0].items]
+        ys = [float(v) for v in d[1].items]
+    if not xs or len(xs) != len(ys):
+        raise GeoError("LineChart 的 x/y 序列长度须相同且非空")
+    return {"xs": xs, "ys": ys}
+
+
+def _scatter_state(el, d):
+    """散点图状态：d[0] 为点列表（取前两维）或数值列表（x 用序号）。"""
+    if not d:
+        return {}
+    src = d[0]
+    if getattr(src, "itemkind", "") in ("number", "angle"):
+        return {"pts": [[float(i + 1), float(v)] for i, v in enumerate(src.items)]}
+    pts = []
+    for p in src.items:
+        if p is None or len(p) < 2:
+            raise GeoError("ScatterPlot 需要点列表")
+        pts.append([float(p[0]), float(p[1])])
+    return {"pts": pts}
+
+
+def _dotplot_state(el, d):
+    """点图状态：同一取值重复出现时向上叠点（值相同 → 同一列）。"""
+    if not d:
+        return {}
+    vals = sorted(float(v) for v in d[0].items)
+    stacks = []
+    for v in vals:
+        level = 0
+        while any(abs(sx - v) <= COORD and sl == level for sx, sl in stacks):
+            level += 1
+        stacks.append([v, level])
+    return {"values": vals, "stacks": stacks}
+
+
+# ---------------------------------------------------------------------------
+# 三维统计图网格（非凸：面序手工保证外向）
+# ---------------------------------------------------------------------------
+
+def _box_faces(verts, x0, x1, y0, y1, z0, z1):
+    """向 verts 追加一个轴对齐长方体（8 顶点），返回 6 个外向面（CCW）。"""
+    b = len(verts)
+    verts.extend([[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
+                  [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]])
+    return [[b + 0, b + 3, b + 2, b + 1],   # 底 (−z)
+            [b + 4, b + 5, b + 6, b + 7],   # 顶 (+z)
+            [b + 0, b + 1, b + 5, b + 4],   # 前 (−y)
+            [b + 1, b + 2, b + 6, b + 5],   # 右 (+x)
+            [b + 2, b + 3, b + 7, b + 6],   # 后 (+y)
+            [b + 3, b + 0, b + 4, b + 7]]   # 左 (−x)
+
+
+def _bars3d_mesh(values, bar: float = 0.7, depth: float = 0.7, gap: float = 1.0):
+    """柱状图网格：第 i 根柱高 values[i]，底边放在 z=0、类别轴 x、进深 y。"""
+    verts, faces = [], []
+    for i, v in enumerate(values):
+        h = float(v)
+        if h < 0:
+            raise GeoError("BarChart3D 需要非负数据")
+        x0 = i * gap
+        faces.extend(_box_faces(verts, x0, x0 + bar, 0.0, depth, 0.0, h))
+    return verts, faces
+
+
+def _scatter3d_mesh(points, r: float = 0.12):
+    """散点图网格：每个三维点放一个正八面体标记（6 顶点 / 8 面，外向）。"""
+    verts, faces = [], []
+    for x, y, z in points:
+        b = len(verts)
+        verts.extend([[x + r, y, z], [x - r, y, z], [x, y + r, z],
+                      [x, y - r, z], [x, y, z + r], [x, y, z - r]])
+        faces.extend([[b + 0, b + 2, b + 4], [b + 2, b + 1, b + 4],
+                      [b + 1, b + 3, b + 4], [b + 3, b + 0, b + 4],
+                      [b + 2, b + 0, b + 5], [b + 1, b + 2, b + 5],
+                      [b + 3, b + 1, b + 5], [b + 0, b + 3, b + 5]])
+    return verts, faces
+
+
+def _surface3d_mesh(values, cols: int, cell: float = 1.0):
+    """三维高度场网格：values 按行优先展开为 rows×cols 的 z 值。"""
+    if cols < 2:
+        raise GeoError("SurfaceChart3D 的列数须 ≥ 2")
+    rows = int(math.ceil(len(values) / float(cols)))
+    if rows < 2:
+        raise GeoError("SurfaceChart3D 需要至少两行数据")
+    verts = []
+    for i in range(rows):
+        for j in range(cols):
+            k = i * cols + j
+            z = float(values[k]) if k < len(values) else 0.0
+            verts.append([j * cell, i * cell, z])
+    faces = []
+    for i in range(rows - 1):
+        for j in range(cols - 1):
+            a = i * cols + j
+            faces.append([a, a + 1, a + cols + 1, a + cols])
+    return verts, faces

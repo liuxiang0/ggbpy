@@ -136,6 +136,13 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第二十五批（2026-10-02 · 统计图全家桶 + 可整体移动 + 三维统计图）**：
+  - **新增 2D 图型**：`LineChart`（折线，支持单序列或 x/y 双序列）、`ScatterPlot`（散点，支持点列表/数值列表/x·y 双序列）、`DotPlot`（点图，相同值向上叠点）；与既有 `BarChart`/`Histogram`/`BoxPlot`/`PieChart` 共六类
+  - **每张统计图都是一个可整体移动的对象**：元素新增世界坐标 `offset`（`GeoChart2D` 基类），前端绘制时整张图一起平移（柱/箱/扇区/折线/散点同步），**鼠标直接拖动整张图**即可在平面上移动，可撤销；`move(图, x, y)` 设偏移、`shift(图, dx, dy)` 累加；`.ggk` v4 保存 offset（旧文件兼容）
+  - **新增三维统计图**：`BarChart3D`（每根柱一个长方体）、`ScatterPlot3D`（每个点一个八面体标记）、`SurfaceChart3D`（高度场网格）；走既有 `polyhedron/mesh` 渲染管线，随 3D 视图旋转/缩放/遮挡；统计图网格**非凸**，面序在构造时手工保证外向（不用 `_normalize_mesh` 的质心外向化）
+  - **命名规则**：统计图使用可辨识前缀 `bc1`（条形/直方图）、`bp1`（箱线）、`pie1`（饼）、`lc1`（折线）、`sc1`（散点）、`dp1`（点图）、`bc3_1`/`sc3_1`/`sf3_1`（三维），不再落到默认字母池（此前饼图/箱线图会被命名成 `a`、`b`）
+  - **修掉一个潜伏真 bug**：统计图的状态函数原是「改元素属性 + 返回 `{}`」，而**计算记忆命中时只回放返回值、不再调用函数** → 同一 `defn` 第二次创建时新元素数据为空（浏览器里实测 `lc.xs=0`、`pie.items=0`）。改为返回完整状态字典（`{xs,ys}` / `{pts}` / `{values,stacks}` / `{items,total}` / `{five,n}`），memo 回放正确
+  - 检测：2D 内核 +29（167）、2D API +13（44）、2D 前端 +7（53）、3D 前端 +8（142）；覆盖命名/偏移/move·shift/锁定/`.ggk` 往返/三维网格欧拉与面序/拖动像素位移/悬停名称
 - **第二十四批（2026-10-02 · 第十八批收尾：统计子模块 + 前端数据表外置）**：
   - **补齐第十八批（内核/前端拆分）尚未完成的范围**：新增 **`kernel/stats.py`**（8 函数 / 139 行：`_median`/`_mode`/`_variance`、`_fitline_state`/`_fit_silent_fit`、`_barchart_state`、`_fitsphere_state`/`_fitplane_state`）与随迁常量 `_REF_X`/`_REF_DOT`；只依赖 `math`/`re`/`tolerance`/`geo2d`，`commands.py` **6,192 → 6,086 行**
   - 前端新增 **`static/data.js`**（纯数据 102 行：`CAS_COMMANDS` 11 条 / `TOOLS` 工具定义 / `TOOL_CATS` 分类），`app.js` **5,631 → 5,542 行**；加载顺序 `i18n.js → data.js → app.js`，缺文件时退化为空表
@@ -169,7 +176,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 50 + 会话 23 + 2D 内核 138 + 2D API 31 + 3D 490/181/134 + 2D 前端 46 = 1139 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 50 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 53 = 1196 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

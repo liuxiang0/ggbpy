@@ -14,7 +14,8 @@ import re
 from typing import Callable, Dict, List, Optional, Tuple
 
 from .elements import (
-    EPSILON, Geo3D, GeoAngle, GeoArc, GeoBarChart, GeoBoolean, GeoCircle, GeoConic,
+    EPSILON, Geo3D, GeoAngle, GeoArc, GeoBarChart, GeoBoolean, GeoChart2D, GeoCircle, GeoConic,
+    GeoDotPlot, GeoLineChart, GeoScatterPlot,
     GeoBoxPlot, GeoComplex, GeoCurve, GeoError, GeoFunction, GeoImage, GeoImplicit, GeoInequality, GeoLine, GeoList,
     GeoLocus, GeoMatrix, GeoNumber, GeoPolar, GeoPoint, GeoPolygon, GeoPolyline,
     GeoPie, GeoRay, GeoResult, GeoSegment, GeoSumRect, GeoText, GeoVector,
@@ -121,6 +122,10 @@ from .stats import (  # noqa: F401
     _barchart_state,
     _fitsphere_state,
     _fitplane_state,
+)
+from .stats import (  # noqa: F401
+    _bars3d_mesh, _dotplot_state, _linechart_state, _scatter3d_mesh, _scatter_state,
+    _surface3d_mesh,
 )
 from .stats import _REF_DOT, _REF_X  # noqa: F401
 from .tolerance import EPSILON, TIGHT, COORD, ZERO_SQ, LOOSE, COARSE, NEGLIGIBLE, ROOT_TOL, OPT_XATOL, OPT_FATOL  # 统一数值容差（见 kernel/tolerance.py）
@@ -2370,9 +2375,7 @@ def _cmd_piechart(cons, defn, args):
         tot = sum(items)
         if tot <= 0:
             raise GeoError("饼图数据总和须为正")
-        el.items = items
-        el.total = tot
-        return {}
+        return {"items": items, "total": tot}
 
     el.set_deps([L], fn)
     el.compute()
@@ -4895,9 +4898,7 @@ def _cmd_boxplot(cons, defn, args):
 
     def fn(d):
         five, n = calc(d)
-        el.five = five
-        el.n = n
-        return {}
+        return {"five": five, "n": n}
 
     el.set_deps(deps, fn)
     el.compute()
@@ -4927,6 +4928,166 @@ def _cmd_barchart(cons, defn, args):
     el.free = False
     el.set_deps(deps, lambda d: _barchart_state(d[0] if d else _anon_list(items)))
     return cons.add(el)
+
+
+def _num_series(cons, args):
+    """解析数值序列：{..} 内联 / 数值列表标签 / 多个数值。返回 (values, deps)。"""
+    if len(args) == 1:
+        raw = args[0].strip()
+        cand = _lookup(cons, raw)
+        if raw.startswith("{") or (cand is not None and cand.kind == "list"):
+            L = _list_arg(cons, raw)
+            if L.itemkind not in ("number", "angle"):
+                raise GeoError("需要数值列表")
+            return [float(v) for v in L.items], [L]
+    return [eval_number(cons, a) for a in args], []
+
+
+def _cmd_linechart(cons, defn, args):
+    """LineChart[数值列表] / LineChart[x列表, y列表] → 折线图（世界坐标折线，可整体拖动）。"""
+    if not args:
+        raise GeoError("LineChart 需要数值列表")
+    if len(args) == 2:
+        xs, dxs = _num_series(cons, [args[0]])
+        ys, dys = _num_series(cons, [args[1]])
+        deps = dxs + dys
+        if not xs or len(xs) != len(ys):
+            raise GeoError("LineChart 的 x/y 序列长度须相同且非空")
+    elif len(args) == 1:
+        ys, deps = _num_series(cons, args)
+        xs = [float(i + 1) for i in range(len(ys))]
+    else:
+        ys, deps = _num_series(cons, list(args))
+        xs = [float(i + 1) for i in range(len(ys))]
+    if not ys:
+        raise GeoError("LineChart 数据为空")
+    if len(xs) != len(ys):
+        raise GeoError("LineChart 的 x/y 序列长度须相同且非空")
+    el = GeoLineChart(label_of(defn), defn)
+    el.free = False
+    if deps:
+        el.set_deps(deps, lambda d: _linechart_state(el, d))
+    else:
+        el.xs, el.ys = xs, ys
+    return cons.add(el)
+
+
+def _cmd_scatterplot(cons, defn, args):
+    """ScatterPlot[点列表] / ScatterPlot[数值列表] / ScatterPlot[x列表, y列表] → 散点图。"""
+    if not args:
+        raise GeoError("ScatterPlot 需要数据")
+    pts, deps = [], []
+    if len(args) == 1:
+        raw = args[0].strip()
+        cand = _lookup(cons, raw)
+        if raw.startswith("{") or (cand is not None and cand.kind == "list"):
+            L = _list_arg(cons, raw)
+            deps = [L]
+            if L.itemkind in ("point", "point3d"):
+                pts = [[float(p[0]), float(p[1])] for p in L.items]
+            elif L.itemkind in ("number", "angle"):
+                pts = [[float(i + 1), float(v)] for i, v in enumerate(L.items)]
+            else:
+                raise GeoError("ScatterPlot 需要点列表或数值列表")
+        else:
+            pts = [[1.0, float(eval_number(cons, args[0]))]]
+    elif len(args) == 2:
+        xs, dxs = _num_series(cons, [args[0]])
+        ys, dys = _num_series(cons, [args[1]])
+        deps = dxs + dys
+        if not xs or len(xs) != len(ys):
+            raise GeoError("ScatterPlot 的 x/y 序列长度须相同且非空")
+        pts = [[xs[i], ys[i]] for i in range(len(xs))]
+    else:
+        raise GeoError("ScatterPlot 需要点列表或 x/y 两个序列")
+    if not pts:
+        raise GeoError("ScatterPlot 数据为空")
+    el = GeoScatterPlot(label_of(defn), defn)
+    el.free = False
+    if deps:
+        el.set_deps(deps, lambda d: _scatter_state(el, d))
+    else:
+        el.pts = pts
+    return cons.add(el)
+
+
+def _cmd_dotplot(cons, defn, args):
+    """DotPlot[数值列表] → 点图（相同取值向上叠点，可整体拖动）。"""
+    vals, deps = _num_series(cons, args)
+    if not vals:
+        raise GeoError("DotPlot 需要数值数据")
+    el = GeoDotPlot(label_of(defn), defn)
+    el.free = False
+    if deps:
+        el.set_deps(deps, lambda d: _dotplot_state(el, d))
+    else:
+        vals = sorted(float(v) for v in vals)
+        stacks = []
+        for v in vals:
+            level = 0
+            while any(abs(sx - v) <= COORD and sl == level for sx, sl in stacks):
+                level += 1
+            stacks.append([v, level])
+        el.values, el.stacks = vals, stacks
+    return cons.add(el)
+
+
+# ---------------------------------------------------------------------------
+# 三维统计图（网格对象，走既有 polyhedron 渲染管线）
+# ---------------------------------------------------------------------------
+
+def _cmd_barchart3d(cons, defn, args):
+    """BarChart3D[数值列表] → 三维柱状图（每根柱为长方体，合成为一个网格对象）。"""
+    vals, deps = _num_series(cons, args)
+    if not vals:
+        raise GeoError("BarChart3D 需要数值数据")
+
+    def state(d):
+        values = [float(v) for v in d[0].items] if d else vals
+        verts, faces = _bars3d_mesh(values)
+        from . import mesh_store
+        return {"objtype": "polyhedron", "solid": "chart_bar3d",
+                "data": {"verts": verts, "faces": faces, "edges": mesh_store.edges_of(faces)}}
+
+    return _mk(cons, Geo3D, "geo3d", defn, deps, state)
+
+
+def _cmd_scatterplot3d(cons, defn, args):
+    """ScatterPlot3D[三维点列表] → 三维散点图（每个点放一个八面体标记）。"""
+    if len(args) != 1:
+        raise GeoError("ScatterPlot3D 需要三维点列表，如 {(1,2,3),(4,5,6)}")
+    L = _list_arg(cons, args[0])
+    if L.itemkind != "point3d":
+        raise GeoError("ScatterPlot3D 需要三维点列表")
+
+    def build(d):
+        pts = [[float(p[0]), float(p[1]), float(p[2])] for p in d[0].items]
+        verts, faces = _scatter3d_mesh(pts)
+        from . import mesh_store
+        return {"objtype": "polyhedron", "solid": "chart_scatter3d",
+                "data": {"verts": verts, "faces": faces, "edges": mesh_store.edges_of(faces)}}
+
+    return _mk(cons, Geo3D, "geo3d", defn, [L], build)
+
+
+def _cmd_surfacechart3d(cons, defn, args):
+    """SurfaceChart3D[数值列表, 列数] → 三维高度场（统计曲面图，行优先填充）。"""
+    if len(args) != 2:
+        raise GeoError("SurfaceChart3D 需要数值列表与列数，如 SurfaceChart3D[{1,2,3,4}, 2]")
+    vals, deps = _num_series(cons, [args[0]])
+    cols = int(round(eval_number(cons, args[1])))
+    if not vals:
+        raise GeoError("SurfaceChart3D 数据为空")
+    _surface3d_mesh(vals, cols)          # 提前校验行/列数
+
+    def state(d):
+        values = [float(v) for v in d[0].items] if d else vals
+        verts, faces = _surface3d_mesh(values, cols)
+        from . import mesh_store
+        return {"objtype": "polyhedron", "solid": "chart_surface3d",
+                "data": {"verts": verts, "faces": faces, "edges": mesh_store.edges_of(faces)}}
+
+    return _mk(cons, Geo3D, "geo3d", defn, deps, state)
 
 
 def _anon_list(items):
@@ -5594,6 +5755,9 @@ DISPLAY_NAMES = {
     "fitsphere": "FitSphere", "fitline": "FitLine", "fitpoly": "FitPoly", "fitexpr": "FitExpr",
     "pointoncircle": "PointOnCircle", "randompointin": "RandomPointIn",
     "anglebisector": "AngleBisector", "barchart": "BarChart", "piechart": "PieChart",
+    "linechart": "LineChart", "scatterplot": "ScatterPlot", "dotplot": "DotPlot",
+    "barchart3d": "BarChart3D", "scatterplot3d": "ScatterPlot3D",
+    "surfacechart3d": "SurfaceChart3D",
     "boxplot": "BoxPlot", "histogram": "Histogram", "circumcircle": "CircumCircle",
     "rigidpolygon": "RigidPolygon", "randombetween": "RandomBetween",
     "areparallel": "AreParallel", "areperpendicular": "ArePerpendicular",
@@ -5658,6 +5822,12 @@ ALIASES = {
     "左端点矩形和": "leftsum", "右端点矩形和": "rightsum", "中点矩形和": "midpointsum",
     "下和": "lowersum", "上和": "uppersum", "梯形和": "trapezoidalsum", "矩形和": "rectanglesum",
     "饼图": "piechart", "扇形统计图": "piechart",
+    "折线图": "linechart", "折线": "linechart",
+    "散点图": "scatterplot", "散布图": "scatterplot",
+    "点图": "dotplot", "点阵图": "dotplot",
+    "三维柱状图": "barchart3d", "三维条形图": "barchart3d",
+    "三维散点图": "scatterplot3d",
+    "三维曲面图": "surfacechart3d", "高度场": "surfacechart3d",
     "分组直方图": "histogram", "直方图分组": "histogram",
     "下四分位数": "q1", "上四分位数": "q3", "四分位距": "iqr", "箱线图": "boxplot",
     "迭代": "iteration", "迭代表": "iterationlist", "迭代序列": "iterationlist",
@@ -5704,6 +5874,8 @@ RESULT_KINDS = {
         "length": "number", "sort": "list", "fitline": "line", "fitpoly": "function",
         "sphere": "geo3d", "plane": "geo3d", "cube": "geo3d",
         "surface": "geo3d", "fitplane": "geo3d", "mesh": "geo3d",
+        "barchart3d": "geo3d", "scatterplot3d": "geo3d", "surfacechart3d": "geo3d",
+        "linechart": "linechart", "scatterplot": "scatterplot", "dotplot": "dotplot",
         "surfaceparam": "geo3d", "implicitsurface": "geo3d",
         "centroid": "point", "fitsphere": "geo3d", "boundingbox": "geo3d", "covariance": "matrix",
         "covarianceellipsoid": "geo3d", "surfaceisoline": "geo3d",
@@ -5763,6 +5935,11 @@ def _label_kind(cons, lname: str, args) -> str:
     曲线/多边形等图形。点反演仍按点命名（A,B,C…），其余反演像用独立的 inv1,inv2…
     前缀（小写开头，见 Construction.auto_label）——避免图形被命名成"下一个点"。
     """
+    # 三维统计图：虽然结果类型是 geo3d，但用独立的命名前缀（bc3_/sc3_/sf3_）便于识别
+    _chart3d = {"barchart3d": "chart3dbar", "scatterplot3d": "chart3dscatter",
+                "surfacechart3d": "chart3dsurface"}
+    if lname in _chart3d:
+        return _chart3d[lname]
     if lname != "invert":
         return _result_kind(lname)
     try:
@@ -5822,6 +5999,9 @@ COMMANDS = {
     "fitexpr": _cmd_fitexpr,
     "sphere": _cmd_sphere, "surface": _cmd_surface, "fitplane": _cmd_fitplane,
     "mesh": _cmd_mesh, "surfaceparam": _cmd_surface_param, "implicitsurface": _cmd_implicit_surface,
+    "linechart": _cmd_linechart, "scatterplot": _cmd_scatterplot, "dotplot": _cmd_dotplot,
+    "barchart3d": _cmd_barchart3d, "scatterplot3d": _cmd_scatterplot3d,
+    "surfacechart3d": _cmd_surfacechart3d,
     "fitsphere": _cmd_fitsphere, "boundingbox": _cmd_bbox, "covariance": _cmd_covariance,
     "covarianceellipsoid": _cmd_cov_ellipsoid, "surfaceisoline": _cmd_isoline,
     "convexhull": _cmd_convexhull, "surfacepoint": _cmd_surfacepoint,

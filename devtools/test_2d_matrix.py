@@ -583,6 +583,153 @@ if err_m is None:
           str(c_m5.order))
 
 # ---------------------------------------------------------------------------
+section("N. 统计图（柱/箱/饼/折线/散点/点图 + 整体移动）")
+c_ch, err_ch = build(["D={3,1,4,1,5,9,2,6}", "bc=BarChart[D]", "hc=Histogram[D,4]", "bp=BoxPlot[D]",
+                      "pi=PieChart[{3,5,2,4}]", "lc=LineChart[D]", "lc2=LineChart[{1,2,3},{4,5,7}]",
+                      "sc=ScatterPlot[{(1,2),(2,4),(3,3)}]", "scn=ScatterPlot[{1,4,9}]",
+                      "dp=DotPlot[{1,2,2,3,1}]"])
+check("统计图用例构造", err_ch is None, str(err_ch))
+if err_ch is None:
+    d_bc, d_bp, d_pi = drawn(c_ch, "bc"), drawn(c_ch, "bp"), drawn(c_ch, "pi")
+    d_lc, d_lc2, d_sc, d_scn, d_dp = (drawn(c_ch, "lc"), drawn(c_ch, "lc2"), drawn(c_ch, "sc"),
+                                      drawn(c_ch, "scn"), drawn(c_ch, "dp"))
+    check("BarChart 频数表非空", len(d_bc["bins"]) > 0 and sum(d_bc["counts"]) == 8,
+          "%s/%s" % (d_bc["bins"], d_bc["counts"]))
+    check("BoxPlot 五数有序（min≤Q1≤中位≤Q3≤max）",
+          d_bp["five"] == sorted(d_bp["five"]) and d_bp["n"] == 8, str(d_bp["five"]))
+    check("PieChart 总和 = 14 且扇形数与数据一致",
+          close(d_pi["total"], 14, 1e-12) and len(d_pi["items"]) == 4, str(d_pi["total"]))
+    check("LineChart 单序列 → x=1..8、y=数据",
+          d_lc["xs"] == [1.0 * i for i in range(1, 9)] and d_lc["ys"] == [3, 1, 4, 1, 5, 9, 2, 6],
+          str(d_lc["xs"])[:40])
+    check("LineChart 双序列 → 用给定 x/y", d_lc2["xs"] == [1, 2, 3] and d_lc2["ys"] == [4, 5, 7], "")
+    check("ScatterPlot 点列表 → 保持坐标", d_sc["pts"] == [[1, 2], [2, 4], [3, 3]], str(d_sc["pts"]))
+    check("ScatterPlot 数值列表 → x 用序号", d_scn["pts"] == [[1, 1], [2, 4], [3, 9]], str(d_scn["pts"]))
+    check("DotPlot 相同值向上叠点",
+          d_dp["stacks"] == [[1.0, 0], [1.0, 1], [2.0, 0], [2.0, 1], [3.0, 0]], str(d_dp["stacks"]))
+    # 命名前缀（避免落到默认字母池）
+    names = {}
+    for txt in ("BarChart[{1,2}]", "BoxPlot[{1,2}]", "PieChart[{1,2}]",
+                "LineChart[{1,2}]", "ScatterPlot[{1,2}]", "DotPlot[{1,2}]"):
+        before = set(c_ch.order)
+        c_ch.process(txt)
+        names[txt] = [x for x in c_ch.order if x not in before][0]
+    check("统计图自动命名有可辨识前缀（bc/bp/pie/lc/sc/dp）",
+          all(names[k].startswith(v) for k, v in
+              (("BarChart[{1,2}]", "bc"), ("BoxPlot[{1,2}]", "bp"), ("PieChart[{1,2}]", "pie"),
+               ("LineChart[{1,2}]", "lc"), ("ScatterPlot[{1,2}]", "sc"), ("DotPlot[{1,2}]", "dp"))),
+          str(names))
+    # 整体移动：offset
+    check("统计图默认 offset = [0, 0]",
+          d_bc["offset"] == [0, 0] and d_lc["offset"] == [0, 0] and d_pi["offset"] == [0, 0], "")
+    c_ch.move("bc", 3.0, -2.0)
+    check("move(图, x, y) → 设置整体偏移", c_ch.elements["bc"].offset == [3.0, -2.0],
+          str(c_ch.elements["bc"].offset))
+    check("绘制状态带出 offset（前端据此整体平移）",
+          drawn(c_ch, "bc")["offset"] == [3.0, -2.0], str(drawn(c_ch, "bc")["offset"]))
+    c_ch.shift("bc", 1.0, 1.0)
+    check("shift(图, dx, dy) → 偏移累加", c_ch.elements["bc"].offset == [4.0, -1.0],
+          str(c_ch.elements["bc"].offset))
+    try:
+        c_ch.move("P_missing", 0, 0)
+        check("未知标签 move 报错", False, "未报错")
+    except Exception:
+        check("未知标签 move 报错", True, "")
+    try:
+        c_ch.move("pi", float("nan"), 0)
+        check("统计图 move 接受任意数值（不做几何校验）", True, "")
+    except Exception as e:
+        check("统计图 move 接受任意数值（不做几何校验）", False, str(e))
+    c_ch.elements["bc"].locked = True
+    try:
+        c_ch.move("bc", 0, 0)
+        check("锁定统计图不可移动", False, "未报错")
+    except Exception:
+        check("锁定统计图不可移动", True, "")
+    c_ch.elements["bc"].locked = False
+    # 派生对象（非统计图）仍不可直接移动
+    c_ch.process("Q=(0,0)"); c_ch.process("R=(2,0)"); c_ch.process("sg=Segment[Q,R]")
+    try:
+        c_ch.move("sg", 0, 0)
+        check("派生对象（线段）仍不可直接移动", False, "未报错")
+    except Exception:
+        check("派生对象（线段）仍不可直接移动", True, "")
+    # .ggk 往返保留 offset
+    ggk = c_ch.save_ggk((-10, 10, -10, 10))
+    c_ch2 = Construction()
+    c_ch2.load_json(ggk)
+    check(".ggk 往返保留统计图 offset", c_ch2.elements["bc"].offset == [4.0, -1.0],
+          str(c_ch2.elements.get("bc").offset))
+    # LineChart 长度不一致 → 明确报错（process 把 GeoError 转成 "错误: …" 消息）
+    msg_bad = c_ch.process("bad=LineChart[{1,2,3},{1,2}]")
+    check("LineChart 长度不一致报错", msg_bad.startswith("错误") and "长度" in msg_bad, msg_bad[:40])
+
+section("O. 三维统计图（柱/散点/高度场 → 网格对象）")
+c_3d, err_3d = build(["b3=BarChart3D[{1,3,2}]", "PTS={(1,1,1),(2,2,3),(3,1,2)}",
+                      "s3=ScatterPlot3D[PTS]", "f3=SurfaceChart3D[{1,2,3,2,3,4,3,4,5},3]"])
+check("三维统计图用例构造", err_3d is None, str(err_3d))
+if err_3d is None:
+    def mesh_of(lab):
+        d = drawn(c_3d, lab)
+        data = d.get("data") or {}
+        return d, data.get("verts", []), data.get("faces", []), data.get("edges", [])
+
+    d, V, F, E = mesh_of("b3")
+    check("BarChart3D：3 根柱 = 24 顶点/18 面（每柱 8/6）",
+          d["objtype"] == "polyhedron" and len(V) == 24 and len(F) == 18, "%d/%d" % (len(V), len(F)))
+    check("BarChart3D：欧拉特征 = 2×柱数", len(V) - len(E) + len(F) == 6, "%d" % (len(V) - len(E) + len(F)))
+    d, V, F, E = mesh_of("s3")
+    check("ScatterPlot3D：3 个标记 = 18 顶点/24 面（正八面体）",
+          len(V) == 18 and len(F) == 24 and len(V) - len(E) + len(F) == 6, "%d/%d" % (len(V), len(F)))
+    d, V, F, E = mesh_of("f3")
+    check("SurfaceChart3D：3×3 高度场 = 9 顶点/4 面（欧拉 = 1）",
+          len(V) == 9 and len(F) == 4 and len(V) - len(E) + len(F) == 1, "%d/%d/%d" % (len(V), len(F), len(V) - len(E) + len(F)))
+
+    # 外向面序：每条柱（8 顶点一组）的面法向应背离该柱中心
+    def component_outward(V, F, size):
+        import math as _m
+        for gi in range(0, len(V), size):
+            grp = V[gi:gi + size]
+            cx = sum(p[0] for p in grp) / len(grp)
+            cy = sum(p[1] for p in grp) / len(grp)
+            cz = sum(p[2] for p in grp) / len(grp)
+            for f in F:
+                if not (gi <= f[0] < gi + size):
+                    continue
+                pts = [V[i] for i in f]
+                fx = sum(p[0] for p in pts) / len(pts)
+                fy = sum(p[1] for p in pts) / len(pts)
+                fz = sum(p[2] for p in pts) / len(pts)
+                nx = ny = nz = 0.0
+                for i in range(len(pts)):
+                    ax, ay, az = pts[i]
+                    bx, by, bz = pts[(i + 1) % len(pts)]
+                    nx += (ay - by) * (az + bz)
+                    ny += (az - bz) * (ax + bx)
+                    nz += (ax - bx) * (ay + by)
+                if nx * (fx - cx) + ny * (fy - cy) + nz * (fz - cz) < 0:
+                    return False
+        return True
+
+    d, V, F, E = mesh_of("b3")
+    check("BarChart3D 面序外向（非凸网格不用质心归一化）", component_outward(V, F, 8), "")
+    d, V, F, E = mesh_of("s3")
+    check("ScatterPlot3D 面序外向", component_outward(V, F, 6), "")
+    # 命名前缀与 state3d 类型
+    names3 = {}
+    before = set(c_3d.order)
+    for txt in ("BarChart3D[{1,2}]", "ScatterPlot3D[{(1,2,3)}]", "SurfaceChart3D[{1,2,3,4},2]"):
+        before = set(c_3d.order)
+        c_3d.process(txt)
+        names3[txt] = [x for x in c_3d.order if x not in before][0]
+    check("三维统计图命名前缀 bc3_/sc3_/sf3_",
+          names3["BarChart3D[{1,2}]"].startswith("bc3_")
+          and names3["ScatterPlot3D[{(1,2,3)}]"].startswith("sc3_")
+          and names3["SurfaceChart3D[{1,2,3,4},2]"].startswith("sf3_"), str(names3))
+    msg_bad3 = c_3d.process("bad3=SurfaceChart3D[{1,2,3,4},1]")
+    check("SurfaceChart3D 列数不足报错", msg_bad3.startswith("错误") and "列" in msg_bad3, msg_bad3[:40])
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

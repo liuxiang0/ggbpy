@@ -880,6 +880,46 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   }
 
   // ---- H. JS 错误 ----
+  section('G2. 三维统计图（柱/散点/高度场）');
+  await clearApi();
+  await page.waitForTimeout(200);
+  for (const line of ['b3=BarChart3D[{1,3,2,4}]', 'P3={(1,1,1),(2,2,3),(3,1,2)}',
+                      's3=ScatterPlot3D[P3]', 'f3=SurfaceChart3D[{1,2,3,2,3,4,3,4,5},3]']) {
+    const r = await api('/api/input', { text: line }, 'POST');
+    check('创建三维统计图 ' + line.split('=')[0], r.json && (r.json.message || '').indexOf('错误') !== 0,
+      (r.json || {}).message);
+  }
+  const st3c = await state3d();
+  const byLabel = {};
+  st3c.forEach((e) => { byLabel[e.label] = e; });
+  check('state3d 含三维柱状图网格（4 柱 = 32 顶点）',
+    byLabel.b3 && byLabel.b3.objtype === 'polyhedron'
+    && ((byLabel.b3.data || {}).verts || []).length === 32,
+    String((((byLabel.b3 || {}).data || {}).verts || []).length));
+  check('state3d 含三维散点图（3 标记 = 18 顶点）',
+    (((byLabel.s3 || {}).data || {}).verts || []).length === 18,
+    String((((byLabel.s3 || {}).data || {}).verts || []).length));
+  check('state3d 含三维高度场（9 顶点）',
+    (((byLabel.f3 || {}).data || {}).verts || []).length === 9,
+    String((((byLabel.f3 || {}).data || {}).verts || []).length));
+  const on3d = await page.evaluate(() => {
+    const cv3 = document.getElementById('cv3d');
+    return document.body.classList.contains('mode3d') || (!!cv3 && getComputedStyle(cv3).display !== 'none');
+  });
+  if (!on3d) { await page.click('#btn-3d'); await page.waitForTimeout(800); }
+  const chart3dPx = await page.evaluate(() => {
+    const c = document.getElementById('cv3d');
+    if (!c) return -1;
+    const ctx = c.getContext('2d');
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (Math.abs(d[i] - d[i + 1]) > 12 || Math.abs(d[i + 1] - d[i + 2]) > 12 || d[i] < 235) n++;
+    }
+    return n;
+  });
+  check('三维统计图在 3D 画布上绘出（非背景像素 > 2000）', chart3dPx > 2000, String(chart3dPx));
+
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));
 
