@@ -4507,6 +4507,31 @@
   var TOOLS = GGB_DATA.TOOLS || {};
   // 工具分类（按点/线/面/圆/圆锥曲线/变换/视图等分组，用类别图标可视化）
   var TOOL_CATS = GGB_DATA.TOOL_CATS || [];
+  // ---------- 顶部下拉菜单（文件/导出/导入/视图/工具）----------
+  (function initMenus() {
+    var menus = document.querySelectorAll('#toolbar .menu');
+    function closeAll(except) {
+      for (var i = 0; i < menus.length; i++) if (menus[i] !== except) menus[i].classList.remove('open');
+    }
+    for (var i = 0; i < menus.length; i++) {
+      (function (m) {
+        var head = m.querySelector('.menu-btn');
+        var list = m.querySelector('.menu-list');
+        if (!head || !list) return;
+        head.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          var willOpen = !m.classList.contains('open');
+          closeAll(null);
+          if (willOpen) m.classList.add('open');
+        });
+        // 点条目后收起菜单（具体动作由各按钮自己的 handler 完成）
+        list.addEventListener('click', function () { m.classList.remove('open'); });
+      })(menus[i]);
+    }
+    document.addEventListener('click', function () { closeAll(null); });
+    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeAll(null); });
+  })();
+
   // 顶部横向分类图标工具栏（GeoGebra 式）
   var activeCat = null;
   function renderCatbar() {

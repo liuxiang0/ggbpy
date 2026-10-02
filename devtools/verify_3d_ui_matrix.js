@@ -80,7 +80,7 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   };
   const open3d = async () => {
     const on = await page.evaluate(() => document.body.classList.contains('mode3d') || !!document.getElementById('cv3d') && getComputedStyle(document.getElementById('cv3d')).display !== 'none');
-    if (!on) { await page.click('#btn-3d'); await page.waitForTimeout(700); }
+    if (!on) { await clickBtn('btn-3d'); await page.waitForTimeout(700); }
     const hasCat = await page.$('.cat-icon[data-cat="d3"]');
     if (hasCat) { await page.click('.cat-icon[data-cat="d3"]'); await page.waitForTimeout(200); }
   };
@@ -115,6 +115,20 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     }
     return n;
   });
+
+  // 顶部按钮已收进下拉菜单（文件/导出/导入/视图/工具）：点击前先展开所在菜单
+  const clickBtn = async (id) => {
+    await page.evaluate((bid) => {
+      const el = document.getElementById(bid);
+      const menu = el && el.closest ? el.closest('#toolbar .menu') : null;
+      if (menu && !menu.classList.contains('open')) {
+        const head = menu.querySelector('.menu-btn');
+        if (head) head.click();
+      }
+    }, id);
+    await page.waitForTimeout(120);
+    await page.click('#' + id);
+  };
 
   // ---- 服务探针 ----
   section('A. 服务与工具栏完整性');
@@ -315,11 +329,11 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   await open3d();
   let cones = (await state3d()).filter(e => /Cone\[/.test(e.defn || ''));
   check('准备：圆锥已创建', cones.length === 1 && !cones[0].error, String(cones.length));
-  await page.click('#btn-undo');
+  await clickBtn('btn-undo');
   await page.waitForTimeout(900);
   cones = (await state3d()).filter(e => /Cone\[/.test(e.defn || ''));
   check('浏览器 undo 移除圆锥', cones.length === 0, String(cones.length));
-  await page.click('#btn-redo');
+  await clickBtn('btn-redo');
   await page.waitForTimeout(900);
   cones = (await state3d()).filter(e => /Cone\[/.test(e.defn || ''));
   check('浏览器 redo 恢复圆锥且 solid 保留', cones.length === 1 && cones[0].solid === 'cone',
@@ -440,13 +454,13 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   const sc5 = els5.filter(e => e.objtype === 'circle3d')[0];
   check('球∩球 → 空间圆渲染元素', !!sc5 && Math.abs((sc5.data || {}).r - Math.sqrt(3)) < 1e-9,
     sc5 ? String(sc5.data.r) : 'missing');
-  await page.click('#btn-undo');
+  await clickBtn('btn-undo');
   await page.waitForTimeout(900);
   els5 = await state3d();
   co5 = els5.filter(e => e.label === 'co')[0];
   check('UI undo 后 wire/locked 保留', !!co5 && co5.wire === true && co5.locked === true,
     co5 ? ('wire=' + co5.wire + ' locked=' + co5.locked) : 'missing');
-  await page.click('#btn-redo');
+  await clickBtn('btn-redo');
   await page.waitForTimeout(900);
   els5 = await state3d();
   co5 = els5.filter(e => e.label === 'co')[0];
@@ -464,7 +478,7 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     if (!btn) continue;
     const [dl] = await Promise.all([
       page.waitForEvent('download', { timeout: 20000 }).catch(() => null),
-      page.click('#' + id),
+      clickBtn(id),                                   // 菜单项：先展开所在下拉菜单
     ]);
     check('#' + id + ' 触发下载 .' + ext, !!dl && new RegExp('\\.' + ext + '$').test(dl.suggestedFilename()),
       dl ? dl.suggestedFilename() : 'no download');
@@ -576,7 +590,7 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   if (gltfBtn) {
     const [dlG] = await Promise.all([
       page.waitForEvent('download', { timeout: 20000 }).catch(() => null),
-      page.click('#btn-gltf'),
+      clickBtn('btn-gltf'),
     ]);
     check('GLTF 按钮触发下载 .gltf', !!dlG && /\.gltf$/.test(dlG.suggestedFilename()),
       dlG ? dlG.suggestedFilename() : 'no download');
@@ -708,7 +722,7 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   const px12 = await nonBgPixels();
   check('凸包已渲染（像素 > 500）', px12 > 500, 'non-bg pixels=' + px12);
   // 帮助面板：筛选 + 点击插入
-  await page.click('#btn-help');
+  await clickBtn('btn-help');
   await page.waitForTimeout(600);
   const hasSearch = await page.$('#help-search');
   check('帮助面板有筛选框', !!hasSearch, hasSearch ? 'ok' : 'missing');
@@ -866,7 +880,7 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   if (svg3Btn) {
     const [dl3] = await Promise.all([
       page.waitForEvent('download', { timeout: 20000 }).catch(() => null),
-      page.click('#btn-svg3d'),
+      clickBtn('btn-svg3d'),
     ]);
     check('SVG·3D 触发下载 .svg', !!dl3 && /\.svg$/.test(dl3.suggestedFilename()),
       dl3 ? dl3.suggestedFilename() : 'no download');
@@ -906,7 +920,7 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
     const cv3 = document.getElementById('cv3d');
     return document.body.classList.contains('mode3d') || (!!cv3 && getComputedStyle(cv3).display !== 'none');
   });
-  if (!on3d) { await page.click('#btn-3d'); await page.waitForTimeout(800); }
+  if (!on3d) { await clickBtn('btn-3d'); await page.waitForTimeout(800); }
   const chart3dPx = await page.evaluate(() => {
     const c = document.getElementById('cv3d');
     if (!c) return -1;

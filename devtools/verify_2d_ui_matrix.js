@@ -34,6 +34,20 @@ function check(name, ok, detail) {
   const dialogQueue = [];                       // 统计图工具需要输入数据 → 排队应答
   page.on('dialog', async (d) => { await d.accept(dialogQueue.length ? dialogQueue.shift() : ''); });
 
+  // 顶部按钮已收进下拉菜单（文件/导出/导入/视图/工具）：点击前先展开所在菜单
+  const clickBtn = async (id) => {
+    await page.evaluate((bid) => {
+      const el = document.getElementById(bid);
+      const menu = el && el.closest ? el.closest('#toolbar .menu') : null;
+      if (menu && !menu.classList.contains('open')) {
+        const head = menu.querySelector('.menu-btn');
+        if (head) head.click();
+      }
+    }, id);
+    await page.waitForTimeout(120);
+    await page.click('#' + id);
+  };
+
   const state = async () => (await (await page.request.get(BASE + '/api/state')).json()).elements || [];
   const byLabel = async (l) => (await state()).filter((e) => e.label === l)[0] || null;
   const clear = async () => {
@@ -127,24 +141,24 @@ function check(name, ok, detail) {
 
   // -------------------------------------------------------------------------
   section('C. 撤销 / 重做 / 清空按钮');
-  await page.click('#btn-undo');
+  await clickBtn('btn-undo');
   await page.waitForTimeout(500);
   const labelsUndo = (await state()).map((e) => e.label).sort();
   check('撤销按钮：恢复删除前的标签集合', JSON.stringify(labelsUndo) === JSON.stringify(labelsBeforeDel),
     labelsUndo.join(',') + ' vs ' + labelsBeforeDel.join(','));
-  await page.click('#btn-redo');
+  await clickBtn('btn-redo');
   await page.waitForTimeout(500);
   const labelsRedo = (await state()).map((e) => e.label).sort();
   check('重做按钮：回到删除后的状态', JSON.stringify(labelsRedo) === JSON.stringify(labelsAfterDel),
     labelsRedo.join(',') + ' vs ' + labelsAfterDel.join(','));
-  await page.click('#btn-clear');
+  await clickBtn('btn-clear');
   await page.waitForTimeout(500);
   check('清空按钮：构造为空（confirm 自动确认）', (await state()).length === 0,
     String((await state()).length));
 
   // -------------------------------------------------------------------------
   section('D. CAS 面板');
-  await page.click('#btn-cas');
+  await clickBtn('btn-cas');
   await page.waitForTimeout(500);
   const casVisible = await page.evaluate(() => document.getElementById('cas-panel').style.display !== 'none');
   check('CAS 面板打开', casVisible);
@@ -155,13 +169,13 @@ function check(name, ok, detail) {
   check('CAS 执行后出现单元', cells > 0, 'cells=' + cells);
   const casText = await page.textContent('#cas-cells');
   check('CAS 结果包含展开式 x^2+2x+1', /x\^?2|x²/i.test(casText || ''), (casText || '').replace(/\s+/g, ' ').slice(0, 60));
-  await page.click('#btn-cas');
+  await clickBtn('btn-cas');
   await page.waitForTimeout(300);
 
   // -------------------------------------------------------------------------
   section('E. 分享按钮');
   await typeCmd('P1=(1,1)');
-  await page.click('#btn-share');
+  await clickBtn('btn-share');
   await page.waitForTimeout(900);
   const msgShare = await page.textContent('#msg');
   check('分享后状态栏给出链接（含 ?s=）', /(\?s=|share)/i.test(msgShare || ''), (msgShare || '').slice(0, 70));
@@ -172,7 +186,7 @@ function check(name, ok, detail) {
   fs.writeFileSync(pngPath, Buffer.from(
     '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000050001' +
     '0d0a2db40000000049454e44ae426082', 'hex'));
-  await page.click('#btn-image');
+  await clickBtn('btn-image');
   await page.setInputFiles('#imgfile', pngPath);
   await page.waitForTimeout(900);
   const imgMsg = await page.textContent('#msg');
@@ -186,9 +200,9 @@ function check(name, ok, detail) {
   check('两次点击基点后创建 Image 元素', imgEls.length >= 1, 'n=' + imgEls.length);
   // 回归：0ms 快击（down→up 无间隔）曾导致待插入图片被清空。
   // 注意用 UI 清空（会同步刷新客户端 elements），否则客户端仍持有旧标签，工具判定会失真。
-  await page.click('#btn-clear');
+  await clickBtn('btn-clear');
   await page.waitForTimeout(500);
-  await page.click('#btn-image');
+  await clickBtn('btn-image');
   await page.setInputFiles('#imgfile', pngPath);
   await page.waitForTimeout(700);
   await page.mouse.click(700, 500);            // 不传 delay → 瞬时点击
@@ -199,7 +213,7 @@ function check(name, ok, detail) {
   await page.waitForTimeout(1100);
   const fastImgs = (await state()).filter((e) => e.kind === 'image');
   check('0ms 快击两次仍能插入图片', fastImgs.length >= 1, 'n=' + fastImgs.length);
-  await page.click('#btn-clear');
+  await clickBtn('btn-clear');
   await page.waitForTimeout(400);
 
   // -------------------------------------------------------------------------
@@ -207,7 +221,7 @@ function check(name, ok, detail) {
   for (const [btn, ext] of [['#btn-svg', '.svg'], ['#btn-png', '.png'], ['#btn-save', '.ggk']]) {
     const [dl] = await Promise.all([
       page.waitForEvent('download', { timeout: 15000 }).catch(() => null),
-      page.click(btn),
+      clickBtn(btn.replace('#', '')),                   // 菜单项：先展开所在下拉菜单
     ]);
     check('导出按钮 ' + btn + ' 触发下载 ' + ext,
       !!dl && dl.suggestedFilename().toLowerCase().endsWith(ext),
@@ -232,13 +246,13 @@ function check(name, ok, detail) {
   // -------------------------------------------------------------------------
   section('I. 语言 / 主题切换不报错');
   const beforeLang = await page.textContent('#panel-title');
-  await page.click('#btn-lang');
+  await clickBtn('btn-lang');
   await page.waitForTimeout(400);
   const afterLang = await page.textContent('#panel-title');
   check('语言切换改变界面文案', beforeLang !== afterLang, (afterLang || '').slice(0, 30));
-  await page.click('#btn-lang');
+  await clickBtn('btn-lang');
   await page.waitForTimeout(300);
-  await page.click('#btn-theme');
+  await clickBtn('btn-theme');
   await page.waitForTimeout(300);
   check('主题切换后页面仍可用（无致命错误）', JS_ERRORS.length === 0, JS_ERRORS.slice(0, 2).join(' | '));
 
@@ -503,7 +517,7 @@ function check(name, ok, detail) {
   // 2) 拖动柱状图：offset 与命中盒同步位移
   // 清场：退出选择模式 + 取消任何激活的作图工具（否则 pointerdown 会被工具拦截）
   if (await page.evaluate(() => window.__ggbpyDebug.selectMode())) {
-    await page.click('#btn-select');
+    await clickBtn('btn-select');
     await page.waitForTimeout(200);
   }
   const tsDrag = await page.evaluate(() => window.__ggbpyDebug.toolState());

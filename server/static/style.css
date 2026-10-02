@@ -23,6 +23,21 @@ html, body { height: 100%; font-family: "Segoe UI", "PingFang SC", "Microsoft Ya
 #toolbar button { padding: 6px 10px; font-size: 13px; border: 1px solid var(--border2); border-radius: 6px; background: var(--panel); cursor: pointer; white-space: nowrap; }
 #toolbar button:hover { background: var(--btn-hover); border-color: var(--accent); }
 #toolbar button.active { background: #2563eb; color: #fff; border-color: var(--accent); }
+
+/* 顶部下拉菜单（文件 / 导出 / 导入 / 视图 / 工具） */
+#toolbar .menu { position: relative; display: inline-block; }
+#toolbar .menu > .menu-btn { padding: 6px 10px; font-size: 13px; border: 1px solid var(--border2);
+  border-radius: 6px; background: var(--panel); cursor: pointer; white-space: nowrap; }
+#toolbar .menu > .menu-btn:hover { background: var(--btn-hover); border-color: var(--accent); }
+#toolbar .menu.open > .menu-btn { background: #2563eb; color: #fff; border-color: var(--accent); }
+#toolbar .menu-list { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 60;
+  min-width: 190px; padding: 4px; background: var(--panel); border: 1px solid var(--border2);
+  border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
+#toolbar .menu.open > .menu-list { display: block; }
+#toolbar .menu-list button { display: block; width: 100%; text-align: left; margin: 1px 0;
+  border: 1px solid transparent; background: transparent; }
+#toolbar .menu-list button:hover { background: var(--btn-hover); border-color: var(--border2); }
+
 #msg { font-size: 13px; color: var(--accent); margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
 #msg.err { color: #dc2626; }
 #stage-wrap { position: relative; flex: 1; overflow: hidden; }

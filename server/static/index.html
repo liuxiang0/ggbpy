@@ -18,33 +18,65 @@
     <button id="btn-help" data-i18n-title="help_t" title="命令帮助">?</button>
     <button id="btn-undo" data-i18n="undo">↶ 撤销</button>
     <button id="btn-redo" data-i18n="redo">↷ 重做</button>
-    <button id="btn-snap" data-i18n="snap">吸附</button>
-    <button id="btn-demo" data-i18n="demo">示例</button>
-    <button id="btn-grid" class="active" data-i18n="grid">网格</button>
-    <button id="btn-axes" class="active" data-i18n="axes">坐标轴</button>
-    <button id="btn-clear" data-i18n="clear">清空</button>
-    <button id="btn-save" data-i18n="save" data-i18n-title="save_t">保存</button>
-    <button id="btn-share" data-i18n="share" data-i18n-title="share_t">分享</button>
-    <button id="btn-svg" data-i18n="svg" title="SVG">SVG</button>
-    <button id="btn-svg3d" data-i18n="svg3d" title="导出 3D 场景的正交投影 SVG（课件/试卷插图）">SVG·3D</button>
-    <button id="btn-png" data-i18n="png" title="PNG">PNG</button>
-    <button id="btn-objin" data-i18n="objin" title="导入 OBJ / STL / glTF / GLB 网格（3D 打印/外部模型）">📥 OBJ</button>
-    <button id="btn-obj" data-i18n="obj" title="导出 3D 网格为 OBJ（3D 视图）">OBJ</button>
-    <button id="btn-stl" data-i18n="stl" title="导出 3D 网格为 STL（3D 打印）">STL</button>
-    <button id="btn-gltf" data-i18n="gltf" title="导出 3D 网格为 glTF 2.0">GLTF</button>
-    <button id="btn-load" data-i18n="load">加载</button>
-    <button id="btn-cas" data-i18n="cas" data-i18n-title="cas_t">CAS</button>
-    <button id="btn-exam" data-i18n="exam" data-i18n-title="exam_btn_t">试卷</button>
     <button id="btn-3d" data-i18n="d3">3D</button>
-    <button id="btn-angunit" title="角度单位：度/弧度 π / Angle unit">°</button>
-    <button id="btn-lang" title="切换语言 / Language">中/EN</button>
-    <button id="btn-kbd" data-i18n="kbd" data-i18n-title="kbd_t" title="数学键盘">⌨</button>
-    <button id="btn-theme" data-i18n-title="theme_t" title="主题/Theme">🌙</button>
-    <button id="btn-tools" data-i18n="tools" data-i18n-title="tools_t" title="几何工具">✏</button>
-    <button id="btn-select" data-i18n="select" data-i18n-title="select_t" title="选择工具">🖱 选择</button>
-    <button id="btn-image" title="插入图片 / Insert image">🖼</button>
-    <button id="btn-script" data-i18n="script" data-i18n-title="script_t" title="命令脚本">📜</button>
-    <button id="btn-macro" data-i18n="macro" data-i18n-title="macro_t" title="自定义宏">🧩</button>
+
+    <!-- 下拉菜单：文件 / 导出 / 导入 / 视图 / 工具（内部按钮 id 保持不变，便于脚本与检测复用） -->
+    <div class="menu" id="m-file">
+      <button class="menu-btn" data-i18n="menu_file">📂 文件 ▾</button>
+      <div class="menu-list">
+        <button id="btn-demo" data-i18n="demo">示例</button>
+        <button id="btn-save" data-i18n="save" data-i18n-title="save_t">保存 .ggk</button>
+        <button id="btn-load" data-i18n="load">加载 .ggk / .ggb</button>
+        <button id="btn-share" data-i18n="share" data-i18n-title="share_t">分享链接</button>
+        <button id="btn-clear" data-i18n="clear">清空画布</button>
+      </div>
+    </div>
+
+    <div class="menu" id="m-export">
+      <button class="menu-btn" data-i18n="menu_export">📤 导出 ▾</button>
+      <div class="menu-list">
+        <button id="btn-svg" data-i18n="svg" title="当前 2D 视图导出为 SVG">SVG（2D）</button>
+        <button id="btn-svg3d" data-i18n="svg3d" title="导出 3D 场景的正交投影 SVG（课件/试卷插图）">SVG·3D（投影）</button>
+        <button id="btn-png" data-i18n="png" title="当前画布导出为 PNG">PNG 图片</button>
+        <button id="btn-obj" data-i18n="obj" title="导出 3D 网格为 OBJ（3D 视图）">OBJ（3D 网格）</button>
+        <button id="btn-stl" data-i18n="stl" title="导出 3D 网格为 STL（3D 打印）">STL（3D 打印）</button>
+        <button id="btn-gltf" data-i18n="gltf" title="导出 3D 网格为 glTF 2.0">glTF 2.0（3D）</button>
+      </div>
+    </div>
+
+    <div class="menu" id="m-import">
+      <button class="menu-btn" data-i18n="menu_import">📥 导入 ▾</button>
+      <div class="menu-list">
+        <button id="btn-objin" data-i18n="objin" title="导入 OBJ / STL / glTF / GLB 网格（3D 打印/外部模型）">三维网格（OBJ/STL/glTF）</button>
+        <button id="btn-image" title="插入图片 / Insert image">🖼 插入图片</button>
+      </div>
+    </div>
+
+    <div class="menu" id="m-view">
+      <button class="menu-btn" data-i18n="menu_view">👁 视图 ▾</button>
+      <div class="menu-list">
+        <button id="btn-grid" class="active" data-i18n="grid">网格</button>
+        <button id="btn-axes" class="active" data-i18n="axes">坐标轴</button>
+        <button id="btn-snap" data-i18n="snap">吸附</button>
+        <button id="btn-angunit" title="角度单位：度/弧度 π / Angle unit">角度单位 °/π</button>
+        <button id="btn-theme" data-i18n-title="theme_t" title="主题/Theme">🌙 主题</button>
+        <button id="btn-lang" title="切换语言 / Language">中/EN 语言</button>
+      </div>
+    </div>
+
+    <div class="menu" id="m-tools">
+      <button class="menu-btn" data-i18n="menu_tools">🧰 工具 ▾</button>
+      <div class="menu-list">
+        <button id="btn-tools" data-i18n="tools" data-i18n-title="tools_t" title="几何工具">✏ 几何工具面板</button>
+        <button id="btn-select" data-i18n="select" data-i18n-title="select_t" title="选择工具">🖱 选择</button>
+        <button id="btn-kbd" data-i18n="kbd" data-i18n-title="kbd_t" title="数学键盘">⌨ 数学键盘</button>
+        <button id="btn-cas" data-i18n="cas" data-i18n-title="cas_t">CAS 计算</button>
+        <button id="btn-exam" data-i18n="exam" data-i18n-title="exam_btn_t">试卷</button>
+        <button id="btn-script" data-i18n="script" data-i18n-title="script_t" title="命令脚本">📜 脚本</button>
+        <button id="btn-macro" data-i18n="macro" data-i18n-title="macro_t" title="自定义宏">🧩 宏</button>
+      </div>
+    </div>
+
     <input type="file" id="file" accept=".ggk,.ggb,.xml,.json,application/xml,application/json" style="display:none">
     <input type="file" id="imgfile" accept="image/*" style="display:none">
     <input type="file" id="objfile" accept=".obj,.stl,.gltf,.glb,text/plain,application/octet-stream,model/gltf+json" style="display:none">
