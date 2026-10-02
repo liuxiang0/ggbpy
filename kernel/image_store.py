@@ -8,9 +8,10 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import re
 from typing import Dict, Optional, Tuple
+
+from . import blob_store
 
 IMAGES: Dict[str, dict] = {}
 
@@ -22,17 +23,16 @@ def put(data_url: str, w: int = 0, h: int = 0) -> str:
     s = (data_url or "").strip()
     if not _DATA_RE.match(s):
         raise ValueError("图片数据格式不正确（需 data:image/...;base64,...）")
-    iid = "img_" + hashlib.sha1(s.encode("utf-8")).hexdigest()[:16]
-    IMAGES[iid] = {"data": s, "w": int(w or 0), "h": int(h or 0)}
-    return iid
+    iid = blob_store.content_id("img_", s)
+    return blob_store.put_record(IMAGES, iid, {"data": s, "w": int(w or 0), "h": int(h or 0)})
 
 
 def get(iid: str) -> Optional[dict]:
-    return IMAGES.get(iid)
+    return blob_store.get_record(IMAGES, iid)
 
 
 def decode(iid: str) -> Optional[Tuple[str, bytes]]:
-    rec = IMAGES.get(iid)
+    rec = blob_store.get_record(IMAGES, iid)
     if not rec:
         return None
     m = _DATA_RE.match(rec.get("data", ""))
@@ -45,20 +45,18 @@ def decode(iid: str) -> Optional[Tuple[str, bytes]]:
 
 
 def serialize(ids=None) -> dict:
-    if ids is None:
-        return {k: dict(v) for k, v in IMAGES.items()}
-    out = {}
-    for k in ids:
-        if k and k in IMAGES:
-            out[k] = dict(IMAGES[k])
-    return out
+    """导出图片记录（随 .ggk/.ggb 保存）。"""
+    return blob_store.serialize(IMAGES, ids)
 
 
-def load(d) -> None:
-    if not isinstance(d, dict):
-        return
-    for k, v in d.items():
-        if isinstance(v, dict) and v.get("data"):
-            IMAGES[k] = {"data": v.get("data", ""),
-                         "w": int(v.get("w", 0) or 0),
-                         "h": int(v.get("h", 0) or 0)}
+def _normalize(rec: dict) -> Optional[dict]:
+    if not rec.get("data"):
+        return None
+    return {"data": rec.get("data", ""),
+            "w": int(rec.get("w", 0) or 0),
+            "h": int(rec.get("h", 0) or 0)}
+
+
+def load(d) -> int:
+    """恢复图片记录（坏记录跳过），返回写入条数。"""
+    return blob_store.load(IMAGES, d, _normalize)

@@ -7,10 +7,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from typing import Dict, List, Optional
+
+from . import blob_store
 
 MESHES: Dict[str, dict] = {}
 
@@ -48,13 +49,12 @@ def put(verts, faces) -> str:
     if len(uv) < 3 or not uf:
         raise ValueError("网格数据不足（需要至少 3 个顶点与 1 个面）")
     key = json.dumps([[[round(c, 9) for c in v] for v in uv], uf], separators=(",", ":"))
-    mid = "mesh_" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
-    MESHES[mid] = {"verts": uv, "faces": uf}
-    return mid
+    mid = blob_store.content_id("mesh_", key)
+    return blob_store.put_record(MESHES, mid, {"verts": uv, "faces": uf})
 
 
 def get(mid: str) -> Optional[dict]:
-    return MESHES.get(mid)
+    return blob_store.get_record(MESHES, mid)
 
 
 def edges_of(faces) -> List[List[int]]:
@@ -72,16 +72,16 @@ def edges_of(faces) -> List[List[int]]:
     return edges
 
 
-def serialize(ids) -> dict:
-    return {mid: MESHES[mid] for mid in ids if mid in MESHES}
+def serialize(ids=None) -> dict:
+    """导出网格记录（随 .ggk/.ggb 保存）。"""
+    return blob_store.serialize(MESHES, ids)
 
 
-def load(data) -> None:
-    if not data:
-        return
-    for mid, rec in data.items():
-        try:
-            MESHES[mid] = {"verts": [[float(c) for c in v] for v in rec["verts"]],
-                           "faces": [[int(i) for i in f] for f in rec["faces"]]}
-        except Exception:
-            continue
+def _normalize(rec: dict) -> Optional[dict]:
+    return {"verts": [[float(c) for c in v] for v in rec["verts"]],
+            "faces": [[int(i) for i in f] for f in rec["faces"]]}
+
+
+def load(data) -> int:
+    """恢复网格记录（坏记录跳过），返回写入条数。"""
+    return blob_store.load(MESHES, data, _normalize)

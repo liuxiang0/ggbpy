@@ -242,6 +242,34 @@ function check(name, ok, detail) {
   check('主题切换后页面仍可用（无致命错误）', JS_ERRORS.length === 0, JS_ERRORS.slice(0, 2).join(' | '));
 
   // -------------------------------------------------------------------------
+  section('K. 会话隔离（cookie 持久 + 新上下文独立）');
+  await clear();
+  await page.waitForTimeout(300);
+  await typeCmd('SESS1=(1,1)');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  const afterReload = await state();
+  check('同页面刷新后构造保留（cookie 会话持久）',
+    afterReload.some((e) => e.label === 'SESS1'), afterReload.map((e) => e.label).join(','));
+  const ctx2 = await browser.newContext();
+  const page2 = await ctx2.newPage();
+  await page2.goto(BASE + '/', { waitUntil: 'networkidle' });
+  await page2.waitForTimeout(300);
+  const st2 = await (await page2.request.get(BASE + '/api/state')).json();
+  check('新浏览器上下文 → 独立空会话', ((st2 || {}).elements || []).length === 0,
+    'n=' + ((st2 || {}).elements || []).length);
+  await page2.request.post(BASE + '/api/input', { data: { text: 'OTHER=(9,9)' } });
+  await page2.waitForTimeout(300);
+  const st1 = await state();
+  check('新会话写入不影响原会话', !st1.some((e) => e.label === 'OTHER'),
+    st1.map((e) => e.label).join(','));
+  const st2b = await (await page2.request.get(BASE + '/api/state')).json();
+  check('新会话自己能看到自己的对象',
+    ((st2b || {}).elements || []).some((e) => e.label === 'OTHER'),
+    ((st2b || {}).elements || []).map((e) => e.label).join(','));
+  await ctx2.close();
+
+  // -------------------------------------------------------------------------
   section('J. JS 错误');
   check('全流程无未捕获 JS 错误', JS_ERRORS.length === 0, JS_ERRORS.slice(0, 3).join(' | '));
 

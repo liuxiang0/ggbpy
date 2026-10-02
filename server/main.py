@@ -26,9 +26,13 @@ from pydantic import BaseModel
 from kernel.construction import Construction, DEFAULT_VIEW
 from kernel.cas import CASEngine
 
+from server.sessions import (SessionMiddleware, current_session, get_session,
+                             resolve_sid, session_stats, sweep)
+
 app = FastAPI(title="ggbpy · Python 动态几何")
 # 大网格 state3d 载荷可达 1–2 MB：>1KB 自动 gzip（浏览器 fetch 默认带 Accept-Encoding）
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(SessionMiddleware)
 
 import hashlib as _hashlib
 import json as _json
@@ -37,15 +41,40 @@ import threading as _threading
 # ---- /api/state3d 增量协议 -------------------------------------------------
 # rev 由服务端在请求时惰性分配：指纹变化 → rev+1，并留存最近若干 rev 的指纹表。
 # 客户端带 ?since=<上次 rev>：返回 changed/removed 增量；rev 未变返回 unchanged。
-_SD = {"rev": 0, "fp": {}, "hist": {}, "lock": _threading.Lock()}
+class _SessProxy:
+    """按当前请求会话解析属性的代理（端点代码保持 `cons.xxx` / `cas.xxx` 写法不变）。"""
+
+    def __init__(self, attr: str) -> None:
+        object.__setattr__(self, "_attr", attr)
+
+    def __getattr__(self, name):
+        return getattr(getattr(current_session(), object.__getattribute__(self, "_attr")), name)
+
+
+class _SdProxy:
+    """state3d 增量状态（per-session）：支持 `_SD["rev"] += 1` 这样的读写。"""
+
+    def __getitem__(self, k):
+        return current_session().sd[k]
+
+    def __setitem__(self, k, v):
+        current_session().sd[k] = v
+
+    def get(self, k, default=None):
+        return current_session().sd.get(k, default)
+
+
+_SD = _SdProxy()
 # 全局构造是共享单例：所有变更串行化，避免并发请求交错破坏 DAG
 _cons_lock = _threading.Lock()
 
 
 def _mut(fn, *a, **kw):
-    """在全局构造上串行执行一次变更（端点本身跑在线程池里，不阻塞事件循环）。"""
-    with _cons_lock:
-        return fn(*a, **kw)
+    """在当前会话的构造上串行执行一次变更（端点跑在线程池里，不阻塞事件循环）。
+
+    锁按会话划分：不同会话互不阻塞；同一会话的并发写仍被串行化，避免交错破坏 DAG。
+    """
+    return current_session().mut(fn, *a, **kw)
 _SD_HIST_MAX = 64
 
 
@@ -82,8 +111,9 @@ def _state3d_fp(d):
     _fp_walk(d, out)
     return _hashlib.md5("|".join(out).encode("utf-8", "replace")).hexdigest()[:12]
 STATIC = Path(__file__).parent / "static"
-cons = Construction()
-cas = CASEngine(cons)
+# 注意：这两个名字现在是「当前会话」的代理；真正的对象在 server/sessions.py 里按会话创建
+cons = _SessProxy("cons")
+cas = _SessProxy("cas")
 
 
 class InputBody(BaseModel):
@@ -187,6 +217,19 @@ def index():
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+
+
+@app.get("/api/session")
+def session_info():
+    """当前会话信息 + 全部会话概览（多会话隔离用）。"""
+    cur = current_session()
+    return {"ok": True, "session": cur.info(), "sessions": session_stats()}
+
+
+@app.post("/api/session/sweep")
+def session_sweep():
+    """清理过期会话，返回清理数量。"""
+    return {"ok": True, "dropped": sweep(), "sessions": session_stats()}
 
 
 @app.get("/api/commands")
@@ -344,7 +387,7 @@ class MacroRunBody(BaseModel):
 @app.get("/api/macro")
 def macro_list():
     from kernel import macro
-    return {"macros": macro.list_macros()}
+    return {"macros": macro.list_macros(cons)}
 
 
 @app.post("/api/macro/create")
@@ -360,7 +403,7 @@ def macro_create(b: MacroCreateBody):
 @app.post("/api/macro/delete")
 def macro_delete(b: MacroRunBody):
     from kernel import macro
-    ok = macro.delete_macro(b.name)
+    ok = macro.delete_macro(b.name, cons)
     return {"ok": ok, "message": ("宏 " + b.name + " 已删除" if ok else "宏不存在: " + b.name), **_state(_view(b))}
 
 

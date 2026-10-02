@@ -12,7 +12,13 @@
 import re
 from typing import Dict, List
 
-MACROS: Dict[str, dict] = {}
+MACROS: Dict[str, dict] = {}       # 默认（无构造上下文时）的宏表；会话内使用 cons.macros
+
+
+def registry(cons=None) -> Dict[str, dict]:
+    """宏表：优先取构造自带的（会话隔离），否则回退到模块级全局表。"""
+    reg = getattr(cons, "macros", None) if cons is not None else None
+    return reg if isinstance(reg, dict) else MACROS
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +31,7 @@ def create_macro(cons, name: str, input_labels: List[str], output_labels: List[s
         raise ValueError("宏名需以字母/下划线/中文开头，仅含字母数字下划线中文")
     if name.lower() in ("macro", "macrocreate", "macrodelete", "macrolist"):
         raise ValueError("宏名与保留命令冲突: " + name)
-    if name in MACROS:
+    if name in registry(cons):
         raise ValueError("宏 " + name + " 已存在")
     if not output_labels:
         raise ValueError("至少需要一个输出对象")
@@ -74,7 +80,7 @@ def create_macro(cons, name: str, input_labels: List[str], output_labels: List[s
         "defns": defns,
         "outputs": [o for o in output_labels if o not in inputs],
     }
-    MACROS[name] = macro
+    registry(cons)[name] = macro
     return macro
 
 
@@ -96,7 +102,7 @@ def _replace_token(text: str, old: str, new: str) -> str:
 def run_macro(cons, name: str, arg_labels: List[str], out_label: str = None):
     """执行宏：宏名[实参...] → 重放定义序列，返回新建对象列表。
     out_label：命令提供的显式标签（如 cc=宏名[..]），重命名为宏的第一个输出。"""
-    macro = MACROS.get(name)
+    macro = registry(cons).get(name)
     if macro is None:
         return None
     if len(arg_labels) != len(macro["params"]):
@@ -140,27 +146,30 @@ def run_macro(cons, name: str, arg_labels: List[str], out_label: str = None):
 # 管理
 # ---------------------------------------------------------------------------
 
-def list_macros() -> List[dict]:
+def list_macros(cons=None) -> List[dict]:
+    reg = registry(cons)
     return [{"name": m["name"], "params": list(m["params"]),
-             "n_outputs": len(m["outputs"])} for m in MACROS.values()]
+             "n_outputs": len(m["outputs"])} for m in reg.values()]
 
 
-def delete_macro(name: str) -> bool:
-    if name in MACROS:
-        del MACROS[name]
+def delete_macro(name: str, cons=None) -> bool:
+    reg = registry(cons)
+    if name in reg:
+        del reg[name]
         return True
     return False
 
 
-def serialize() -> Dict[str, dict]:
+def serialize(cons=None) -> Dict[str, dict]:
     """导出宏（保存/加载用）。"""
-    return dict(MACROS)
+    return dict(registry(cons))
 
 
-def load(data: Dict[str, dict]) -> None:
-    MACROS.clear()
+def load(data: Dict[str, dict], cons=None) -> None:
+    reg = registry(cons)
+    reg.clear()
     for name, m in data.items():
-        MACROS[name] = {
+        reg[name] = {
             "name": m["name"],
             "params": list(m.get("params", [])),
             "defns": list(m.get("defns", [])),

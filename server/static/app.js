@@ -4,6 +4,17 @@
 
   var canvas = document.getElementById('cv');
   var ctx = canvas.getContext('2d');
+  // 会话隔离（P2）：首次访问生成随机 sid 写入 cookie —— 不同浏览器/上下文各自独立，
+  // 未带 cookie 的脚本请求仍落到 default 会话（保持既有 API 兼容）。
+  (function ensureSessionId() {
+    try {
+      var mSid = document.cookie.match(/(?:^|;\s*)ggbpy_sid=([^;]*)/);
+      if (!mSid || !mSid[1] || mSid[1] === 'default') {
+        var rnd = 'web_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+        document.cookie = 'ggbpy_sid=' + rnd + ';path=/;max-age=86400;SameSite=Lax';
+      }
+    } catch (e) { /* cookie 不可用时退回 default 会话 */ }
+  })();
   var cmdEl = document.getElementById('cmd');
   var msgEl = document.getElementById('msg');
   var listEl = document.getElementById('objlist');

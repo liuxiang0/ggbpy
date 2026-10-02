@@ -7369,14 +7369,14 @@ def _cmd_macrodelete(cons, defn, args):
     if len(args) != 1:
         raise GeoError("MacroDelete 需要 宏名")
     from . import macro
-    if macro.delete_macro(args[0].strip()):
+    if macro.delete_macro(args[0].strip(), cons):
         return []
     raise GeoError("宏不存在: " + args[0])
 
 
 def _cmd_macrolist(cons, defn, args):
     from . import macro
-    ms = macro.list_macros()
+    ms = macro.list_macros(cons)
     if not ms:
         raise GeoError("暂无宏")
     return []
@@ -7846,7 +7846,7 @@ def process_line(cons, line: str) -> List:
     if handler is None:
         # 自定义宏：宏名[实参...]（宏名区分大小写，用原始 name 查表）
         from . import macro
-        if name in macro.MACROS:
+        if name in macro.registry(cons):
             created = macro.run_macro(cons, name, args, label)
             if created is None:
                 raise GeoError("宏执行失败: " + name)

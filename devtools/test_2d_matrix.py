@@ -429,9 +429,10 @@ if err is None:
     msg2 = c.process("mm=tri6[P1,P2,P3]")
     check("宏执行成功", msg2.startswith("OK"), msg2[:60])
     from kernel import macro as _macro
-    check("MacroList 含新宏", "tri6" in _macro.MACROS, str(sorted(_macro.MACROS.keys())))
+    check("MacroList 含新宏（宏表随构造/会话隔离）",
+          "tri6" in _macro.registry(c), str(sorted(_macro.registry(c).keys())))
     msg3 = c.process("MacroDelete[tri6]")
-    check("MacroDelete 成功", msg3.startswith("OK") and "tri6" not in _macro.MACROS, msg3[:40])
+    check("MacroDelete 成功", msg3.startswith("OK") and "tri6" not in _macro.registry(c), msg3[:40])
 
 # ---------------------------------------------------------------------------
 section("K. 布尔判定（符号证明 + 数值兜底）")
@@ -461,6 +462,10 @@ if err is None:
         check("Are* %s：%s = %s" % (lab, desc, want),
               el is not None and el.value is want, "%r（%s）" % (getattr(el, "value", None),
                                                                getattr(el, "detail", "")[:38]))
+
+    c_other = Construction()
+    check("宏表随构造隔离（另一个构造看不到）", "tri6" not in _macro.registry(c_other),
+          str(sorted(_macro.registry(c_other).keys())))
 
 # ---------------------------------------------------------------------------
 section("L. 本轮修复回归（写矩阵时发现的 bug）")

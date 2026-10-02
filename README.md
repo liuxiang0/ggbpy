@@ -122,7 +122,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **第十六批（2026-09-29 · P2）**：
   - **`.ggb` 内嵌网格/图片数据**：导出时把引用到的 `mesh_store`/`image_store` 数据打包进 `<ggbpyData meshes=… images=… encoding="base64+json" data="…">`，导入时在重放命令**之前**恢复仓库 —— OBJ/STL/glTF 导入的网格与 `Image` 图片都能随 `.ggb` 完整往返（实测网格 8/6、依赖 `Volume`=8、图片可再次取图），不再产生跳过警告；仅当仓库数据缺失时才跳过并提示（防御路径）
   - **SVG 3D 投影导出**：新增 `GET /api/export/svg?view3d=1` 与工具条 **SVG·3D** 按钮 —— 固定视角（yaw/pitch）正交投影 + 画家算法，输出网格面多边形、球经纬线、平面、交线折线与点标签；按场景包围盒自动取景；`face_budget`（默认 4000）按面积取前 N 面防爆；无 3D 对象时返回 HTTP 400 与明确说明
-  - **图片工具极速点击加固**：0ms 的 down→up 快击此前会因元素列表未及时合并而 `resetTool()` 丢掉待插入图片；现在图片工具在该分支保留 `pendingImage`，并加回归断言（0ms 两次点击仍能插入图片）
+  - **图片工具极速点击加固**：0ms 的 down→up 快击此前会因元素列表未及时合并而 `resetTool()` 丢掉待插入图片；现在图片工具在该分支保留 `pendingImage`，并加回归断言（0ms 两次点击仍能插入图片）  - **图片工具极速点击加固**：0ms 的 down→up 快击此前会因元素列表未及时合并而 `resetTool()` 丢掉待插入图片；现在图片工具在该分支保留 `pendingImage`，并加回归断言（0ms 两次点击仍能插入图片）
+- **第十七批（2026-10-02 · P2 结构债）**：
+  - **多会话隔离**（`server/sessions.py`）：每个会话拥有独立的构造 / CAS / state3d rev 历史 / 变更锁 / **宏表**；会话 id 解析顺序 `?sid=` > cookie `ggbpy_sid` > `default`；`server/main.py` 里的 `cons`/`cas`/`_SD` 改为**按当前请求解析的代理**，端点代码零改动；会话有上限（24）与 TTL（6h，超限淘汰最久未用，`default` 永不淘汰）；新增 `GET /api/session`、`POST /api/session/sweep`。浏览器端首次访问生成随机 sid 并写入 cookie —— **不同浏览器/上下文天然隔离**，会话内宏不跨用户泄漏；无 cookie 的脚本请求仍落到 `default` 会话（既有 API/脚本用法不变）
+  - **内容寻址仓库统一**（`kernel/blob_store.py`）：图片仓库与网格仓库共用的「内容哈希 → 短 id / serialize / load」逻辑抽到通用模块，两者只保留各自领域规则（图片 data URL 校验、网格顶点去重与面索引重排）；公开 API 不变（`put/get/decode/edges_of/serialize/load`），坏记录逐条跳过并返回写入条数
+  - 新增 `devtools/test_stores.py`（18 断言）与 `devtools/test_sessions.py`（23 断言，含会话上限/TTL 单元级验证）；2D 前端矩阵补「cookie 会话持久 + 新上下文独立」4 断言
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
@@ -136,8 +140,10 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 6 步：注册表 8 + 2D 内核 123 + 2D API 31 + 3D 490/181/134 + 2D 前端 32 = 999 断言
+bash devtools/run_all_detection.sh       # 全量 8 步：注册表 8 + 仓库 18 + 会话 23 + 2D 内核 124 + 2D API 31 + 3D 490/181/134 + 2D 前端 36 = 1045 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
+python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
+python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
 ```
 
 - `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 显式/参数/隐式曲面 × FitPlane × OBJ·STL 导入 × 样式快照 × 序列化 × 3D 度量语义）

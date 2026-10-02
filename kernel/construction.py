@@ -25,6 +25,7 @@ class Construction:
     def __init__(self) -> None:
         self.elements: Dict[str, GeoElement] = {}
         self.order: List[str] = []
+        self.macros: Dict[str, dict] = {}      # 该构造（会话）的宏表
         self._undo: List[List[Tuple[str, str]]] = []
         self._redo: List[List[Tuple[str, str]]] = []
         self._counters: Dict[str, int] = {}
@@ -662,7 +663,7 @@ class Construction:
             "images": image_store.serialize(img_ids),
             "meshes": mesh_store.serialize([getattr(self.elements[lab], "meshid", "")
                                             for lab in self.order]),
-            "macros": macro.serialize(),
+            "macros": macro.serialize(self),
         }, ensure_ascii=False, indent=1)
 
     def save_ggk(self, view=None) -> str:
@@ -699,7 +700,7 @@ class Construction:
                             pass
         from . import macro
         if data.get("macros"):
-            macro.load(data["macros"])
+            macro.load(data["macros"], self)
         return tuple(data["view"]) if data.get("view") else None
 
     # ------------------------------------------------------------------
