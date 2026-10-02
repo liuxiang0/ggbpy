@@ -924,12 +924,21 @@
     }
     if (hoverTip) {
       var hx = sxp(hoverTip.x), hy = syp(hoverTip.y);
-      var htxt = hoverTip.label;
-      if (hoverTip.r != null) htxt += ' r=' + fmtNum(hoverTip.r);
-      else htxt += ' = (' + fmtNum(hoverTip.x) + ', ' + fmtNum(hoverTip.y) + ')';
+      var htxt = tipText(hoverTip);
+      // 关键：提示文本必须自己设定 textAlign/textBaseline。画布上其它元素绘制后会残留
+      // 文本状态（如 'top'/'bottom'），沿用它的结果就是文字偏出提示框一半（看起来"只露一半"）。
+      ctx.save();
       ctx.font = '12px sans-serif';
-      var hw = ctx.measureText(htxt).width + 14;
-      var hh = 20, gap = 14;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      var hMet = ctx.measureText(htxt);
+      // 用实测 ascent/descent 让"文字墨迹"垂直居中（含 () , 等下伸部），而不是靠 em 框中线
+      var hAsc = hMet.actualBoundingBoxAscent || 9;
+      var hDesc = hMet.actualBoundingBoxDescent || 3;
+      var hw = Math.ceil(hMet.width) + 16;
+      var hh = Math.ceil(hAsc + hDesc) + 6;   // 框高 = 墨迹高度 + 上下各 3px 留白 → 文字填满提示框
+      var hBase = 0;                          // 基线位置在定位后按框计算
+      var gap = 14;
       // 优先放在光标上方（避免遮住对象本身），并始终夹在"可见可用区"内：
       // 顶部放不下 → 翻到下方；下方也放不下（含被面板遮挡）→ 向上顶到可见区上沿
       var area = usableCanvasRect();
@@ -943,8 +952,10 @@
       ctx.fillStyle = C.tipBg;
       ctx.fillRect(tx, ty, hw, hh);
       ctx.fillStyle = C.tipFg;
-      ctx.fillText(htxt, tx + 7, ty + 14);                    // 文本随框定位（原来固定 hy-15）
+      hBase = ty + (hh - (hAsc + hDesc)) / 2 + hAsc;          // 墨迹垂直居中（原固定 ty+14，偏低半框）
+      ctx.fillText(htxt, tx + 8, hBase);
       dbgTipRect = { x: Math.round(tx), y: Math.round(ty), w: Math.round(hw), h: hh };
+      ctx.restore();
     } else {
       dbgTipRect = null;
     }
@@ -1264,6 +1275,17 @@
   }
 
   // 悬停提示：检测最近的点/圆
+  // 提示文案：点 → 名称 = (x, y)；圆/圆弧 → 名称 r=半径；其它对象属性太多 → 只显示名称
+  function tipText(t) {
+    if (t.nameOnly) return t.label;
+    if (t.r != null) return t.label + ' r=' + fmtNum(t.r);
+    return t.label + ' = (' + fmtNum(t.x) + ', ' + fmtNum(t.y) + ')';
+  }
+
+  // 会显示"仅名称"提示的对象类型（复用已有的 hitObject 命中检测）
+  var TIP_NAME_KINDS = ['segment', 'line', 'ray', 'vector', 'polygon', 'polyline', 'function',
+                        'parametric', 'polar', 'implicit', 'conic', 'image'];
+
   function hitForTip(sx, sy) {
     for (var i = 0; i < elements.length; i++) {
       var e = elements[i];
@@ -1283,6 +1305,9 @@
         return { label: e2.label, x: e2.cx - e2.r * (dx2 / d), y: e2.cy + e2.r * (dy2 / d), r: e2.r };
       }
     }
+    // 其它几何对象（直线/线段/多边形/函数/圆锥曲线/图片…）：属性太多，只提示名称
+    var other = hitObject(sx, sy, TIP_NAME_KINDS);
+    if (other) return { label: other, nameOnly: true, x: wxp(sx), y: wyp(sy) };
     return null;
   }
 
@@ -2020,9 +2045,14 @@
     render3d: function () { render3d(); },
     // 世界坐标 → 画布屏幕坐标（供检测/诊断定位悬停与标注位置）
     toScreen: function (x, y) { return { x: sxp(x), y: syp(y), scale: scale, cssW: cssW, cssH: cssH }; },
-    hoverTip: function () { return hoverTip ? { label: hoverTip.label, x: hoverTip.x, y: hoverTip.y } : null; },
+    hoverTip: function () {
+      return hoverTip ? { label: hoverTip.label, x: hoverTip.x, y: hoverTip.y,
+                          r: hoverTip.r == null ? null : hoverTip.r, nameOnly: !!hoverTip.nameOnly,
+                          text: tipText(hoverTip) } : null;
+    },
     tipRect: function () { return dbgTipRect; },
     tipArea: function () { return usableCanvasRect(); },
+    tipColors: function () { return { bg: C.tipBg, fg: C.tipFg }; },
     faceBudget: function () { return MESH_FACE_BUDGET; },
     cacheSize: function () { return Object.keys(meshFaceCache).length; },
     projCalls: function () { return dbgProjCalls; },

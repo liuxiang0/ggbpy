@@ -216,7 +216,19 @@ def index():
     return FileResponse(str(STATIC / "index.html"))
 
 
-app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+class _NoCacheStatic(StaticFiles):
+    """静态资源仍带 ETag/Last-Modified，但要求浏览器每次校验（no-cache → 命中则 304）。
+
+    否则浏览器可能用启发式缓存长期显示旧 JS/CSS：服务端改了前端、用户却"看起来还是老样子"。
+    """
+
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
+
+
+app.mount("/static", _NoCacheStatic(directory=str(STATIC)), name="static")
 
 
 @app.get("/api/session")

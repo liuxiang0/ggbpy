@@ -324,7 +324,59 @@ function check(name, ok, detail) {
   }
   check('靠边悬停时提示框完整可见（自动翻转/夹取）', edgeOk === edgeCases.length + (hoverableBottom > 40 ? 1 : 0),
     edgeDetail.join(' '));
-  // 3) 可用区：提示框必须避开停靠面板（面板是 DOM 浮层，画在画布内也会被盖住）
+  // 3) 文字必须在提示框内垂直居中且填满（此前沿用了上一个元素残留的 textBaseline，
+  //    文字整体偏低半个框高 → 看起来"只露一半"）
+  const tipInk = async (wx, wy) => {
+    const pg = await worldToPage(wx, wy);
+    await page.mouse.move(pg.x, pg.y);
+    await page.waitForTimeout(320);
+    return page.evaluate(() => {
+      const cvEl = document.getElementById('cv');
+      const ctx = cvEl.getContext('2d');
+      const rect = window.__ggbpyDebug.tipRect();
+      if (!rect) return null;
+      const k = cvEl.width / cvEl.clientWidth;
+      const x0 = Math.round(rect.x * k), y0 = Math.round(rect.y * k);
+      const w = Math.max(1, Math.round(rect.w * k)), h = Math.max(1, Math.round(rect.h * k));
+      const img = ctx.getImageData(x0, y0, w, h).data;
+      // 文字墨迹 = 接近提示前景色的像素（前景色由 tipColors 给出，亮/暗主题都对）
+      const fgHex = window.__ggbpyDebug.tipColors().fg.replace('#', '');
+      const fr = parseInt(fgHex.slice(0, 2), 16), fgc = parseInt(fgHex.slice(2, 4), 16), fb = parseInt(fgHex.slice(4, 6), 16);
+      let ix0 = 1e9, iy0 = 1e9, ix1 = -1, iy1 = -1, n = 0;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if (Math.abs(img[i] - fr) <= 40 && Math.abs(img[i + 1] - fgc) <= 40 && Math.abs(img[i + 2] - fb) <= 40) {
+            n++; if (x < ix0) ix0 = x; if (y < iy0) iy0 = y; if (x > ix1) ix1 = x; if (y > iy1) iy1 = y;
+          }
+        }
+      }
+      return { rect, box: { w, h }, ink: n ? { x0: ix0, y0: iy0, x1: ix1, y1: iy1, n } : null,
+               tip: window.__ggbpyDebug.hoverTip() };
+    });
+  };
+  await typeCmd('TPINK=(0,5)');
+  const ink = await tipInk(0, 5);
+  if (!ink || !ink.ink) {
+    check('提示文字已绘制（可测量墨迹）', false, JSON.stringify(ink));
+  } else {
+    const i0 = ink.ink, bw = ink.box.w, bh = ink.box.h;
+    const inkH = i0.y1 - i0.y0 + 1, inkCy = (i0.y0 + i0.y1) / 2, boxCy = (bh - 1) / 2;
+    check('提示文字完整落在提示框内（上下留边）', i0.y0 >= 1 && i0.y1 <= bh - 2 && i0.x0 >= 1 && i0.x1 <= bw - 2,
+      'ink=' + JSON.stringify(i0) + ' box=' + JSON.stringify(ink.box));
+    check('提示文字垂直居中（不再偏低半框）', Math.abs(inkCy - boxCy) <= 2,
+      '文字中心=' + inkCy.toFixed(1) + ' 框中心=' + boxCy.toFixed(1));
+    check('提示文字填满提示框（字高 ≥ 60% 框高）', inkH / bh >= 0.60,
+      (inkH / bh * 100).toFixed(0) + '%');
+  }
+  // 其它对象（属性太多）只提示名称：直线
+  await typeCmd('TLINE=Line[(0,0),(1,0.3)]');
+  const lineTip = await tipInk(6, 1.8);
+  check('直线悬停只显示名称（不堆属性）',
+    !!lineTip && !!lineTip.tip && lineTip.tip.nameOnly === true && lineTip.tip.text === 'TLINE',
+    JSON.stringify(lineTip && lineTip.tip));
+
+  // 4) 可用区：提示框必须避开停靠面板（面板是 DOM 浮层，画在画布内也会被盖住）
   const area = await page.evaluate(() => window.__ggbpyDebug.tipArea());
   const panelOverlaps = area.bottom < geo.cssH - 1 || area.left > 1 || area.right < geo.cssW - 1;
   check('可用区计算已扣除停靠面板（收缩了可见范围）', panelOverlaps, JSON.stringify(area));
