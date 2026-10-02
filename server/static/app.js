@@ -174,6 +174,7 @@
   var cssW = 0, cssH = 0, dpr = 1;  // 画布 CSS 逻辑尺寸（物理 = ×devicePixelRatio）
   var touches = {}, pinch = null;  // 多点触控：双指捏合缩放
   var hoverTip = null;              // 悬停坐标提示
+  var dbgTipRect = null;            // 最近一次绘制的提示框位置（检测用）
   var selectMode = false;           // 选择工具模式（🖱）
   var selectedMulti = [];           // 框选多选集合
   var pendingImage = null;          // 待插入图片：{id, ratio}
@@ -890,11 +891,23 @@
       if (hoverTip.r != null) htxt += ' r=' + fmtNum(hoverTip.r);
       else htxt += ' = (' + fmtNum(hoverTip.x) + ', ' + fmtNum(hoverTip.y) + ')';
       ctx.font = '12px sans-serif';
-      var hw = ctx.measureText(htxt).width + 12;
+      var hw = ctx.measureText(htxt).width + 14;
+      var hh = 20, gap = 12, pad = 4;
+      // 默认放在锚点右上方；靠近画布边缘时自动翻到另一侧并夹住，保证提示框完整可见
+      var tx = hx + gap;
+      var ty = hy - gap - hh;
+      if (tx + hw > cssW - pad) tx = hx - gap - hw;          // 右边放不下 → 移到左侧
+      if (ty < pad) ty = hy + gap;                            // 顶部放不下 → 移到下方
+      if (ty + hh > cssH - pad) ty = hy - gap - hh;           // 下方也放不下 → 回到上方
+      tx = Math.max(pad, Math.min(tx, Math.max(pad, cssW - hw - pad)));
+      ty = Math.max(pad, Math.min(ty, Math.max(pad, cssH - hh - pad)));
       ctx.fillStyle = C.tipBg;
-      ctx.fillRect(hx + 10, hy - 30, hw, 20);
+      ctx.fillRect(tx, ty, hw, hh);
       ctx.fillStyle = C.tipFg;
-      ctx.fillText(htxt, hx + 16, hy - 15);
+      ctx.fillText(htxt, tx + 7, ty + 14);                    // 文本随框定位（原来固定 hy-15）
+      dbgTipRect = { x: Math.round(tx), y: Math.round(ty), w: Math.round(hw), h: hh };
+    } else {
+      dbgTipRect = null;
     }
     renderList();
     populateEditBar();
@@ -1226,7 +1239,9 @@
       var d = Math.sqrt(dx2 * dx2 + dy2 * dy2) || 1;
       var rr = Math.max(2, e2.r * scale);
       if (Math.abs(d - rr) <= 6) {
-        return { label: e2.label, x: e2.cx + e2.r * (dx2 / d), y: e2.cy - e2.r * (dy2 / d), r: e2.r };
+        // dx2/dy2 是「圆心→光标」的屏幕向量：换算回世界坐标时 x 取负、y 取正（屏幕 y 轴向下），
+        // 这样提示锚点才落在圆上离光标最近的一侧（此前两个符号都反了 → 提示跑到对侧、看起来偏低）
+        return { label: e2.label, x: e2.cx - e2.r * (dx2 / d), y: e2.cy + e2.r * (dy2 / d), r: e2.r };
       }
     }
     return null;
@@ -1964,6 +1979,10 @@
   // 供检测脚本计时/取内部状态（只读，不影响交互）
   window.__ggbpyDebug = {
     render3d: function () { render3d(); },
+    // 世界坐标 → 画布屏幕坐标（供检测/诊断定位悬停与标注位置）
+    toScreen: function (x, y) { return { x: sxp(x), y: syp(y), scale: scale, cssW: cssW, cssH: cssH }; },
+    hoverTip: function () { return hoverTip ? { label: hoverTip.label, x: hoverTip.x, y: hoverTip.y } : null; },
+    tipRect: function () { return dbgTipRect; },
     faceBudget: function () { return MESH_FACE_BUDGET; },
     cacheSize: function () { return Object.keys(meshFaceCache).length; },
     projCalls: function () { return dbgProjCalls; },

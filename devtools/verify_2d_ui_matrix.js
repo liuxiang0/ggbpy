@@ -242,6 +242,90 @@ function check(name, ok, detail) {
   check('主题切换后页面仍可用（无致命错误）', JS_ERRORS.length === 0, JS_ERRORS.slice(0, 2).join(' | '));
 
   // -------------------------------------------------------------------------
+  section('K2. 悬停提示：锚点在光标一侧 + 提示框完整可见');
+  await clear();
+  await page.waitForTimeout(300);
+  await typeCmd('O=(0,0)');
+  await typeCmd('c=Circle[O,3]');
+  const cvBox = await page.$eval('#cv', (el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  const geo = await page.evaluate(() => {
+    const d = window.__ggbpyDebug.toScreen(0, 0);
+    return { xmin: -d.x / d.scale, ymin: -(d.cssH - d.y) / d.scale, w: d.cssW / d.scale, h: d.cssH / d.scale,
+             cssW: d.cssW, cssH: d.cssH };
+  });
+  const worldToPage = async (wx, wy) => {
+    const s = await page.evaluate(([x, y]) => window.__ggbpyDebug.toScreen(x, y), [wx, wy]);
+    return { x: cvBox.x + s.x, y: cvBox.y + s.y };
+  };
+  // 1) 圆的提示锚点必须落在圆上「离光标最近」的一侧
+  const dirs = [['上', 0, 3.03, 0, 1], ['下', 0, -3.03, 0, -1], ['右', 3.03, 0, 1, 0], ['左', -3.03, 0, -1, 0]];
+  let anchorOk = 0;
+  const anchorDetail = [];
+  for (const [nm, wx, wy, ex, ey] of dirs) {
+    const pg = await worldToPage(wx, wy);
+    await page.mouse.move(pg.x, pg.y);
+    await page.waitForTimeout(260);
+    const tip = await page.evaluate(() => window.__ggbpyDebug.hoverTip());
+    if (tip) {
+      // 锚点应朝光标方向：与单位方向向量的点积接近 r
+      const dot = tip.x * ex + tip.y * ey;
+      anchorDetail.push(nm + ':' + tip.x.toFixed(2) + ',' + tip.y.toFixed(2));
+      if (dot > 2.9) anchorOk++;
+    } else {
+      anchorDetail.push(nm + ':null');
+    }
+  }
+  check('圆/圆弧悬停锚点在光标一侧（4 个方向都对）', anchorOk === 4, anchorDetail.join(' '));
+  // 2) 提示框必须完整落在画布内（含靠边翻转/夹取）
+  const hoverableBottom = await page.evaluate(() => {
+    const cv = document.getElementById('cv');
+    const r = cv.getBoundingClientRect();
+    for (let y = r.bottom - 6; y > r.top; y -= 6) {
+      const el = document.elementFromPoint(r.left + r.width * 0.5, y);
+      if (el && el.id === 'cv') return y - r.top;
+    }
+    return r.height;
+  });
+  const edgeCases = [
+    ['顶部', geo.xmin + geo.w / 2, geo.ymin + geo.h - 0.35],
+    ['左侧', geo.xmin + 0.35, geo.ymin + geo.h / 2],
+    ['右侧', geo.xmin + geo.w - 0.35, geo.ymin + geo.h / 2],
+  ];
+  let edgeOk = 0;
+  const edgeDetail = [];
+  for (let i = 0; i < edgeCases.length; i++) {
+    const [nm, wx, wy] = edgeCases[i];
+    const lab = 'HT' + i;
+    await typeCmd(lab + '=(' + wx.toFixed(2) + ',' + wy.toFixed(2) + ')');
+    const pg = await worldToPage(wx, wy);
+    await page.mouse.move(pg.x, pg.y);
+    await page.waitForTimeout(300);
+    const info = await page.evaluate(() => ({ rect: window.__ggbpyDebug.tipRect(), tip: window.__ggbpyDebug.hoverTip() }));
+    const r = info.rect;
+    const inside = !!r && r.x >= 0 && r.y >= 0 && r.x + r.w <= geo.cssW && r.y + r.h <= geo.cssH;
+    if (inside && info.tip && info.tip.label === lab) edgeOk++;
+    edgeDetail.push(nm + ':' + (r ? JSON.stringify(r) : 'null') + (inside ? '✓' : '✗'));
+  }
+  // 底部：只在画布可见（未被面板覆盖）时验证
+  if (hoverableBottom > 40) {
+    const wy = geo.ymin + (geo.cssH - hoverableBottom) / (geo.cssH / geo.h) + 0.3;
+    await typeCmd('HTb=(' + (geo.xmin + geo.w / 2).toFixed(2) + ',' + wy.toFixed(2) + ')');
+    const pg = await worldToPage(geo.xmin + geo.w / 2, wy);
+    await page.mouse.move(pg.x, pg.y);
+    await page.waitForTimeout(300);
+    const info = await page.evaluate(() => ({ rect: window.__ggbpyDebug.tipRect(), tip: window.__ggbpyDebug.hoverTip() }));
+    const r = info.rect;
+    const inside = !!r && r.x >= 0 && r.y >= 0 && r.x + r.w <= geo.cssW && r.y + r.h <= geo.cssH;
+    if (inside && info.tip && info.tip.label === 'HTb') edgeOk++;
+    edgeDetail.push('底部:' + (r ? JSON.stringify(r) : 'null') + (inside ? '✓' : '✗'));
+  }
+  check('靠边悬停时提示框完整可见（自动翻转/夹取）', edgeOk === edgeCases.length + (hoverableBottom > 40 ? 1 : 0),
+    edgeDetail.join(' '));
+
+  // -------------------------------------------------------------------------
   section('K. 会话隔离（cookie 持久 + 新上下文独立）');
   await clear();
   await page.waitForTimeout(300);

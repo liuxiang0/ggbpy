@@ -135,7 +135,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **统一数值容差（`kernel/tolerance.py`）**：把散落在 13 个内核模块里的 `1e-12`/`1e-9` 等「判定接近 0」的魔数（**264 处**）统一为分级具名常量 —— `EPSILON=1e-12`（判定等于 0：叉积/行列式/分母）、`TIGHT=1e-15`、`COORD=1e-9`（坐标/长度尺度）、`ZERO_SQ=1e-18`、`LOOSE=1e-7`（网格/半空间）、`COARSE=1e-6`（采样/取景）、`NEGLIGIBLE=1e-300`（分母守卫）、`ROOT_TOL=1e-10`、`OPT_XATOL/OPT_FATOL`（优化器）；**取值与原字面量一致，行为不变**；顺带废除了旧别名 `EPS`（`elements.py`/`geom_util.py` 各自的本地常量）
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
-  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第二十批（2026-10-02 · 悬停提示修复）**：
+  - **圆/圆弧悬停锚点取到了对侧**（真 bug）：`hitForTip` 里屏幕向量换算回世界坐标时 x、y 符号都反了，悬停圆的上方时提示锚点落到圆的下方 —— 视觉上就是「提示位置太低」。已改为落在圆上**离光标最近**的一点（4 个方向均有回归断言）
+  - **提示框在画布边缘被裁掉**：原来固定在锚点右上方（`hx+10, hy-30`）绘制，靠近画布顶边/右边会显示不全；现在**默认右上方，放不下自动翻到另一侧并夹在画布内**，文本随框定位（原来是固定 `hy-15`，框一旦移动文本就会错位）
+  - 新增调试钩子 `__ggbpyDebug.toScreen(x,y)` / `hoverTip()` / `tipRect()`；2D 前端矩阵新增 2 项断言（锚点方向 4 方向 + 靠边提示框完整可见，覆盖顶部/左侧/右侧/底部可见区）
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
@@ -149,7 +153,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 33 + 会话 23 + 2D 内核 124 + 2D API 31 + 3D 490/181/134 + 2D 前端 36 = 1098 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 33 + 会话 23 + 2D 内核 124 + 2D API 31 + 3D 490/181/134 + 2D 前端 38 = 1100 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
