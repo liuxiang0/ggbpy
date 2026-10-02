@@ -324,6 +324,61 @@ function check(name, ok, detail) {
   }
   check('靠边悬停时提示框完整可见（自动翻转/夹取）', edgeOk === edgeCases.length + (hoverableBottom > 40 ? 1 : 0),
     edgeDetail.join(' '));
+  // 2b) 反演工具创建的图形用 inv 命名（点仍用大写字母）
+  await clear();
+  await page.waitForTimeout(300);
+  await typeCmd('O=(0,0)');
+  await typeCmd('k=Circle[O,2]');
+  await typeCmd('S1=(4,0)');
+  await typeCmd('S2=(4,1)');
+  await typeCmd('ss=Segment[S1,S2]');
+  const cvBoxInv = await page.$eval('#cv', (el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y };
+  });
+  const catTransform = await page.$('.cat-icon[data-cat="transformers"]');   // 反演工具在「变换」分类下
+  if (catTransform) { await catTransform.click(); await page.waitForTimeout(250); }
+  const invTool = await page.$('#cat-tools .tool-btn[data-tool="invert"]');
+  if (invTool) {
+    await invTool.click();
+    await page.waitForTimeout(200);
+    const atW = async (wx, wy) => {
+      const s = await page.evaluate(([x, y]) => window.__ggbpyDebug.toScreen(x, y), [wx, wy]);
+      return { x: cvBoxInv.x + s.x, y: cvBoxInv.y + s.y };
+    };
+    let p1 = await atW(4, 0.5);            // 点击要反演的线段
+    await page.mouse.click(p1.x, p1.y);
+    await page.waitForTimeout(300);
+    let p2 = await atW(0, 2);              // 点击反演圆
+    await page.mouse.click(p2.x, p2.y);
+    await page.waitForTimeout(500);
+    const labels = await state();
+    const invLabels = labels.map((e) => e.label).filter((l) => /^inv\d+$/.test(l));
+    check('反演工具创建的图形命名为 inv1（小写前缀）', invLabels.length === 1 && invLabels[0] === 'inv1',
+      labels.map((e) => e.label).join(','));
+    // 点反演仍是点命名（大写字母）：比对新增标签，避免被已有大写标签蒙过
+    const before2 = new Set((await state()).map((e) => e.label));
+    // 反演工具用完后会保持激活（GGB 式），此时再点按钮反而会取消工具 → 按状态决定
+    const ts = await page.evaluate(() => window.__ggbpyDebug.toolState());
+    if (!ts || ts.activeTool !== 'invert') {
+      const invTool2 = await page.$('#cat-tools .tool-btn[data-tool="invert"]');
+      await invTool2.click();
+      await page.waitForTimeout(200);
+    }
+    p1 = await atW(4, 0);                  // 点击点 S1
+    await page.mouse.click(p1.x, p1.y);
+    await page.waitForTimeout(300);
+    p2 = await atW(0, 2);
+    await page.mouse.click(p2.x, p2.y);
+    await page.waitForTimeout(500);
+    const added2 = (await state()).map((e) => e.label).filter((l) => !before2.has(l));
+    check('反演工具对点仍用点命名（单大写字母）',
+      added2.length === 1 && /^[A-Z]$/.test(added2[0]),
+      '新增=' + added2.join(','));
+  } else {
+    check('存在反演工具按钮', false, '未找到 .tool-btn[data-tool="invert"]');
+  }
+
   // 3) 文字必须在提示框内垂直居中且填满（此前沿用了上一个元素残留的 textBaseline，
   //    文字整体偏低半个框高 → 看起来"只露一半"）
   const tipInk = async (wx, wy) => {

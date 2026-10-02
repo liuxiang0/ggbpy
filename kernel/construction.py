@@ -88,7 +88,8 @@ class Construction:
     # ------------------------------------------------------------------
     def auto_label(self, kind: str) -> str:
         """按 GGB 习惯：点 A,B,C..；线/线段/射线 a,b,c..；圆 c,d,e..；
-        函数 f,g,h..；向量 u,v,w..；数值 n1,n2..；多边形 poly1.."""
+        函数 f,g,h..；向量 u,v,w..；数值 n1,n2..；多边形 poly1..；
+        反演像（非点）inv1,inv2.."""
         pools = {
             "point": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "line": "abcdefghijklmnopqrstuvwxyz",
@@ -117,6 +118,7 @@ class Construction:
             "implicit": "cdefghijklmnopqrstuvwxyz",
             "complex": "z",
             "image": "pqrstuvwxyz",
+            "invert": "",          # 反演像（非点）：用 inv1, inv2 … 前缀，见下
         }
         pool = pools.get(kind, "abcdefghijklmnopqrstuvwxyz")
         idx = self._counters.get(kind, 0)
@@ -143,6 +145,8 @@ class Construction:
                 cand = "res" + str(idx + 1)
             elif kind == "matrix":
                 cand = "mat" + str(idx + 1)
+            elif kind == "invert":
+                cand = "inv" + str(idx + 1)     # 反演像：小写前缀（点反演仍走点的 A,B,C…）
             else:
                 cand = "poly" + str(idx + 1)
             idx += 1

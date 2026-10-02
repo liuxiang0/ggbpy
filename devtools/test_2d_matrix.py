@@ -511,6 +511,78 @@ if e5 is None:
           str({k: el_of(c5, k)._eval1(2) for k in ("fp", "fe", "fl", "fw", "fs")}))
 
 # ---------------------------------------------------------------------------
+section("M. 反演结果命名（点=大写，其它图形=inv 前缀）")
+c_m, err_m = build(["O=(0,0)", "k=Circle[O,2]", "P=(3,0)", "c2=Circle[(5,0),1]",
+                    "L=Line[(0,1),(1,1)]", "s=Segment[(3,0),(4,1)]",
+                    "poly=Polygon[(0,0),(0.6,0),(0.6,0.6)]", "f(x)=x^2"])
+check("反演命名用例构造", err_m is None, str(err_m))
+
+
+def auto_create(cons, text):
+    """执行一条无标签语句，返回新建标签列表。"""
+    before = set(cons.order)
+    cons.process(text)
+    return [x for x in cons.order if x not in before]
+
+
+if err_m is None:
+    new_pt = auto_create(c_m, "Invert[P,k]")
+    check("点反演仍用点命名（大写字母）",
+          len(new_pt) == 1 and new_pt[0][0].isupper() and c_m.elements[new_pt[0]].kind == "point",
+          str(new_pt))
+    seq = []
+    for txt, want_kind in (("Invert[c2,k]", "conic"), ("Invert[L,k]", "conic"),
+                           ("Invert[s,k]", "parametric"), ("Invert[poly,k]", "polygon"),
+                           ("Invert[f,k]", "implicit")):
+        got = auto_create(c_m, txt)
+        seq.append((txt, got, c_m.elements[got[0]].kind if got else None))
+        check("%s → inv 前缀且类型正确" % txt.split("[")[0],
+              len(got) == 1 and got[0].startswith("inv") and got[0][0].islower()
+              and c_m.elements[got[0]].kind == want_kind,
+              str(seq[-1]))
+    check("反演像序号递增（inv1→inv5）",
+          [g[0] for _, g, _ in seq] == ["inv%d" % i for i in range(1, 6)],
+          str([g[0] for _, g, _ in seq]))
+    check("反演点命名与反演像互不干扰（点仍是 A）", new_pt[0] == "A", str(new_pt))
+
+    # 显式标签优先
+    before = set(c_m.order)
+    c_m.process("q=Invert[c2,k]")
+    check("显式标签不被自动命名覆盖", "q" in c_m.order and c_m.elements["q"].kind == "conic", "")
+    # 与已有标签冲突时跳过
+    c_m2 = Construction()
+    for t in ["O=(0,0)", "k=Circle[O,2]", "c2=Circle[(5,0),1]", "inv1=(9,9)"]:
+        c_m2.process(t)
+    used = auto_create(c_m2, "Invert[c2,k]")
+    check("自动命名跳过已占用的 inv1（用 inv2）", used == ["inv2"], str(used))
+    # 反演像可参与后续命令（嵌套/引用）
+    c_m3 = Construction()
+    for t in ["O=(0,0)", "k=Circle[O,2]", "c2=Circle[(5,0),1]", "L=Line[(-9,0),(9,0)]"]:
+        c_m3.process(t)
+    inv_lbl3 = auto_create(c_m3, "Invert[c2,k]")        # 自动命名 → inv1
+    c_m3.process("D=Intersect[%s,L]" % inv_lbl3[0])     # 作为参数被引用
+    check("反演像可被标签引用（Intersect[inv, 线]）",
+          inv_lbl3[0].startswith("inv") and c_m3.elements["D"].kind == "point",
+          "%s | %s" % (inv_lbl3, c_m3.order))
+    c_m6 = Construction()
+    for t in ["O=(0,0)", "k=Circle[O,2]", "c2=Circle[(5,0),1]", "L=Line[(-9,0),(9,0)]"]:
+        c_m6.process(t)
+    c_m6.process("D2=Intersect[Invert[c2,k],L]")       # 嵌套：匿名辅助，不注册 inv
+    check("嵌套反演不注册多余标签（匿名辅助）",
+          not [l for l in c_m6.order if l.startswith("inv")] and c_m6.elements["D2"].kind == "point",
+          str(c_m6.order))
+    # .ggk 往返保留 inv 名
+    c_m4 = Construction()
+    for t in ["O=(0,0)", "k=Circle[O,2]", "c2=Circle[(5,0),1]"]:
+        c_m4.process(t)
+    auto_create(c_m4, "Invert[c2,k]")
+    data = c_m4.save_ggk((-10, 10, -10, 10))
+    c_m5 = Construction()
+    c_m5.load_json(data)
+    check(".ggk 往返保留 inv 命名", "inv1" in c_m5.order and c_m5.elements["inv1"].kind == "conic",
+          str(c_m5.order))
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

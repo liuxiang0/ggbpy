@@ -177,7 +177,7 @@ def _eval_nested(cons, text: str):
         raise GeoError("嵌套命令中不支持命令 " + name + "：请先用一条独立语句创建该对象，再用其标签作为参数")
     args = [a for a in _split_commas(inner) if a != ""]
     shadow = _DetachedConstruction(cons, depth + 1)
-    label = shadow.auto_label(_result_kind(lname))
+    label = shadow.auto_label(_label_kind(cons, lname, args))
     defn = label + "=" + t
     if lname in ("intersect", "extremum", "focus", "tangent"):
         created = handler(shadow, defn, args, None)
@@ -5861,6 +5861,26 @@ def _result_kind(name: str) -> str:
     return RESULT_KINDS.get(name, "point")
 
 
+def _label_kind(cons, lname: str, args) -> str:
+    """自动标签用的「命名类型」。
+
+    与结果类型基本一致，唯一例外是反演（Invert）：它可能产生点，也可能是圆/直线/
+    曲线/多边形等图形。点反演仍按点命名（A,B,C…），其余反演像用独立的 inv1,inv2…
+    前缀（小写开头，见 Construction.auto_label）——避免图形被命名成"下一个点"。
+    """
+    if lname != "invert":
+        return _result_kind(lname)
+    try:
+        el = cons.elements.get(args[0].strip()) if args else None
+        if el is None and args:
+            el = _lookup(cons, args[0])          # 支持嵌套命令参数
+        if el is not None and getattr(el, "kind", "") == "point":
+            return "point"
+    except Exception:
+        pass
+    return "invert"
+
+
 # ---------------------------------------------------------------------------
 # 命令表与主入口
 # ---------------------------------------------------------------------------
@@ -6158,7 +6178,7 @@ def process_line(cons, line: str) -> List:
         raise GeoError("未知命令: " + name + "（支持: " + ", ".join(sorted(COMMANDS)) + "）")
     if label is None:
         # 自动标签：需要知道结果类型 → 预注册占位
-        kind_hint = _result_kind(lname)
+        kind_hint = _label_kind(cons, lname, args)
         label = cons.auto_label(kind_hint)
         defn = label + "=" + line.strip()
     else:
