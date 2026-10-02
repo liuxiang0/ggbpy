@@ -143,6 +143,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **命名规则**：统计图使用可辨识前缀 `bc1`（条形/直方图）、`bp1`（箱线）、`pie1`（饼）、`lc1`（折线）、`sc1`（散点）、`dp1`（点图）、`bc3_1`/`sc3_1`/`sf3_1`（三维），不再落到默认字母池（此前饼图/箱线图会被命名成 `a`、`b`）
   - **修掉一个潜伏真 bug**：统计图的状态函数原是「改元素属性 + 返回 `{}`」，而**计算记忆命中时只回放返回值、不再调用函数** → 同一 `defn` 第二次创建时新元素数据为空（浏览器里实测 `lc.xs=0`、`pie.items=0`）。改为返回完整状态字典（`{xs,ys}` / `{pts}` / `{values,stacks}` / `{items,total}` / `{five,n}`），memo 回放正确
   - 检测：2D 内核 +29（167）、2D API +13（44）、2D 前端 +7（53）、3D 前端 +8（142）；覆盖命名/偏移/move·shift/锁定/`.ggk` 往返/三维网格欧拉与面序/拖动像素位移/悬停名称
+  - **工具栏菜单入口（图形化，不必敲命令）**：新增「**统计图**」分类，含 10 个按钮 —— 直方图 / 直方图分组 / 箱线图 / 饼图 / **折线图 / 散点图 / 点图** / **三维柱状图 / 三维散点图 / 三维曲面图**；点按钮即弹出数据输入框（散点用 `1,2; 3,4`，三维点用 `1,2,3; 4,5,6`，曲面图再问列数），生成后自动命名 `bc1/bp1/pie1/lc1/sc1/dp1` 与 `bc3_1/sc3_1/sf3_1`；3D 统计图对象在对象列表里显示「三维柱状图/三维散点图/三维曲面图」（`solid.chart_*` 文案）
 - **第二十四批（2026-10-02 · 第十八批收尾：统计子模块 + 前端数据表外置）**：
   - **补齐第十八批（内核/前端拆分）尚未完成的范围**：新增 **`kernel/stats.py`**（8 函数 / 139 行：`_median`/`_mode`/`_variance`、`_fitline_state`/`_fit_silent_fit`、`_barchart_state`、`_fitsphere_state`/`_fitplane_state`）与随迁常量 `_REF_X`/`_REF_DOT`；只依赖 `math`/`re`/`tolerance`/`geo2d`，`commands.py` **6,192 → 6,086 行**
   - 前端新增 **`static/data.js`**（纯数据 102 行：`CAS_COMMANDS` 11 条 / `TOOLS` 工具定义 / `TOOL_CATS` 分类），`app.js` **5,631 → 5,542 行**；加载顺序 `i18n.js → data.js → app.js`，缺文件时退化为空表
@@ -176,7 +177,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 50 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 53 = 1196 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 50 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 59 = 1202 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

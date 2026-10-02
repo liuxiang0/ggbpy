@@ -939,6 +939,82 @@
     return null;
   }
 
+  // ---------- 统计图工具：点击画布 → 输入数据 → 生成图 ----------
+  function isChartTool(name) {
+    return !!CHART_TOOL_CMD[name] || name === 'histogram' || name === 'scatterplot' ||
+           name === 'scatterplot3d' || name === 'surfacechart3d';
+  }
+
+  var CHART_TOOL_CMD = {
+    barchart: 'BarChart', boxplot: 'BoxPlot', piechart: 'PieChart',
+    linechart: 'LineChart', dotplot: 'DotPlot', barchart3d: 'BarChart3D'
+  };
+
+  function chartDataPrompt(title, def) {
+    var txt = prompt(title, def || '');
+    if (txt === null || !txt.trim()) return null;
+    var parts = txt.split(/[,，\s]+/).map(function (v) { return v.trim(); }).filter(Boolean);
+    if (!parts.length || parts.some(function (v) { return isNaN(parseFloat(v)); })) return '';
+    return parts;
+  }
+
+  function chartToolPrompt(tool) {
+    var zhTitle = {
+      barchart: '数据（逗号分隔，如 1,2,2,3,3）：', histogram: '数据（逗号分隔）：',
+      boxplot: '数据（逗号分隔）：', piechart: '各部分数值（逗号分隔，如 3,5,2）：',
+      linechart: '数据（逗号分隔，按顺序连线）：', dotplot: '数据（逗号分隔，相同值叠点）：',
+      scatterplot: '点（如 1,2; 3,4; 5,3）：', barchart3d: '数据（逗号分隔）→ 三维柱状图：',
+      scatterplot3d: '三维点（如 1,2,3; 4,5,6）：', surfacechart3d: '数值（逗号分隔）：'
+    }[tool] || '数据（逗号分隔）：';
+    var enTitle = {
+      barchart: 'Data (comma separated, e.g. 1,2,2,3,3):', histogram: 'Data (comma separated):',
+      boxplot: 'Data (comma separated):', piechart: 'Part values (comma separated, e.g. 3,5,2):',
+      linechart: 'Data (comma separated, connected in order):', dotplot: 'Data (comma separated, repeats stack):',
+      scatterplot: 'Points (e.g. 1,2; 3,4; 5,3):', barchart3d: 'Data (comma separated) → 3D bar chart:',
+      scatterplot3d: '3D points (e.g. 1,2,3; 4,5,6):', surfacechart3d: 'Values (comma separated):'
+    }[tool] || 'Data (comma separated):';
+    var title = lang === 'en' ? enTitle : zhTitle;
+    var msgInvalid = lang === 'en' ? 'Invalid data' : '无效数据';
+
+    // 散点图 / 三维散点图：按分号分组
+    if (tool === 'scatterplot' || tool === 'scatterplot3d') {
+      var raw = prompt(title, '');
+      if (raw === null || !raw.trim()) { resetTool(); return; }
+      var dim = tool === 'scatterplot' ? 2 : 3;
+      var groups = raw.replace(/\(/g, '').replace(/\)/g, '').split(/[;；\n]+/)
+                      .map(function (g) { return g.trim(); }).filter(Boolean);
+      var pts = [];
+      for (var gi = 0; gi < groups.length; gi++) {
+        var nums = groups[gi].split(/[,，\s]+/).map(function (v) { return parseFloat(v); });
+        if (nums.length < dim || nums.slice(0, dim).some(function (v) { return isNaN(v); })) { pts = null; break; }
+        pts.push('(' + nums.slice(0, dim).join(',') + ')');
+      }
+      if (!pts || !pts.length) { setMsg(msgInvalid, true); resetTool(); return; }
+      var scCmd = (tool === 'scatterplot' ? 'ScatterPlot[{' : 'ScatterPlot3D[{') + pts.join(',') + '}]';
+      postInput(scCmd, function (ok) { if (ok) resetTool(); });
+      return;
+    }
+
+    var data = chartDataPrompt(title, '');
+    if (data === null) { resetTool(); return; }
+    if (data === '') { setMsg(msgInvalid, true); resetTool(); return; }
+
+    var cmd = null;
+    if (tool === 'histogram') {
+      var binsTxt = prompt(lang === 'en' ? 'Bins (blank = auto):' : '组数（留空自动）：', '');
+      var bins = binsTxt === null ? 0 : parseInt(binsTxt, 10);
+      cmd = 'Histogram[{' + data.join(',') + '}' + (bins > 1 ? ',' + bins : '') + ']';
+    } else if (tool === 'surfacechart3d') {
+      var colTxt = prompt(lang === 'en' ? 'Column count:' : '列数：', '3');
+      var cols = colTxt === null ? 3 : parseInt(colTxt, 10);
+      if (!(cols >= 2)) { setMsg(msgInvalid, true); resetTool(); return; }
+      cmd = 'SurfaceChart3D[{' + data.join(',') + '},' + cols + ']';
+    } else {
+      cmd = CHART_TOOL_CMD[tool] + '[{' + data.join(',') + '}]';
+    }
+    postInput(cmd, function (ok) { if (ok) resetTool(); });
+  }
+
   function drawBarChart(e) {
     var co = chartOff(e);
     var maxC = 1;
@@ -4591,6 +4667,7 @@
       var name = b.getAttribute('data-tool');
       // 3D 模式：3D 工具由 tool3d 系统接管（已在前面 handler 中激活）
       if (mode3d && ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone3d', 'cylinder3d', 'prism3d', 'pyramid3d', 'tetra3d', 'octa3d', 'hexa3d', 'icosa3d', 'dodeca3d'].indexOf(name) !== -1) return;
+      if (isChartTool(name)) { chartToolPrompt(name); return; }   // 统计图：点按钮即输入数据
       if (activeTool === name) cancelTool();
       else startTool(name);
       return;
@@ -4619,6 +4696,7 @@
     var b = ev.target.closest('.tool-btn[data-tool]');
     if (b) {
       var name = b.getAttribute('data-tool');
+      if (isChartTool(name)) { chartToolPrompt(name); return; }
       if (activeTool === name) cancelTool();
       else startTool(name);
       return;
@@ -5401,14 +5479,9 @@
       postInput('Locus[' + toolSel[0] + ',' + lp + ']', function (ok) { if (ok) resetTool(); });
       return;
     }
-    if (activeTool === 'barchart') {
-      var bTxt = prompt(lang === 'en' ? 'Data (comma separated, e.g. 1,2,2,3,3,3):' : '数据（逗号分隔，如 1,2,2,3,3,3）：');
-      if (bTxt === null || !bTxt.trim()) { resetTool(); return; }
-      var data = bTxt.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-      if (!data.length || data.some(function (s) { return isNaN(parseFloat(s)); })) {
-        setMsg(lang === 'en' ? 'Invalid data' : '无效数据', true); resetTool(); return;
-      }
-      postInput('BarChart[' + data.join(',') + ']', function (ok) { if (ok) resetTool(); });
+    if (CHART_TOOL_CMD[activeTool] || activeTool === 'histogram' || activeTool === 'scatterplot' ||
+        activeTool === 'scatterplot3d' || activeTool === 'surfacechart3d') {
+      chartToolPrompt(activeTool);
       return;
     }
     if (activeTool === 'ineq') {

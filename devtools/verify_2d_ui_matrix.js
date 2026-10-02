@@ -31,7 +31,8 @@ function check(name, ok, detail) {
   const browser = await chromium.launch({ executablePath: EXE, headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   page.on('pageerror', (e) => JS_ERRORS.push(String(e && e.message || e)));
-  page.on('dialog', async (d) => { await d.accept(); });
+  const dialogQueue = [];                       // 统计图工具需要输入数据 → 排队应答
+  page.on('dialog', async (d) => { await d.accept(dialogQueue.length ? dialogQueue.shift() : ''); });
 
   const state = async () => (await (await page.request.get(BASE + '/api/state')).json()).elements || [];
   const byLabel = async (l) => (await state()).filter((e) => e.label === l)[0] || null;
@@ -543,6 +544,51 @@ function check(name, ok, detail) {
   const chTip = await page.evaluate(() => window.__ggbpyDebug.hoverTip());
   check('悬停统计图提示名称（不堆数据）',
     !!chTip && chTip.nameOnly === true, JSON.stringify(chTip));
+
+  // -------------------------------------------------------------------------
+  section('K4. 统计图菜单入口（工具按钮建图）');
+  await clear();
+  await page.waitForTimeout(300);
+  const chartsCat = await page.$('.cat-icon[data-cat="charts"]');
+  check('工具栏有「统计图」分类按钮', !!chartsCat, '');
+  if (chartsCat) {
+    await chartsCat.click();
+    await page.waitForTimeout(300);
+  }
+  const chartToolKeys = await page.$$eval('#cat-tools .tool-btn[data-tool]', (els) => els.map((e) => e.getAttribute('data-tool')));
+  const expectTools = ['barchart', 'histogram', 'boxplot', 'piechart', 'linechart', 'scatterplot', 'dotplot',
+                       'barchart3d', 'scatterplot3d', 'surfacechart3d'];
+  check('统计图分类含 10 个工具按钮（2D 七类 + 3D 三类）',
+    expectTools.every((k) => chartToolKeys.indexOf(k) !== -1), chartToolKeys.join(','));
+  const clickChartTool = async (tool, answers, wait) => {
+    dialogQueue.push(...answers);
+    const btn = await page.$('#cat-tools .tool-btn[data-tool="' + tool + '"]');
+    if (!btn) return false;
+    await btn.click();
+    await page.waitForTimeout(wait || 600);
+    return true;
+  };
+  await clickChartTool('linechart', ['1,3,2,5']);
+  await clickChartTool('scatterplot', ['1,2; 3,4; 5,3']);
+  await clickChartTool('dotplot', ['1,2,2,3']);
+  await clickChartTool('piechart', ['3,5,2,4']);
+  const afterTools = await state();
+  const kinds = afterTools.map((e) => e.kind);
+  check('点「折线图」按钮 → 建出 linechart',
+    afterTools.some((e) => e.kind === 'linechart' && /^lc\d+$/.test(e.label)),
+    afterTools.map((e) => e.label + ':' + e.kind).join(','));
+  check('点「散点图」按钮 → 建出 scatterplot（解析 1,2; 3,4 输入）',
+    afterTools.some((e) => e.kind === 'scatterplot'), kinds.join(','));
+  check('点「点图」/「饼图」按钮 → 建出 dotplot + piechart',
+    kinds.indexOf('dotplot') !== -1 && kinds.indexOf('piechart') !== -1, kinds.join(','));
+  // 3D 统计图工具（无需切模式，点按钮即输入）
+  await clickChartTool('barchart3d', ['1,3,2,4'], 700);
+  await clickChartTool('surfacechart3d', ['1,2,3,2,3,4', '3'], 700);
+  const st3tools = await (await page.request.get(BASE + '/api/state3d')).json();
+  const mesh3 = (st3tools.elements || []).filter((e) => e.objtype === 'polyhedron' && e.solid && e.solid.indexOf('chart_') === 0);
+  check('点「三维柱状图/三维曲面图」按钮 → state3d 出现统计图网格',
+    mesh3.length >= 2 && mesh3.every((e) => ((e.data || {}).verts || []).length > 0),
+    mesh3.map((e) => e.label + ':' + ((e.data || {}).verts || []).length + 'v').join(' '));
 
   // -------------------------------------------------------------------------
   section('K. 会话隔离（cookie 持久 + 新上下文独立）');
