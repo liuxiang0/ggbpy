@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 from typing import Dict, List, Optional, Tuple
+from .tolerance import TIGHT  # 统一数值容差（见 kernel/tolerance.py）
 
 MESH_TYPES = ("cube", "polyhedron")
 
@@ -73,7 +74,7 @@ def _face_normal(vs, face) -> Tuple[float, float, float]:
         ny += (a[2] - b[2]) * (a[0] + b[0])
         nz += (a[0] - b[0]) * (a[1] + b[1])
     ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if ln < 1e-15:
+    if ln < TIGHT:
         return 0.0, 0.0, 0.0
     return nx / ln, ny / ln, nz / ln
 

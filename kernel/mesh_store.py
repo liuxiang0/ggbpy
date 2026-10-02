@@ -12,6 +12,7 @@ import math
 from typing import Dict, List, Optional
 
 from . import blob_store
+from .tolerance import COORD  # 统一数值容差（见 kernel/tolerance.py）
 
 MESHES: Dict[str, dict] = {}
 
@@ -23,7 +24,7 @@ def _clean(verts, faces):
     for v in verts:
         found = -1
         for i, q in enumerate(uniq):
-            if abs(q[0] - v[0]) < 1e-9 and abs(q[1] - v[1]) < 1e-9 and abs(q[2] - v[2]) < 1e-9:
+            if abs(q[0] - v[0]) < COORD and abs(q[1] - v[1]) < COORD and abs(q[2] - v[2]) < COORD:
                 found = i
                 break
         if found < 0:

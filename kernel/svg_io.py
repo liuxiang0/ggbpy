@@ -9,6 +9,7 @@ import math
 from typing import List, Tuple
 
 from .elements import _fmt as _f
+from .tolerance import COARSE  # 统一数值容差（见 kernel/tolerance.py）
 
 
 def export_svg(cons, view: Tuple[float, float, float, float], width: int = 1000,
@@ -341,8 +342,8 @@ def export_svg3d(cons, width: int = 1000, height: int = 700, yaw: float = -0.62,
     umin, umax = min(us), max(us)
     vmin, vmax = min(vs), max(vs)
     pad = 0.08
-    span_u = max(1e-6, umax - umin) * (1 + 2 * pad)
-    span_v = max(1e-6, vmax - vmin) * (1 + 2 * pad)
+    span_u = max(COARSE, umax - umin) * (1 + 2 * pad)
+    span_v = max(COARSE, vmax - vmin) * (1 + 2 * pad)
     s = min((w - 40) / span_u, (h - 60) / span_v)
     cu = (umin + umax) / 2.0
     cv = (vmin + vmax) / 2.0

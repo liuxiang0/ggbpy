@@ -15,6 +15,7 @@ import math
 from typing import Optional
 
 import sympy
+from .tolerance import NEGLIGIBLE  # 统一数值容差（见 kernel/tolerance.py）
 
 
 class Interval:
@@ -69,12 +70,12 @@ class Interval:
     def __truediv__(self, o):
         if isinstance(o, Interval):
             if o.contains_zero():
-                if abs(o.lo) < 1e-300 and abs(o.hi) < 1e-300:
+                if abs(o.lo) < NEGLIGIBLE and abs(o.hi) < NEGLIGIBLE:
                     return Interval.empty()
                 # 分母跨零：结果为两个无穷区间的并 → 用 ±inf 表示（视为发散）
                 return Interval(-math.inf, math.inf)
             return self * Interval(1.0 / o.hi, 1.0 / o.lo)
-        if abs(o) < 1e-300:
+        if abs(o) < NEGLIGIBLE:
             return Interval.empty()
         return Interval(self.lo / o, self.hi / o)
 

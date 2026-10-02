@@ -20,6 +20,7 @@ import re
 from typing import List, Optional, Tuple
 
 from .elements import GeoError
+from .tolerance import TIGHT  # 统一数值容差（见 kernel/tolerance.py）
 
 # 函数定义：f(x) = 表达式
 RE_FUNC = re.compile(r"^([A-Za-z_\u4e00-\u9fff][A-Za-z0-9_\u4e00-\u9fff]*)?\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*=\s*(.+)$")
@@ -120,7 +121,7 @@ class _NumParser:
             if op == "*":
                 v = v * r
             else:
-                if abs(r) < 1e-15:
+                if abs(r) < TIGHT:
                     raise GeoError("除数为零")
                 v = v / r
         return v

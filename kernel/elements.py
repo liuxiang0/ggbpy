@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import math
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from .tolerance import EPSILON, COORD  # 统一数值容差（见 kernel/tolerance.py）
 
-EPS = 1e-12
 
 
 def _fmt(v: float) -> str:
@@ -38,7 +38,7 @@ def clip_segment(
     dx, dy = x2 - x1, y2 - y1
     t0, t1 = 0.0, 1.0
     for p, q in ((-dx, x1 - xmin), (dx, xmax - x1), (-dy, y1 - ymin), (dy, ymax - y1)):
-        if abs(p) < EPS:
+        if abs(p) < EPSILON:
             if q < 0:
                 return None
         else:
@@ -61,7 +61,7 @@ def clip_infinite_line(
 ) -> Optional[Tuple[float, float, float, float]]:
     """把直线 ax+by+c=0 裁剪为视口内线段。"""
     norm = math.hypot(a, b)
-    if norm < EPS:
+    if norm < EPSILON:
         return None
     # 线上一点（到原点最近点）
     x0 = -a * c / (norm * norm)
@@ -319,10 +319,10 @@ class GeoComplex(GeoElement):
 
 def _cmplx_fmt(a: float, b: float) -> str:
     ta = _fmt(a)
-    if abs(b) < 1e-12:
-        return ta if abs(a) > 1e-12 else "0"
+    if abs(b) < EPSILON:
+        return ta if abs(a) > EPSILON else "0"
     tb = _fmt(abs(b))
-    if abs(a) < 1e-12:
+    if abs(a) < EPSILON:
         return ("-" if b < 0 else "") + tb + "i"
     return ta + (" - " if b < 0 else " + ") + tb + "i"
 
@@ -410,12 +410,12 @@ class GeoLine(GeoElement):
             d["seg"] = None
         else:
             d["seg"] = list(clip)
-        if abs(self.b) > 1e-9:
+        if abs(self.b) > COORD:
             m = -self.a / self.b
             n = -self.c / self.b
             d["value"] = "y = " + _fmt(m) + "x " + ("+ " if n >= 0 else "- ") + _fmt(abs(n))
         else:
-            d["value"] = "x = " + _fmt(-self.c / self.a) if abs(self.a) > 1e-9 else "退化直线"
+            d["value"] = "x = " + _fmt(-self.c / self.a) if abs(self.a) > COORD else "退化直线"
         return d
 
 
@@ -450,7 +450,7 @@ class GeoRay(GeoElement):
         if d is None:
             return None
         norm = math.hypot(self.dx, self.dy)
-        ux, uy = (self.dx / norm, self.dy / norm) if norm > EPS else (1.0, 0.0)
+        ux, uy = (self.dx / norm, self.dy / norm) if norm > EPSILON else (1.0, 0.0)
         xmin, xmax, ymin, ymax = view
         span = max(abs(xmax - xmin), abs(ymax - ymin)) * 2 + 1.0
         clip = clip_segment(self.ox, self.oy, self.ox + ux * span, self.oy + uy * span, view)
@@ -665,7 +665,7 @@ class GeoFunction(GeoElement):
         refined: List[float] = []
 
         def add(xi: float) -> None:
-            if not refined or xi > refined[-1] + 1e-12:
+            if not refined or xi > refined[-1] + EPSILON:
                 refined.append(xi)
 
         def refine(a: float, b: float, depth: int) -> None:
@@ -1092,7 +1092,7 @@ class GeoImage(GeoElement):
     def corners(self):
         """四个世界坐标角点：左下、右下、右上、左上。"""
         w = math.hypot(self.bx - self.ax, self.by - self.ay)
-        if w < 1e-12:
+        if w < EPSILON:
             return [[self.ax, self.ay], [self.bx, self.by], [self.bx, self.by], [self.ax, self.ay]]
         ux, uy = (self.bx - self.ax) / w, (self.by - self.ay) / w
         ratio = (self.ih / self.iw) if self.iw > 0 else 1.0

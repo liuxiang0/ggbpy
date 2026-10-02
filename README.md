@@ -130,7 +130,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **第十八批（2026-10-02 · P2 内核/前端拆分）**：
   - **内核拆分（`commands.py` 7,867 → 6,567 行）**：3D 几何算法抽为 **`kernel/geometry3d.py`**（33 个函数 / 849 行：网格规范化与体积面积、凸多面体半空间裁剪、面×面/线×面/平面×立体/球×平面·球·空间圆·立体·直线/立体×直线/立体×立体 等全部求交、空间圆基向量、射线-三角形、`_poly_state`）；立体构造数学抽为 **`kernel/solids.py`**（28 个函数 / 564 行：立方体三种构造、正四/六/八/十二/二十面体、棱柱/棱锥、圆锥/圆柱、球、正交基与解析元数据标注）。两者**只依赖 `elements`/`math`/`numpy`，不依赖命令层**，可独立导入与单测；`commands.py` 通过 re-export 保持全部调用方（含既有测试的 `from kernel.commands import _mesh_volume`）零改动
   - **前端文案外置（`app.js` 5,680 → 5,537 行）**：186×2 条 zh/en 文案抽到 **`static/i18n.js`**（由 `index.html` 在 `app.js` 之前加载，`app.js` 读 `window.GGB_I18N`，缺文件时退化为显示原始 key）——改文案不再动逻辑代码
-  - **模块边界守卫（`devtools/test_modules.py`，25 断言）**：断言 `geometry3d`/`solids` 不 import 命令层、re-export 与源模块**同一函数对象**、新进程可独立导入（不拉起命令层）、规模预算，以及**静态防漏检查**（模块内调用的函数与引用的模块级常量必须已定义/导入 —— 本轮正是靠它抓到搬迁时漏掉的 `_poly_state` 与 `_PHI`）；前端侧校验 `i18n.js` 已加载、数据不再残留在 `app.js`、**中英词条键集合完全一致（186/186，无漏翻）**
+  - **模块边界守卫（`devtools/test_modules.py`，25 断言）**：断言 `geometry3d`/`solids` 不 import 命令层、re-export 与源模块**同一函数对象**、新进程可独立导入（不拉起命令层）、规模预算，以及**静态防漏检查**（模块内调用的函数与引用的模块级常量必须已定义/导入 —— 本轮正是靠它抓到搬迁时漏掉的 `_poly_state` 与 `_PHI`）；前端侧校验 `i18n.js` 已加载、数据不再残留在 `app.js`、**中英词条键集合完全一致（186/186，无漏翻）**  - **模块边界守卫（`devtools/test_modules.py`，33 断言）**：断言 `geometry3d`/`solids` 不 import 命令层、re-export 与源模块**同一函数对象**、新进程可独立导入（不拉起命令层）、规模预算，以及**静态防漏检查**（模块内调用的函数与引用的模块级常量必须已定义/导入 —— 本轮正是靠它抓到搬迁时漏掉的 `_poly_state` 与 `_PHI`）；前端侧校验 `i18n.js` 已加载、数据不再残留在 `app.js`、**中英词条键集合完全一致（186/186，无漏翻）**
+- **第十九批（2026-10-02 · 统一容差 + 二维几何层拆分）**：
+  - **统一数值容差（`kernel/tolerance.py`）**：把散落在 13 个内核模块里的 `1e-12`/`1e-9` 等「判定接近 0」的魔数（**264 处**）统一为分级具名常量 —— `EPSILON=1e-12`（判定等于 0：叉积/行列式/分母）、`TIGHT=1e-15`、`COORD=1e-9`（坐标/长度尺度）、`ZERO_SQ=1e-18`、`LOOSE=1e-7`（网格/半空间）、`COARSE=1e-6`（采样/取景）、`NEGLIGIBLE=1e-300`（分母守卫）、`ROOT_TOL=1e-10`、`OPT_XATOL/OPT_FATOL`（优化器）；**取值与原字面量一致，行为不变**；顺带废除了旧别名 `EPS`（`elements.py`/`geom_util.py` 各自的本地常量）
+  - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
+  - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
+  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
 
 #### 3D 限制（由检测矩阵锁定当前行为）
 
@@ -144,11 +149,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 9 步：注册表 8 + 仓库 18 + 模块 25 + 会话 23 + 2D 内核 124 + 2D API 31 + 3D 490/181/134 + 2D 前端 36 = 1070 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 33 + 会话 23 + 2D 内核 124 + 2D API 31 + 3D 490/181/134 + 2D 前端 36 = 1098 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
 python3 -B devtools/test_modules.py     # 模块边界（内核拆分/前端文案外置/词条一致性）
+python3 -B devtools/test_tolerance.py   # 统一容差（零魔数扫描/前后端一致/防漏导入）
 ```
 
 - `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 显式/参数/隐式曲面 × FitPlane × OBJ·STL 导入 × 样式快照 × 序列化 × 3D 度量语义）

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import sympy
 
 from .elements import GeoError, GeoFunction, GeoNumber
+from .tolerance import EPSILON  # 统一数值容差（见 kernel/tolerance.py）
 
 _X = sympy.Symbol("x", real=True)
 
@@ -43,7 +44,7 @@ def _fmt(e) -> str:
 
 
 def _num_fmt(v: float) -> str:
-    if abs(v) < 1e-12:
+    if abs(v) < EPSILON:
         return "0"
     s = ("%.10g" % v)
     return s

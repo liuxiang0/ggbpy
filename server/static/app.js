@@ -4,6 +4,11 @@
 
   var canvas = document.getElementById('cv');
   var ctx = canvas.getContext('2d');
+  // 数值容差（与 kernel/tolerance.py 对应分级）：判断"等于 0 / 重合 / 退化"时统一用这些常量，
+  // 不要写裸 1e-12 之类字面量（devtools/test_tolerance.py 会扫描并阻止新增）。
+  var EPSILON = 1e-12;   // 判定"等于 0"（分母/行列式/叉积）
+  var COORD = 1e-9;      // 坐标/长度尺度（点重合、退化长度）
+  var COARSE = 1e-6;     // 采样/取景尺度（角度、最小跨度）
   // 会话隔离（P2）：首次访问生成随机 sid 写入 cookie —— 不同浏览器/上下文各自独立，
   // 未带 cookie 的脚本请求仍落到 default 会话（保持既有 API 兼容）。
   (function ensureSessionId() {
@@ -137,7 +142,7 @@
     for (var dd = 1; dd <= 24; dd++) {
       var nn = rad * dd / Math.PI;
       var rr = Math.round(nn);
-      if (Math.abs(nn - rr) < 1e-6) {
+      if (Math.abs(nn - rr) < COARSE) {
         var gg = gcdInt(rr, dd);
         var n2 = rr / gg, d2 = dd / gg;
         var s = n2 === 1 ? '' : (n2 === -1 ? '-' : String(n2));
@@ -1773,7 +1778,7 @@
     var xc, yc, zc;
     if (ortho3d) {
       // 正交：z_cam 由平面约束直接解（dir_z = sp）
-      if (Math.abs(sp) < 1e-9) {
+      if (Math.abs(sp) < COORD) {
         zc = 0;
       } else {
         zc = ((z - cam.tz) - v * cp) / sp;
@@ -1781,7 +1786,7 @@
       xc = u; yc = v;
     } else {
       var denom = (z - cam.tz) + (f + cam.r) * sp;
-      if (Math.abs(denom) < 1e-9) {
+      if (Math.abs(denom) < COORD) {
         xc = u; yc = v; zc = 0;
       } else {
         var s = (v * cp + f * sp) / denom;
@@ -1882,7 +1887,7 @@
     var pBase = proj3(base), pTip = proj3(tip);
     var dx = pTip.x - pBase.x, dy = pTip.y - pBase.y;
     var len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1e-6) return;
+    if (len < COARSE) return;
     var ux = dx / len, uy = dy / len;   // 朝外单位方向（屏幕）
     var size = 9;
     var spread = 0.55;   // ~31.5° 半张角
@@ -4493,7 +4498,7 @@
     for (var shi = 0; shi < elements.length; shi++) {
       var she = elements[shi];
       if (she.kind !== 'point' || she.visible === false) continue;
-      if (Math.abs(she.x - wx) < 1e-9 && Math.abs(she.y - wy) < 1e-9) return she.label;
+      if (Math.abs(she.x - wx) < COORD && Math.abs(she.y - wy) < COORD) return she.label;
     }
     return null;
   }
@@ -4588,7 +4593,7 @@
     }
     if (obj.kind === 'line') {
       var a = obj.a, b = obj.b, c = obj.c, denom = a * a + b * b;
-      if (denom < 1e-12) return 0.5;
+      if (denom < EPSILON) return 0.5;
       var spr = Math.sqrt(denom);
       var px = -a * c / denom, py = -b * c / denom;
       var s = (wx - px) * (-b / spr) + (wy - py) * (a / spr);  // 沿方向投影
@@ -4655,14 +4660,14 @@
     var rows = 5, cols = 6, r = 0, pivotCol = [];
     for (var c = 0; c < cols && r < rows; c++) {
       var pr = -1;
-      for (var rr = r; rr < rows; rr++) if (Math.abs(m[rr][c]) > 1e-9) { pr = rr; break; }
+      for (var rr = r; rr < rows; rr++) if (Math.abs(m[rr][c]) > COORD) { pr = rr; break; }
       if (pr < 0) continue;
       var t0 = m[r]; m[r] = m[pr]; m[pr] = t0;
       var piv = m[r][c];
       for (var cc = 0; cc < cols; cc++) m[r][cc] /= piv;
       for (var rr2 = 0; rr2 < rows; rr2++) if (rr2 !== r) {
         var f2 = m[rr2][c];
-        if (Math.abs(f2) > 1e-12) for (var cc2 = 0; cc2 < cols; cc2++) m[rr2][cc2] -= f2 * m[r][cc2];
+        if (Math.abs(f2) > EPSILON) for (var cc2 = 0; cc2 < cols; cc2++) m[rr2][cc2] -= f2 * m[r][cc2];
       }
       pivotCol.push(c);
       r++;
@@ -4679,7 +4684,7 @@
       xv[pc] = -s;
     }
     var any = false;
-    for (var k = 0; k < 6; k++) if (Math.abs(xv[k]) > 1e-12) { any = true; break; }
+    for (var k = 0; k < 6; k++) if (Math.abs(xv[k]) > EPSILON) { any = true; break; }
     return any ? xv : null;
   }
   function conicPreviewSegs(coeff) {
@@ -4759,7 +4764,7 @@
       var hfc = Math.hypot(hl2.x - hl1.x, hl2.y - hl1.y) / 2;
       var h1 = Math.hypot(wx - hl1.x, wy - hl1.y), h2 = Math.hypot(wx - hl2.x, wy - hl2.y);
       var hsa = Math.abs(h1 - h2) / 2;      // 实半轴 = ||PF1|-|PF2||/2
-      if (hsa < 1e-9 || hsa >= hfc) return null;
+      if (hsa < COORD || hsa >= hfc) return null;
       var hsb = Math.sqrt(hfc * hfc - hsa * hsa);
       return { type: 'conic', ctype: 'hyperbola', cx: (hl1.x + hl2.x) / 2, cy: (hl1.y + hl2.y) / 2,
                semi_a: hsa, semi_b: hsb, angle: Math.atan2(hl2.y - hl1.y, hl2.x - hl1.x) };
@@ -4777,11 +4782,11 @@
       else if (dlEl.kind === 'segment') { var sdx = dlEl.x2 - dlEl.x1, sdy = dlEl.y2 - dlEl.y1; qA = -sdy; qB = sdx; qC = -(qA * dlEl.x1 + qB * dlEl.y1); }
       else { qA = -dlEl.uy; qB = dlEl.ux; qC = -(qA * dlEl.ox + qB * dlEl.oy); }
       var qden = qA * qA + qB * qB;
-      if (qden < 1e-12) return null;
+      if (qden < EPSILON) return null;
       var qt = -(qA * pfc.x + qB * pfc.y + qC) / qden;
       var qhx = pfc.x + qA * qt, qhy = pfc.y + qB * qt;   // 焦点到准线垂足
       var qp = Math.hypot(pfc.x - qhx, pfc.y - qhy) / 2;  // p（顶点到焦点/准线距离）
-      if (qp < 1e-9) return null;
+      if (qp < COORD) return null;
       return { type: 'conic', ctype: 'parabola', cx: (pfc.x + qhx) / 2, cy: (pfc.y + qhy) / 2,
                semi_a: qp, angle: Math.atan2(pfc.y - qhy, pfc.x - qhx) };
     }
@@ -4789,7 +4794,7 @@
       var aImg = findEl(sel[0]);
       if (!aImg) return null;
       var wImg = Math.hypot(wx - aImg.x, wy - aImg.y);
-      if (wImg < 1e-9) return null;
+      if (wImg < COORD) return null;
       var uxI = (wx - aImg.x) / wImg, uyI = (wy - aImg.y) / wImg;
       var hImg = wImg * pendingImage.ratio;
       var vxI = -uyI, vyI = uxI;

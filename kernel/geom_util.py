@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import math
 from typing import Callable, List, Optional, Tuple
+from .tolerance import EPSILON, TIGHT, COORD, COARSE  # 统一数值容差（见 kernel/tolerance.py）
 
-EPS = 1e-9
+# 兼容既有调用：EPSILON 指向统一容差表里的 COORD
 
 
 # ---------------------------------------------------------------------------
@@ -79,15 +80,15 @@ def marching_squares(
             def edge_pt(e: int):
                 # 边：0=左, 1=下, 2=右, 3=上
                 if e == 0:
-                    t = v00 / (v00 - v01) if abs(v00 - v01) > EPS else 0.5
+                    t = v00 / (v00 - v01) if abs(v00 - v01) > EPSILON else 0.5
                     return (x0, y0 + t * (y1 - y0))
                 if e == 1:
-                    t = v00 / (v00 - v10) if abs(v00 - v10) > EPS else 0.5
+                    t = v00 / (v00 - v10) if abs(v00 - v10) > EPSILON else 0.5
                     return (x0 + t * (x1 - x0), y0)
                 if e == 2:
-                    t = v10 / (v10 - v11) if abs(v10 - v11) > EPS else 0.5
+                    t = v10 / (v10 - v11) if abs(v10 - v11) > EPSILON else 0.5
                     return (x1, y0 + t * (y1 - y0))
-                t = v01 / (v01 - v11) if abs(v01 - v11) > EPS else 0.5
+                t = v01 / (v01 - v11) if abs(v01 - v11) > EPSILON else 0.5
                 return (x0 + t * (x1 - x0), y1)
 
             pts = [edge_pt(e) for e in case_segs]
@@ -98,7 +99,7 @@ def marching_squares(
 
 def assemble_loops(
     segs: List[Tuple[Tuple[float, float], Tuple[float, float]]],
-    tol: float = 1e-6,
+    tol: float = COARSE,
 ) -> List[List[Tuple[float, float]]]:
     """把等值线段首尾相接装配为闭合多边形。返回多边形列表（每个为点列表）。"""
     segs = [list(s) for s in segs]
@@ -163,7 +164,7 @@ def conic_from_five_points(pts: List[Tuple[float, float]]) -> Optional[Tuple[flo
         return None
     # 归一化
     norm = max(abs(v) for v in best)
-    if norm < EPS:
+    if norm < EPSILON:
         return None
     return tuple(v / norm for v in best)
 
@@ -174,11 +175,11 @@ def _solve5(A: List[List[float]], b: List[float]) -> Optional[List[float]]:
     M = [row[:] + [b[i]] for i, row in enumerate(A)]
     for col in range(n):
         piv = max(range(col, n), key=lambda r: abs(M[r][col]))
-        if abs(M[piv][col]) < 1e-12:
+        if abs(M[piv][col]) < EPSILON:
             return None
         M[col], M[piv] = M[piv], M[col]
         for r in range(n):
-            if r != col and abs(M[r][col]) > 1e-15:
+            if r != col and abs(M[r][col]) > TIGHT:
                 f = M[r][col] / M[col][col]
                 for c in range(col, n + 1):
                     M[r][c] -= f * M[col][c]
@@ -197,13 +198,13 @@ def conic_canonical(coeffs):
     """
     a, b, c, d, e, f = coeffs
     det2 = 4 * a * c - b * b
-    if abs(det2) < 1e-9:
+    if abs(det2) < COORD:
         return None
     # 中心：解 [2a b; b 2c]·(cx,cy) = (-d,-e)
     x0 = (b * e - 2 * c * d) / det2
     y0 = (b * d - 2 * a * e) / det2
     k = a * x0 * x0 + b * x0 * y0 + c * y0 * y0 + d * x0 + e * y0 + f
-    if abs(k) < 1e-9:
+    if abs(k) < COORD:
         return None
     if k > 0:                       # 整体缩放符号，令中心值 k<0（实曲线保证）
         a, b, c, d, e, f = -a, -b, -c, -d, -e, -f
@@ -219,7 +220,7 @@ def conic_canonical(coeffs):
         else:
             ang = th0
             sa, sb = math.sqrt(-k / A), math.sqrt(-k / C)
-        ct = "circle" if abs(sa - sb) < 1e-6 * max(sa, sb) else "ellipse"
+        ct = "circle" if abs(sa - sb) < COARSE * max(sa, sb) else "ellipse"
         return (x0, y0, sa, sb, ang, ct)
     # 双曲线：实轴沿系数与 k 异号的轴方向
     if A > 0:
@@ -230,11 +231,11 @@ def conic_canonical(coeffs):
 def conic_classify(a, b, c, d, e, f):
     """判定圆锥曲线类型：disc = b²-4ac。返回 ('ellipse'|'hyperbola'|'parabola'|'circle'|'degenerate')。"""
     disc = b * b - 4 * a * c
-    if abs(disc) < 1e-9 and abs(a) < 1e-9 and abs(c) < 1e-9 and abs(b) < 1e-9:
+    if abs(disc) < COORD and abs(a) < COORD and abs(c) < COORD and abs(b) < COORD:
         return "degenerate"   # 线性（退化为直线/点/空）
-    if abs(disc) < 1e-9:
+    if abs(disc) < COORD:
         return "parabola"
-    if abs(a - c) < 1e-9 and abs(b) < 1e-9 and abs(a) > 1e-9:
+    if abs(a - c) < COORD and abs(b) < COORD and abs(a) > COORD:
         return "circle"
     if disc < 0:
         return "ellipse"
@@ -248,14 +249,14 @@ def line_conic_intersect(px, py, dx, dy, coeffs, seg=None, ray=None):
     B = 2 * a * px * dx + b * (px * dy + py * dx) + 2 * c * py * dy + d * dx + e * dy
     C = a * px * px + b * px * py + c * py * py + d * px + e * py + f
     pts: List[Tuple[float, float]] = []
-    if abs(A) < 1e-12:
-        if abs(B) < 1e-12:
+    if abs(A) < EPSILON:
+        if abs(B) < EPSILON:
             return pts
         t = -C / B
         pts.append((px + t * dx, py + t * dy))
         return pts
     disc = B * B - 4 * A * C
-    if disc < -1e-9:
+    if disc < -COORD:
         return pts
     if disc < 0:
         disc = 0.0

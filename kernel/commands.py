@@ -14,7 +14,7 @@ import re
 from typing import Callable, Dict, List, Optional, Tuple
 
 from .elements import (
-    EPS, Geo3D, GeoAngle, GeoArc, GeoBarChart, GeoBoolean, GeoCircle, GeoConic,
+    EPSILON, Geo3D, GeoAngle, GeoArc, GeoBarChart, GeoBoolean, GeoCircle, GeoConic,
     GeoBoxPlot, GeoComplex, GeoCurve, GeoError, GeoFunction, GeoImage, GeoImplicit, GeoInequality, GeoLine, GeoList,
     GeoLocus, GeoMatrix, GeoNumber, GeoPolar, GeoPoint, GeoPolygon, GeoPolyline,
     GeoPie, GeoRay, GeoResult, GeoSegment, GeoSumRect, GeoText, GeoVector,
@@ -90,6 +90,27 @@ from .solids import (  # noqa: F401
     _icosahedron_state,
     _dodecahedron_state,
 )
+
+# 二维几何基元与变换已抽到 kernel/geo2d.py（P2 结构拆分）；re-export 保持调用方兼容
+from .geo2d import (  # noqa: F401
+    _linear,
+    _line_through,
+    _reflect_point_line,
+    _reflect_point_point,
+    _rotate,
+    _line_state,
+    _dilate_pt,
+    _transform_fn,
+    _reflect_lin,
+    _reflect_lin_xy,
+    _reflected_line,
+    _reflected_point_line,
+    _rotated_line,
+    _fn_state,
+    _conic_t,
+    _dilated_line,
+)
+from .tolerance import EPSILON, TIGHT, COORD, ZERO_SQ, LOOSE, COARSE, NEGLIGIBLE, ROOT_TOL, OPT_XATOL, OPT_FATOL  # 统一数值容差（见 kernel/tolerance.py）
 
 DEG = math.pi / 180.0
 
@@ -276,29 +297,9 @@ def _number(cons, s: str):
     raise GeoError(s + " 不是数值对象")
 
 
-def _linear(obj) -> Tuple[float, float, float]:
-    """把 line/segment/ray 统一为直线 ax+by+c=0。"""
-    if obj.kind == "line":
-        return obj.a, obj.b, obj.c
-    if obj.kind == "segment":
-        x1, y1, x2, y2 = obj.x1, obj.y1, obj.x2, obj.y2
-        return _line_through(x1, y1, x2, y2)
-    if obj.kind == "ray":
-        return _line_through(obj.ox, obj.oy, obj.ox + obj.dx, obj.oy + obj.dy)
-    raise GeoError("对象 " + obj.label + " 不是直线类对象")
-
-
-def _line_through(x1, y1, x2, y2) -> Tuple[float, float, float]:
-    a = y1 - y2
-    b = x2 - x1
-    c = x1 * y2 - x2 * y1
-    norm = max(abs(a), abs(b), abs(c), 1e-300)
-    return a / norm, b / norm, c / norm
-
-
 def _intersect_lines(a1, b1, c1, a2, b2, c2) -> Optional[Tuple[float, float]]:
     det = a1 * b2 - a2 * b1
-    if abs(det) < 1e-12:
+    if abs(det) < EPSILON:
         return None
     x = (b1 * c2 - b2 * c1) / det
     y = (c1 * a2 - c2 * a1) / det
@@ -317,7 +318,7 @@ def _line_circle(line, cx, cy, r) -> List[Tuple[float, float]]:
     t = -(a * cx + b * cy + c) / denom
     px, py = cx + a * t, cy + b * t
     d2 = r * r - ((px - cx) ** 2 + (py - cy) ** 2)
-    if d2 < -1e-9:
+    if d2 < -COORD:
         return []
     # 弦半长（世界坐标）：沿单位方向 u 从垂足走到圆周的距离 = sqrt(d2)
     h = math.sqrt(max(0.0, d2))
@@ -327,16 +328,16 @@ def _line_circle(line, cx, cy, r) -> List[Tuple[float, float]]:
 
 def _circle_circle(c1x, c1y, r1, c2x, c2y, r2) -> List[Tuple[float, float]]:
     d = _dist((c1x, c1y), (c2x, c2y))
-    if d < EPS:
+    if d < EPSILON:
         return []
-    if d > r1 + r2 + 1e-9 or d < abs(r1 - r2) - 1e-9:
+    if d > r1 + r2 + COORD or d < abs(r1 - r2) - COORD:
         return []
     a = (r1 * r1 - r2 * r2 + d * d) / (2 * d)
     h2 = r1 * r1 - a * a
     h = math.sqrt(max(0.0, h2))
     px = c1x + a * (c2x - c1x) / d
     py = c1y + a * (c2y - c1y) / d
-    if h < 1e-9:  # 内切/外切：只有一个交点
+    if h < COORD:  # 内切/外切：只有一个交点
         return [(px, py)]
     ux = -(c2y - c1y) / d
     uy = (c2x - c1x) / d
@@ -347,30 +348,12 @@ def _circumcircle(p1, p2, p3) -> Optional[Tuple[float, float, float]]:
     """三点外接圆 (cx, cy, r)；共线返回 None。"""
     (x1, y1), (x2, y2), (x3, y3) = p1, p2, p3
     d = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
-    if abs(d) < 1e-12:
+    if abs(d) < EPSILON:
         return None
     ux = ((x1 * x1 + y1 * y1) * (y2 - y3) + (x2 * x2 + y2 * y2) * (y3 - y1) + (x3 * x3 + y3 * y3) * (y1 - y2)) / d
     uy = ((x1 * x1 + y1 * y1) * (x3 - x2) + (x2 * x2 + y2 * y2) * (x1 - x3) + (x3 * x3 + y3 * y3) * (x2 - x1)) / d
     r = _dist((ux, uy), (x1, y1))
     return ux, uy, r
-
-
-def _reflect_point_line(x, y, a, b, c) -> Tuple[float, float]:
-    denom = a * a + b * b
-    if denom < EPS:
-        return x, y
-    k = 2 * (a * x + b * y + c) / denom
-    return x - a * k, y - b * k
-
-
-def _reflect_point_point(x, y, cx, cy) -> Tuple[float, float]:
-    return 2 * cx - x, 2 * cy - y
-
-
-def _rotate(x, y, th, cx, cy) -> Tuple[float, float]:
-    dx, dy = x - cx, y - cy
-    cos, sin = math.cos(th), math.sin(th)
-    return cx + dx * cos - dy * sin, cy + dx * sin + dy * cos
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +425,7 @@ def _line3d_state(p, q):
     qx, qy, qz = q.x, q.y, q.z or 0
     dx, dy, dz = qx - px, qy - py, qz - pz
     ln = math.sqrt(dx * dx + dy * dy + dz * dz)
-    if ln < 1e-12:
+    if ln < EPSILON:
         raise GeoError("两点重合，无法确定直线")
     R = 25.0   # 直线延伸半长（世界单位）
     dx, dy, dz = dx / ln * R, dy / ln * R, dz / ln * R
@@ -456,10 +439,6 @@ def _parallel_state(pt, lin):
     return _line_state(a, b, -(a * pt.x + b * pt.y))
 
 
-def _line_state(a, b, c) -> Dict[str, float]:
-    return {"a": a, "b": b, "c": c}
-
-
 def _cmd_segment(cons, label, args):
     if len(args) == 2:
         p, q = _point_arg(cons, args[0]), _point_arg(cons, args[1])
@@ -471,7 +450,7 @@ def _cmd_segment(cons, label, args):
 
 
 def _seg3d_state(p, q):
-    if math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + ((q.z or 0) - (p.z or 0)) ** 2) < 1e-12:
+    if math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + ((q.z or 0) - (p.z or 0)) ** 2) < EPSILON:
         raise GeoError("线段两端点重合")
     return {"objtype": "segment",
             "data": {"x1": p.x, "y1": p.y, "z1": p.z or 0,
@@ -528,7 +507,7 @@ def _cmd_circle(cons, label, args):
 
 
 def _circle_state(cx, cy, r):
-    if r < 1e-9:
+    if r < COORD:
         raise GeoError("半径必须大于 0")
     return {"cx": cx, "cy": cy, "r": r}
 
@@ -689,7 +668,7 @@ def _bbox_state(items):
     pts = np.array([[float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)] for p in items])
     lo = pts.min(axis=0)
     hi = pts.max(axis=0)
-    if bool(np.all(hi - lo < 1e-12)):
+    if bool(np.all(hi - lo < EPSILON)):
         raise GeoError("点云退化为一点，无法构成包围盒")
     corners = [[float(lo[0]) if i & 1 == 0 else float(hi[0]),
                 float(lo[1]) if i & 2 == 0 else float(hi[1]),
@@ -812,7 +791,7 @@ def _surfacepoint_state(surf, u, v):
     f, dom, names = _surface_eval(surf.data or {})
     for k, (lo, hi) in enumerate(dom):
         val = u if k == 0 else v
-        if not (lo - 1e-9 <= val <= hi + 1e-9):
+        if not (lo - COORD <= val <= hi + COORD):
             raise GeoError("参数 %s=%s 超出定义域 [%s, %s]" % (names[k], val, lo, hi))
     p = f(u, v)
     if not all(math.isfinite(c) for c in p):
@@ -853,7 +832,7 @@ def _surfaceproject_state(pt, surf):
             if best is None or d0 < best[0]:
                 best = (d0, u, v)
     res = minimize(dist2, [best[1], best[2]], method="Nelder-Mead",
-                   options={"xatol": 1e-10, "fatol": 1e-14, "maxiter": 800})
+                   options={"xatol": OPT_XATOL, "fatol": OPT_FATOL, "maxiter": 800})
     u, v = float(res.x[0]), float(res.x[1])
     u = min(max(u, lo0), hi0)
     v = min(max(v, lo1), hi1)
@@ -884,7 +863,7 @@ def _cov_ellipsoid_state(items, k):
     cov = (q.T @ q) / len(pts)
     w, v = np.linalg.eigh(cov)          # 升序：w[i] 对应 v[:,i]
     axes = [float(k) * math.sqrt(max(0.0, float(w[i]))) for i in range(3)]
-    if max(axes) < 1e-12:
+    if max(axes) < EPSILON:
         raise GeoError("点云退化（方差为 0），无法构成椭球")
     n = 20
     verts, faces, edges = [], [], []
@@ -950,9 +929,9 @@ def _isoline_state(surf, val, dim):
             else:
                 s = smin + (smax - smin) * i / M
                 t = val
-            if dim == 1 and not (smin - 1e-9 <= s <= smax + 1e-9):
+            if dim == 1 and not (smin - COORD <= s <= smax + COORD):
                 raise GeoError("参数值超出曲面定义域")
-            if dim == 2 and not (tmin - 1e-9 <= t <= tmax + 1e-9):
+            if dim == 2 and not (tmin - COORD <= t <= tmax + COORD):
                 raise GeoError("参数值超出曲面定义域")
             p = []
             for f in fns:
@@ -970,11 +949,11 @@ def _isoline_state(surf, val, dim):
         for i in range(M + 1):
             if dim == 1:
                 x, y = val, ymin + (ymax - ymin) * i / M
-                if not (xmin - 1e-9 <= x <= xmax + 1e-9):
+                if not (xmin - COORD <= x <= xmax + COORD):
                     raise GeoError("参数值超出曲面定义域")
             else:
                 x, y = xmin + (xmax - xmin) * i / M, val
-                if not (ymin - 1e-9 <= y <= ymax + 1e-9):
+                if not (ymin - COORD <= y <= ymax + COORD):
                     raise GeoError("参数值超出曲面定义域")
             z = f(x, y)
             z = float(z) if not hasattr(z, "__len__") else float(z[0])
@@ -1007,12 +986,12 @@ def _fitsphere_state(items):
     sol, *_ = np.linalg.lstsq(A, bvec, rcond=None)
     cx, cy, cz, dd = (float(v) for v in sol)
     r2 = dd + cx * cx + cy * cy + cz * cz
-    if r2 <= 1e-12:
+    if r2 <= EPSILON:
         raise GeoError("球拟合退化（点云过于集中）")
     r = math.sqrt(r2)
     # 残差检查：偏离球面过大说明点云不共球
     dev = float(np.max(np.abs(np.linalg.norm(pts - np.array([cx, cy, cz]), axis=1) - r)))
-    if dev > 1e-6 * max(1.0, r):
+    if dev > COARSE * max(1.0, r):
         raise GeoError("点云不共球（最大偏差 %.6g）" % dev)
     return {"objtype": "sphere", "solid": "sphere",
             "data": {"cx": cx, "cy": cy, "cz": cz, "r": r}}
@@ -1073,7 +1052,7 @@ def _ix_fn_lin(cons, defn, f, lin, idx):
             fn, ln = deps[0], deps[1]
             a, b, c = _linear(ln)
             x = fn.xsym
-            if abs(b) < 1e-12:
+            if abs(b) < EPSILON:
                 # 垂直线 x=k
                 k = -c / a
                 y = _feval(fn, k)
@@ -1088,12 +1067,12 @@ def _ix_fn_lin(cons, defn, f, lin, idx):
                 r = roots[el._i]
                 pt = {"x": r, "y": _line_y_x(ln, r)}
             if ln.kind == "segment":
-                if not (0.0 - 1e-9 <= _on_segment((pt["x"], pt["y"]), ln) <= 1.0 + 1e-9):
+                if not (0.0 - COORD <= _on_segment((pt["x"], pt["y"]), ln) <= 1.0 + COORD):
                     raise GeoError("交点不在线段上")
             elif ln.kind == "ray":
                 dx, dy = ln.dx, ln.dy
-                t = ((pt["x"] - ln.ox) * dx + (pt["y"] - ln.oy) * dy) / (dx * dx + dy * dy + 1e-300)
-                if t < -1e-9:
+                t = ((pt["x"] - ln.ox) * dx + (pt["y"] - ln.oy) * dy) / (dx * dx + dy * dy + NEGLIGIBLE)
+                if t < -COORD:
                     raise GeoError("交点不在射线上")
             return pt
         el.set_deps([f, lin], compute)
@@ -1105,7 +1084,7 @@ def _ix_fn_lin(cons, defn, f, lin, idx):
         el.defn = defn + "#" + str(idx)
         return cons.add(el)
     a, b, c = _linear(lin)
-    if abs(b) < 1e-12:
+    if abs(b) < EPSILON:
         root_count = 1
     else:
         diff = f.expr - (-(a * f.xsym + c) / b)
@@ -1150,8 +1129,8 @@ def _check_seg_ray(obj, pt):
             raise GeoError("交点不在线段上")
     elif obj.kind == "ray":
         dx, dy = obj.dx, obj.dy
-        t = ((pt[0] - obj.ox) * dx + (pt[1] - obj.oy) * dy) / (dx * dx + dy * dy + 1e-300)
-        if t < -1e-9:
+        t = ((pt[0] - obj.ox) * dx + (pt[1] - obj.oy) * dy) / (dx * dx + dy * dy + NEGLIGIBLE)
+        if t < -COORD:
             raise GeoError("交点不在射线上")
 
 
@@ -1159,7 +1138,7 @@ def _on_segment(pt, seg) -> float:
     """点在参数 t 上的位置；0<=t<=1 在段内。"""
     dx, dy = seg.x2 - seg.x1, seg.y2 - seg.y1
     denom = dx * dx + dy * dy
-    if denom < EPS:
+    if denom < EPSILON:
         return 0.0
     return ((pt[0] - seg.x1) * dx + (pt[1] - seg.y1) * dy) / denom
 
@@ -1201,7 +1180,7 @@ def _ix_conic_conic(c1, c2, idx=1):
     for s in sols:
         try:
             vx, vy = complex(sympy.N(s[x])), complex(sympy.N(s[y]))
-            if abs(vx.imag) < 1e-9 and abs(vy.imag) < 1e-9:
+            if abs(vx.imag) < COORD and abs(vy.imag) < COORD:
                 pts.append((float(vx.real), float(vy.real)))
         except Exception:
             continue
@@ -1253,7 +1232,7 @@ def _cmd_slope(cons, label, args):
 
 
 def _slope_state(a, b, c):
-    if abs(b) < 1e-12:
+    if abs(b) < EPSILON:
         raise GeoError("直线垂直于 x 轴，斜率不存在")
     return {"value": -a / b}
 
@@ -1291,7 +1270,7 @@ def _angle2_state(d, texts, objs, frozen) -> Dict[str, float]:
     v = comp(texts[1], 1)
     du = math.hypot(u[0], u[1])
     dv = math.hypot(v[0], v[1])
-    if du < 1e-12 or dv < 1e-12:
+    if du < EPSILON or dv < EPSILON:
         raise GeoError("零向量无法求夹角")
     c = max(-1.0, min(1.0, (u[0] * v[0] + u[1] * v[1]) / (du * dv)))
     ang = math.degrees(math.acos(c))
@@ -1314,7 +1293,7 @@ def _angle_state(a, b, c) -> Dict[str, float]:
         uz, vz = _z_of(a) - _z_of(b), _z_of(c) - _z_of(b)
         nu = math.sqrt(ux * ux + uy * uy + uz * uz)
         nv = math.sqrt(vx * vx + vy * vy + vz * vz)
-        if nu > 1e-12 and nv > 1e-12:
+        if nu > EPSILON and nv > EPSILON:
             cs = max(-1.0, min(1.0, (ux * vx + uy * vy + uz * vz) / (nu * nv)))
             ang = math.degrees(math.acos(cs))   # 0..180
     rad = math.radians(ang)
@@ -1389,316 +1368,6 @@ def _transform_mk(cons, label, obj, op, extra):
     deps = [obj] + [e for e in extra if hasattr(e, "kind")]
     fn = _transform_fn(op, k, extra)
     return _mk(cons, cls_map[k], kind_map[k], label, deps, fn)
-
-
-def _dilate_pt(x, y, k, cx, cy):
-    return (cx + k * (x - cx), cy + k * (y - cy))
-
-
-def _transform_fn(op, kind, extra):
-    if op == "translate":
-        dx, dy, dz = extra
-        if kind == "point":
-            def _tp(d):
-                st = {"x": d[0].x + dx, "y": d[0].y + dy}
-                # 三维点（带 z）平移时 z 也随位移更新；二维点保持无 z
-                if dz != 0.0 or d[0].z is not None:
-                    st["z"] = (d[0].z or 0.0) + dz
-                return st
-            return _tp
-        if kind == "segment":
-            return lambda d: {"x1": d[0].x1 + dx, "y1": d[0].y1 + dy,
-                              "x2": d[0].x2 + dx, "y2": d[0].y2 + dy}
-        if kind == "ray":
-            return lambda d: {"ox": d[0].ox + dx, "oy": d[0].oy + dy,
-                              "dx": d[0].dx, "dy": d[0].dy}
-        if kind == "circle":
-            return lambda d: {"cx": d[0].cx + dx, "cy": d[0].cy + dy, "r": d[0].r}
-        if kind == "polygon":
-            return lambda d: {"xs": [x + dx for x in d[0].xs], "ys": [y + dy for y in d[0].ys]}
-        if kind == "line":
-            return lambda d: _line_state(d[0].a, d[0].b, d[0].c - d[0].a * dx - d[0].b * dy)
-    if op == "rotate":
-        th, center = extra
-        cxp, cyp = (center.x, center.y) if center is not None else (0.0, 0.0)
-        if kind == "point":
-            def _rp(d):
-                st = dict(zip(("x", "y"), _rotate(d[0].x, d[0].y, th, cxp, cyp)))
-                # 三维点：绕「过中心、平行 z 轴」的轴旋转，z 分量不变
-                if d[0].z is not None:
-                    st["z"] = d[0].z
-                return st
-            return _rp
-        if kind == "segment":
-            def _rs(d):
-                p1 = _rotate(d[0].x1, d[0].y1, th, cxp, cyp)
-                p2 = _rotate(d[0].x2, d[0].y2, th, cxp, cyp)
-                return {"x1": p1[0], "y1": p1[1], "x2": p2[0], "y2": p2[1]}
-            return _rs
-        if kind == "ray":
-            def _rr(d):
-                o = _rotate(d[0].ox, d[0].oy, th, cxp, cyp)
-                e = _rotate(d[0].ox + d[0].dx, d[0].oy + d[0].dy, th, cxp, cyp)
-                return {"ox": o[0], "oy": o[1], "dx": e[0] - o[0], "dy": e[1] - o[1]}
-            return _rr
-        if kind == "circle":
-            def _rc(d):
-                c = _rotate(d[0].cx, d[0].cy, th, cxp, cyp)
-                return {"cx": c[0], "cy": c[1], "r": d[0].r}
-            return _rc
-        if kind == "polygon":
-            def _rp(d):
-                pts = [_rotate(x, y, th, cxp, cyp) for x, y in zip(d[0].xs, d[0].ys)]
-                return {"xs": [p[0] for p in pts], "ys": [p[1] for p in pts]}
-            return _rp
-        if kind == "line":
-            def _rl(d):
-                return _rotated_line(d[0], th, cxp, cyp)
-            return _rl
-    if op == "reflect_line":
-        mirror = extra[0]
-        if kind == "point":
-            return lambda d: dict(zip(("x", "y"), _reflect_lin(d[0], mirror)))
-        if kind == "segment":
-            def _f(d):
-                p1 = _reflect_lin_xy(d[0].x1, d[0].y1, mirror)
-                p2 = _reflect_lin_xy(d[0].x2, d[0].y2, mirror)
-                return {"x1": p1[0], "y1": p1[1], "x2": p2[0], "y2": p2[1]}
-            return _f
-        if kind == "ray":
-            def _f(d):
-                o = _reflect_lin_xy(d[0].ox, d[0].oy, mirror)
-                e = _reflect_lin_xy(d[0].ox + d[0].dx, d[0].oy + d[0].dy, mirror)
-                return {"ox": o[0], "oy": o[1], "dx": e[0] - o[0], "dy": e[1] - o[1]}
-            return _f
-        if kind == "circle":
-            def _f(d):
-                c = _reflect_lin_xy(d[0].cx, d[0].cy, mirror)
-                return {"cx": c[0], "cy": c[1], "r": d[0].r}
-            return _f
-        if kind == "polygon":
-            def _f(d):
-                pts = [_reflect_lin_xy(x, y, mirror) for x, y in zip(d[0].xs, d[0].ys)]
-                return {"xs": [p[0] for p in pts], "ys": [p[1] for p in pts]}
-            return _f
-        if kind == "line":
-            def _f(d):
-                return _reflected_line(d[0], mirror)
-            return _f
-    if op == "reflect_point":
-        mp = extra[0]
-        if kind == "point":
-            return lambda d: dict(zip(("x", "y"), _reflect_point_point(d[0].x, d[0].y, mp.x, mp.y)))
-        if kind == "segment":
-            def _f(d):
-                p1 = _reflect_point_point(d[0].x1, d[0].y1, mp.x, mp.y)
-                p2 = _reflect_point_point(d[0].x2, d[0].y2, mp.x, mp.y)
-                return {"x1": p1[0], "y1": p1[1], "x2": p2[0], "y2": p2[1]}
-            return _f
-        if kind == "ray":
-            def _f(d):
-                o = _reflect_point_point(d[0].ox, d[0].oy, mp.x, mp.y)
-                e = _reflect_point_point(d[0].ox + d[0].dx, d[0].oy + d[0].dy, mp.x, mp.y)
-                return {"ox": o[0], "oy": o[1], "dx": e[0] - o[0], "dy": e[1] - o[1]}
-            return _f
-        if kind == "circle":
-            def _f(d):
-                c = _reflect_point_point(d[0].cx, d[0].cy, mp.x, mp.y)
-                return {"cx": c[0], "cy": c[1], "r": d[0].r}
-            return _f
-        if kind == "polygon":
-            def _f(d):
-                pts = [_reflect_point_point(x, y, mp.x, mp.y) for x, y in zip(d[0].xs, d[0].ys)]
-                return {"xs": [p[0] for p in pts], "ys": [p[1] for p in pts]}
-            return _f
-        if kind == "line":
-            def _f(d):
-                return _reflected_point_line(d[0], mp)
-            return _f
-    # ---- Polyline / Vector / Function / Conic ----
-    if kind == "polyline":
-        if op == "translate":
-            dx, dy = extra
-            return lambda d: {"xs": [x + dx for x in d[0].xs], "ys": [y + dy for y in d[0].ys]}
-        th, center = extra if op in ("rotate", "dilate") else (0, None)
-        cxp, cyp = (center.x, center.y) if center is not None else (0.0, 0.0)
-        if op == "rotate":
-            def _f(d):
-                pts = [_rotate(x, y, th, cxp, cyp) for x, y in zip(d[0].xs, d[0].ys)]
-                return {"xs": [p[0] for p in pts], "ys": [p[1] for p in pts]}
-            return _f
-        if op == "reflect_line":
-            mirror = extra[0]
-            def _f(d):
-                pts = [_reflect_lin_xy(x, y, mirror) for x, y in zip(d[0].xs, d[0].ys)]
-                return {"xs": [p[0] for p in pts], "ys": [p[1] for p in pts]}
-            return _f
-        if op == "reflect_point":
-            m = extra[0]
-            def _f(d):
-                pts = [_reflect_point_point(x, y, m.x, m.y) for x, y in zip(d[0].xs, d[0].ys)]
-                return {"xs": [p[0] for p in pts], "ys": [p[1] for p in pts]}
-            return _f
-        if op == "dilate":
-            k = extra[0]
-            def _f(d):
-                pts = [_dilate_pt(x, y, k, cxp, cyp) for x, y in zip(d[0].xs, d[0].ys)]
-                return {"xs": [p[0] for p in pts], "ys": [p[1] for p in pts]}
-            return _f
-    if kind == "vector":
-        if op == "translate":
-            dx, dy = extra
-            return lambda d: {"dx": d[0].dx + dx, "dy": d[0].dy + dy}
-        if op == "rotate":
-            th2 = extra[0]
-            return lambda d: dict(zip(("dx", "dy"), _rotate(d[0].dx, d[0].dy, th2, 0.0, 0.0)))
-        if op == "reflect_line":
-            mirror = extra[0]
-            return lambda d: dict(zip(("dx", "dy"), _reflect_lin_xy(d[0].dx, d[0].dy, mirror)))
-        if op == "reflect_point":
-            return lambda d: {"dx": -d[0].dx, "dy": -d[0].dy}
-        if op == "dilate":
-            k = extra[0]
-            return lambda d: {"dx": k * d[0].dx, "dy": k * d[0].dy}
-    if kind == "function":
-        import sympy
-        if op == "translate":
-            dx, dy = extra
-            return lambda d: _fn_state(d[0], lambda x: d[0].expr.subs(x, x - dx) + dy)
-        if op == "reflect_line":
-            mirror = extra[0]
-            a, b, c = _linear(mirror)
-            if abs(a) < 1e-9:      # 水平线 y=k → 2k - f(x)
-                k = -c / b
-                return lambda d: _fn_state(d[0], lambda x: 2 * k - d[0].expr)
-            if abs(b) < 1e-9:      # 垂直线 x=h → f(2h - x)
-                h = -c / a
-                return lambda d: _fn_state(d[0], lambda x: d[0].expr.subs(x, 2 * h - x))
-            raise GeoError("函数只能沿水平或垂直线反射")
-        if op == "reflect_point":
-            m = extra[0]
-            return lambda d: _fn_state(d[0], lambda x: 2 * m.y - d[0].expr.subs(x, 2 * m.x - x))
-        if op == "dilate":
-            k = extra[0]
-            return lambda d: _fn_state(d[0], lambda x: k * d[0].expr)
-        raise GeoError("函数暂不支持该变换")
-    if kind == "conic":
-        if op == "translate":
-            dx, dy = extra
-            return lambda d: _conic_t(d[0], cx=d[0].cx + dx, cy=d[0].cy + dy)
-        if op == "rotate":
-            th2 = extra[0]
-            cx2, cy2 = (extra[1].x, extra[1].y) if extra[1] is not None else (0.0, 0.0)
-
-            def _f(d):
-                c = _rotate(d[0].cx, d[0].cy, th2, cx2, cy2)
-                return _conic_t(d[0], cx=c[0], cy=c[1], angle=d[0].angle + th2)
-            return _f
-        if op == "reflect_line":
-            mirror = extra[0]
-            def _f(d):
-                c = _reflect_lin_xy(d[0].cx, d[0].cy, mirror)
-                a, b, _ = _linear(mirror)
-                phi = math.atan2(a, -b)
-                return _conic_t(d[0], cx=c[0], cy=c[1], angle=2 * phi - d[0].angle)
-            return _f
-        if op == "reflect_point":
-            m = extra[0]
-            def _f(d):
-                c = _reflect_point_point(d[0].cx, d[0].cy, m.x, m.y)
-                return _conic_t(d[0], cx=c[0], cy=c[1], angle=d[0].angle + math.pi)
-            return _f
-        if op == "dilate":
-            k2 = extra[0]
-            cx2, cy2 = (extra[1].x, extra[1].y) if extra[1] is not None else (0.0, 0.0)
-
-            def _f(d):
-                c = _dilate_pt(d[0].cx, d[0].cy, k2, cx2, cy2)
-                return _conic_t(d[0], cx=c[0], cy=c[1],
-                                a=abs(k2) * d[0].semi_a, b=abs(k2) * d[0].semi_b,
-                                angle=d[0].angle + (math.pi if k2 < 0 else 0))
-            return _f
-    # ---- Dilate（位似）：经典类型 ----
-    if op == "dilate":
-        k, center = extra
-        cxp, cyp = (center.x, center.y) if center is not None else (0.0, 0.0)
-        if kind == "point":
-            return lambda d: dict(zip(("x", "y"), _dilate_pt(d[0].x, d[0].y, k, cxp, cyp)))
-        if kind == "segment":
-            def _f(d):
-                p1 = _dilate_pt(d[0].x1, d[0].y1, k, cxp, cyp)
-                p2 = _dilate_pt(d[0].x2, d[0].y2, k, cxp, cyp)
-                return {"x1": p1[0], "y1": p1[1], "x2": p2[0], "y2": p2[1]}
-            return _f
-        if kind == "ray":
-            def _f(d):
-                o = _dilate_pt(d[0].ox, d[0].oy, k, cxp, cyp)
-                return {"ox": o[0], "oy": o[1], "dx": k * d[0].dx, "dy": k * d[0].dy}
-            return _f
-        if kind == "circle":
-            return lambda d: {"cx": _dilate_pt(d[0].cx, d[0].cy, k, cxp, cyp)[0],
-                              "cy": _dilate_pt(d[0].cx, d[0].cy, k, cxp, cyp)[1],
-                              "r": abs(k) * d[0].r}
-        if kind == "polygon":
-            def _f(d):
-                pts = [_dilate_pt(x, y, k, cxp, cyp) for x, y in zip(d[0].xs, d[0].ys)]
-                return {"xs": [p[0] for p in pts], "ys": [p[1] for p in pts]}
-            return _f
-        if kind == "line":
-            def _f(d):
-                return _dilated_line(d[0], k, cxp, cyp)
-            return _f
-    raise GeoError("不支持的变换组合")
-
-
-def _reflect_lin(pt, mirror):
-    a, b, c = _linear(mirror)
-    return _reflect_point_line(pt.x, pt.y, a, b, c)
-
-
-def _reflect_lin_xy(x, y, mirror):
-    a, b, c = _linear(mirror)
-    return _reflect_point_line(x, y, a, b, c)
-
-
-def _reflected_line(line, mirror):
-    a, b, c = _linear(mirror)
-    a0, b0, c0 = line.a, line.b, line.c
-    norm = math.hypot(a0, b0)
-    if norm < EPS:
-        raise GeoError("退化的直线")
-    p0x = -a0 * c0 / (norm * norm)
-    p0y = -b0 * c0 / (norm * norm)
-    dx, dy = -b0 / norm, a0 / norm
-    p1 = _reflect_point_line(p0x, p0y, a, b, c)
-    p2 = _reflect_point_line(p0x + dx, p0y + dy, a, b, c)
-    return _line_state(*_line_through(p1[0], p1[1], p2[0], p2[1]))
-
-
-def _reflected_point_line(line, mp):
-    a0, b0, c0 = line.a, line.b, line.c
-    norm = math.hypot(a0, b0)
-    if norm < EPS:
-        raise GeoError("退化的直线")
-    p0x = -a0 * c0 / (norm * norm)
-    p0y = -b0 * c0 / (norm * norm)
-    dx, dy = -b0 / norm, a0 / norm
-    p1 = _reflect_point_point(p0x, p0y, mp.x, mp.y)
-    p2 = _reflect_point_point(p0x + dx, p0y + dy, mp.x, mp.y)
-    return _line_state(*_line_through(p1[0], p1[1], p2[0], p2[1]))
-
-
-def _rotated_line(line, th, cxp, cyp):
-    a0, b0, c0 = line.a, line.b, line.c
-    norm = math.hypot(a0, b0)
-    if norm < EPS:
-        raise GeoError("退化的直线")
-    p0x = -a0 * c0 / (norm * norm)
-    p0y = -b0 * c0 / (norm * norm)
-    p1 = _rotate(p0x, p0y, th, cxp, cyp)
-    dx, dy = _rotate(p0x - b0 / norm, p0y + a0 / norm, th, cxp, cyp)
-    p2 = (dx, dy)
-    return _line_state(*_line_through(p1[0], p1[1], p2[0], p2[1]))
 
 
 def _cmd_vector(cons, label, args):
@@ -1795,7 +1464,7 @@ def _roots_1d(expr, x, xmin: float = -60.0, xmax: float = 60.0, n: int = 900):
         sol = sympy.solve(expr, x)
         for s in sol:
             v = complex(sympy.N(s))
-            if abs(v.imag) < 1e-9 and xmin - 1e-6 <= v.real <= xmax + 1e-6:
+            if abs(v.imag) < COORD and xmin - COARSE <= v.real <= xmax + COARSE:
                 roots.append(float(v.real))
     except Exception:
         pass
@@ -1828,13 +1497,13 @@ def _roots_1d(expr, x, xmin: float = -60.0, xmax: float = 60.0, n: int = 900):
                     b, fb = mid, fm
                 else:
                     a, fa = mid, fm
-                if abs(b - a) < 1e-10:
+                if abs(b - a) < ROOT_TOL:
                     break
             roots.append((a + b) / 2.0)
     # 去重
     dedup: List[float] = []
     for r in sorted(roots):
-        if not dedup or abs(r - dedup[-1]) > 1e-7:
+        if not dedup or abs(r - dedup[-1]) > LOOSE:
             dedup.append(r)
     return dedup
 
@@ -1842,7 +1511,7 @@ def _roots_1d(expr, x, xmin: float = -60.0, xmax: float = 60.0, n: int = 900):
 def _line_y_x(lin, x: float):
     """直线在 x 处的 y（垂直线返回 None）。"""
     a, b, c = _linear(lin)
-    if abs(b) < 1e-12:
+    if abs(b) < EPSILON:
         return None
     return -(a * x + c) / b
 
@@ -1850,7 +1519,7 @@ def _line_y_x(lin, x: float):
 def _fn_line_diff(f, lin, x):
     """f(x) - line_y(x) 的符号表达式；垂直线返回 None（单独处理）。"""
     a, b, c = _linear(lin)
-    if abs(b) < 1e-12:
+    if abs(b) < EPSILON:
         return None
     return f.expr - (-(a * x + c) / b)
 
@@ -1984,7 +1653,7 @@ def _root_state(f, a, b):
     x = f.xsym
     roots = _roots_1d(f.expr, x)
     if a is not None and b is not None:
-        cand = [r for r in roots if a - 1e-9 <= r <= b + 1e-9]
+        cand = [r for r in roots if a - COORD <= r <= b + COORD]
         if not cand:
             raise GeoError("区间内没有根")
         r = cand[0]
@@ -2019,7 +1688,7 @@ def _cmd_extremum(cons, defn, args, idx=None):
             fn0 = deps[0]
             x = fn0.xsym
             diff = sympy.diff(fn0.expr, x)
-            roots = [r for r in _roots_1d(diff, x, a, b) if a - 1e-9 <= r <= b + 1e-9]
+            roots = [r for r in _roots_1d(diff, x, a, b) if a - COORD <= r <= b + COORD]
             if el._i >= len(roots):
                 raise GeoError("极值点数量不足")
             r = roots[el._i]
@@ -2031,7 +1700,7 @@ def _cmd_extremum(cons, defn, args, idx=None):
         return el
 
     import sympy
-    roots = [r for r in _roots_1d(sympy.diff(f.expr, f.xsym), f.xsym, a, b) if a - 1e-9 <= r <= b + 1e-9]
+    roots = [r for r in _roots_1d(sympy.diff(f.expr, f.xsym), f.xsym, a, b) if a - COORD <= r <= b + COORD]
     if not roots:
         raise GeoError("区间内没有极值点")
     if idx is not None:
@@ -2080,7 +1749,7 @@ def _cmd_foot(cons, defn, args):
 def _foot_state(pt, lin):
     a, b, c = _linear(lin)
     denom = a * a + b * b
-    if denom < 1e-12:
+    if denom < EPSILON:
         raise GeoError("退化直线")
     t = -(a * pt.x + b * pt.y + c) / denom
     return {"x": pt.x + a * t, "y": pt.y + b * t}
@@ -2155,7 +1824,7 @@ def _bisector_state(a, b, c):
     vx, vy = c.x - b.x, c.y - b.y
     nu = math.hypot(ux, uy)
     nv = math.hypot(vx, vy)
-    if nu < 1e-12 or nv < 1e-12:
+    if nu < EPSILON or nv < EPSILON:
         raise GeoError("退化角")
     dx, dy = ux / nu + vx / nv, uy / nu + vy / nv
     return _line_state(-dy, dx, -(-dy * b.x + dx * b.y))
@@ -2250,7 +1919,7 @@ def _cmd_circumference(cons, defn, args):
 
 
 def _ellipse_circumference(a, b):
-    if abs(a - b) < 1e-12:
+    if abs(a - b) < EPSILON:
         return 2 * math.pi * a
     h = ((a - b) / (a + b)) ** 2
     return math.pi * (a + b) * (1 + 3 * h / (10 + math.sqrt(4 - 3 * h)))  # Ramanujan 近似
@@ -2269,7 +1938,7 @@ def _incenter_state(a, b, c):
     lb = _dist((c.x, c.y), (a.x, a.y))
     lc = _dist((a.x, a.y), (b.x, b.y))
     s = la + lb + lc
-    if s < 1e-12:
+    if s < EPSILON:
         raise GeoError("退化三角形")
     return {"x": (la * a.x + lb * b.x + lc * c.x) / s,
             "y": (la * a.y + lb * b.y + lc * c.y) / s}
@@ -2288,7 +1957,7 @@ def _incircle_state(a, b, c):
     lb = _dist((c.x, c.y), (a.x, a.y))
     lc = _dist((a.x, a.y), (b.x, b.y))
     s = la + lb + lc
-    if s < 1e-12:
+    if s < EPSILON:
         raise GeoError("退化三角形")
     ix = (la * a.x + lb * b.x + lc * c.x) / s
     iy = (la * a.y + lb * b.y + lc * c.y) / s
@@ -2353,7 +2022,7 @@ def _orthocenter_state(a, b, c):
     d1x, d1y = c.x - b.x, c.y - b.y   # BC 方向
     d2x, d2y = c.x - a.x, c.y - a.y   # AC 方向
     det = d1x * d2y - d2x * d1y
-    if abs(det) < 1e-12:
+    if abs(det) < EPSILON:
         raise GeoError("退化三角形")
     e1 = d1x * a.x + d1y * a.y        # 高 A：d1·(X-A)=0 → d1x·x + d1y·y = e1
     e2 = d2x * b.x + d2y * b.y        # 高 B：d2·(X-B)=0
@@ -2386,7 +2055,7 @@ def _excenter_state(a, b, c):
     bb = _dist((c.x, c.y), (a.x, a.y))
     cc = _dist((a.x, a.y), (b.x, b.y))
     denom = -aa + bb + cc
-    if abs(denom) < 1e-12:
+    if abs(denom) < EPSILON:
         raise GeoError("退化三角形")
     return {"x": (-aa * a.x + bb * b.x + cc * c.x) / denom,
             "y": (-aa * a.y + bb * b.y + cc * c.y) / denom}
@@ -2621,11 +2290,11 @@ def _cmd_rectsum(cons, defn, args, variant):
         mode = "left"
         use_pos = None
         if len(args) == 5 and pos is not None:
-            if abs(pos - 0.5) < 1e-9:
+            if abs(pos - 0.5) < COORD:
                 mode = "mid"
-            elif abs(pos - 1.0) < 1e-9:
+            elif abs(pos - 1.0) < COORD:
                 mode = "right"
-            elif abs(pos) < 1e-9:
+            elif abs(pos) < COORD:
                 mode = "left"
             else:
                 mode = "pos"
@@ -2892,7 +2561,7 @@ def _randpointin_state(obj, kind):
     import math as _m
     if kind == "circle":
         rr = obj.r
-        if rr <= 1e-12:
+        if rr <= EPSILON:
             raise GeoError("退化圆（半径为零）")
         u = random.random()
         th = 2 * _m.pi * random.random()
@@ -2908,7 +2577,7 @@ def _randpointin_state(obj, kind):
         a = abs((xs[i] - xs[0]) * (ys[i + 1] - ys[0]) - (xs[i + 1] - xs[0]) * (ys[i] - ys[0])) / 2.0
         areas.append(a)
         tot += a
-    if tot <= 1e-12:
+    if tot <= EPSILON:
         raise GeoError("退化多边形（面积为零）")
     u = random.random() * tot
     acc = 0.0
@@ -3523,7 +3192,7 @@ def _cmd_parabola(cons, defn, args):
         foc, lin = d[0], d[1]
         a, b, c = _linear(lin)
         denom = a * a + b * b
-        if denom < 1e-12:
+        if denom < EPSILON:
             raise GeoError("准线退化")
         # 焦点到准线的垂足
         t = -(a * foc.x + b * foc.y + c) / denom
@@ -3532,7 +3201,7 @@ def _cmd_parabola(cons, defn, args):
         vx, vy = (foc.x + hx) / 2, (foc.y + hy) / 2
         dx, dy = foc.x - hx, foc.y - hy
         p_len = math.hypot(dx, dy) / 2.0
-        if p_len < 1e-12:
+        if p_len < EPSILON:
             raise GeoError("焦点在准线上")
         ux, uy = dx / (2 * p_len), dy / (2 * p_len)   # 指向焦点
         vx2, vy2 = -uy, ux
@@ -3639,7 +3308,7 @@ def _cmd_tangent_conic(cons, defn, args, idx=None):
 
     if conic.kind == "circle":
         d2 = math.hypot(pt.x - conic.cx, pt.y - conic.cy)
-        if d2 > conic.r + 1e-9:
+        if d2 > conic.r + COORD:
             # 圆外：两条切线
             if idx is not None:
                 el = build(idx)
@@ -3662,7 +3331,7 @@ def _tangent_conic_state_i(conic, pt, i):
         raise GeoError("仅圆支持外部双切线")
     cx, cy, r = conic.cx, conic.cy, conic.r
     d2 = math.hypot(pt.x - cx, pt.y - cy)
-    if d2 <= r + 1e-9:
+    if d2 <= r + COORD:
         raise GeoError("点不在圆外")
     phi0 = math.atan2(pt.y - cy, pt.x - cx)
     alpha = math.acos(min(1.0, r / d2))
@@ -3676,14 +3345,14 @@ def _tangent_arc_state(arc, pt):
     """圆弧/扇形切线：弧所在圆在切点处的切线；切点取点击沿半径投影并钳制到弧的角度范围。"""
     import math as _m
     cx, cy, r = arc.cx, arc.cy, arc.r
-    if r <= 1e-9:
+    if r <= COORD:
         raise GeoError("退化圆弧")
     ang = _m.atan2(pt.y - cy, pt.x - cx)
     a1 = arc.ang1
     span = (arc.ang2 - a1) % (2 * _m.pi)
     # 环内最近角：优先落在 [a1, a1+span]
     d1 = (ang - a1) % (2 * _m.pi)
-    use = a1 + d1 if d1 <= span + 1e-9 else None
+    use = a1 + d1 if d1 <= span + COORD else None
     if use is None:
         # 钳制到最近端点
         d_end = (d1 - span)
@@ -3718,9 +3387,9 @@ def _ix_lin_conic(cons, defn, lin, conic, idx):
             ln, cn = deps[0], deps[1]
             a, b, c = _linear(ln)
             denom = a * a + b * b
-            p0x = -a * c / denom if denom > 1e-12 else 0.0
-            p0y = -b * c / denom if denom > 1e-12 else 0.0
-            dx, dy = (-b / math.sqrt(denom), a / math.sqrt(denom)) if denom > 1e-12 else (1.0, 0.0)
+            p0x = -a * c / denom if denom > EPSILON else 0.0
+            p0y = -b * c / denom if denom > EPSILON else 0.0
+            dx, dy = (-b / math.sqrt(denom), a / math.sqrt(denom)) if denom > EPSILON else (1.0, 0.0)
             pts = line_conic_intersect(p0x, p0y, dx, dy, _conic_coeffs(cn))
             if el._i >= len(pts):
                 raise GeoError("无足够交点")
@@ -3736,9 +3405,9 @@ def _ix_lin_conic(cons, defn, lin, conic, idx):
         return cons.add(el)
     a, b, c = _linear(lin)
     denom = a * a + b * b
-    p0x = -a * c / denom if denom > 1e-12 else 0.0
-    p0y = -b * c / denom if denom > 1e-12 else 0.0
-    dx, dy = (-b / math.sqrt(denom), a / math.sqrt(denom)) if denom > 1e-12 else (1.0, 0.0)
+    p0x = -a * c / denom if denom > EPSILON else 0.0
+    p0y = -b * c / denom if denom > EPSILON else 0.0
+    dx, dy = (-b / math.sqrt(denom), a / math.sqrt(denom)) if denom > EPSILON else (1.0, 0.0)
     pts = line_conic_intersect(p0x, p0y, dx, dy, _conic_coeffs(conic))
     if not pts:
         raise GeoError("直线与圆锥曲线不相交")
@@ -4026,13 +3695,13 @@ def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
         if not faces:
             raise GeoError("该范围内没有 f=0 的等值面（请扩大范围或调整分辨率）")
         # 朝向：法向指向 f 增大方向（外部）
-        eps = 1e-6 * max(xmax - xmin, ymax - ymin, zmax - zmin)
+        eps = COARSE * max(xmax - xmin, ymax - ymin, zmax - zmin)
         fixed = []
         for f3 in faces:
             a, b, c = (np.array(verts[i]) for i in f3)
             nvec = np.cross(b - a, c - a)
             ln = float(np.linalg.norm(nvec))
-            if ln < 1e-15:
+            if ln < TIGHT:
                 continue
             nvec = nvec / ln
             try:
@@ -4072,13 +3741,13 @@ def _fitplane_state(items):
     q = pts - ctr
     cov = q.T @ q
     w, v = np.linalg.eigh(cov)        # 升序：w[0] ≤ w[1] ≤ w[2]
-    if w[2] <= 1e-12:
+    if w[2] <= EPSILON:
         raise GeoError("点云重合，无法确定平面")
-    if w[1] <= 1e-9 * w[2]:
+    if w[1] <= COORD * w[2]:
         raise GeoError("点云共线（秩 1），无法确定平面")
     nrm = v[:, 0]                     # 最小特征值对应法向
     ln = float(np.linalg.norm(nrm))
-    if ln < 1e-12:
+    if ln < EPSILON:
         raise GeoError("点云退化，无法确定法向")
     nx, ny, nz = (nrm / ln).tolist()
     dd = -(nx * ctr[0] + ny * ctr[1] + nz * ctr[2])
@@ -4130,7 +3799,7 @@ def _plane_state(a, b, c):
     vx, vy, vz = cx - ax, cy - ay, cz - az
     n = (uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx)
     ln = math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
-    if ln < 1e-12:
+    if ln < EPSILON:
         raise GeoError("三点共线，无法确定平面")
     nx, ny, nz = n[0] / ln, n[1] / ln, n[2] / ln
     dd = -(nx * ax + ny * ay + nz * az)
@@ -4201,7 +3870,7 @@ def _cmd_cube(cons, defn, args):
         def _d2(p, q):
             return (p.x - q.x) ** 2 + (p.y - q.y) ** 2 + ((p.z or 0) - (q.z or 0)) ** 2
         d01, d02, d12 = _d2(a, b), _d2(a, c), _d2(b, c)
-        ok3 = (abs(d01 - d02) < 1e-9 and d01 < d12) or               (abs(d01 - d12) < 1e-9 and d01 < d02) or               (abs(d02 - d12) < 1e-9 and d02 < d01)
+        ok3 = (abs(d01 - d02) < COORD and d01 < d12) or               (abs(d01 - d12) < COORD and d01 < d02) or               (abs(d02 - d12) < COORD and d02 < d01)
         if not ok3:
             raise GeoError("Cube 三点需构成正方形底面（两点距离相等为边）")
         return _mk(cons, Geo3D, "geo3d", defn, [a, b, c], lambda d: _cube_state(d[0], d[1], d[2]))
@@ -4478,7 +4147,7 @@ def _numeric_verdict(cons, kind, args):
             return None, "数值判定：需要直线/线段/射线/向量"
         cross = d1[0] * d2[1] - d1[1] * d2[0]
         dot = d1[0] * d2[0] + d1[1] * d2[1]
-        tol = 1e-9 * _pred_scale(d1[0], d1[1], d2[0], d2[1]) ** 2
+        tol = COORD * _pred_scale(d1[0], d1[1], d2[0], d2[1]) ** 2
         if kind == "parallel":
             return (abs(cross) <= tol), "数值判定：方向叉积 = %.3e" % cross
         return (abs(dot) <= tol), "数值判定：方向点积 = %.3e" % dot
@@ -4487,7 +4156,7 @@ def _numeric_verdict(cons, kind, args):
             return None, "数值判定：需要三个点"
         (x1, y1), (x2, y2), (x3, y3) = [(e.x, e.y) for e in els]
         cr = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
-        tol = 1e-9 * _pred_scale(x2 - x1, y2 - y1, x3 - x1, y3 - y1) ** 2
+        tol = COORD * _pred_scale(x2 - x1, y2 - y1, x3 - x1, y3 - y1) ** 2
         return (abs(cr) <= tol), "数值判定：三点叉积 = %.3e" % cr
     if kind == "congruent":
         d1, d2 = _pred_dir(els[0]), _pred_dir(els[1])
@@ -4495,7 +4164,7 @@ def _numeric_verdict(cons, kind, args):
             return None, "数值判定：需要两条线段"
         l1 = math.hypot(*d1)
         l2 = math.hypot(*d2)
-        return (abs(l1 - l2) <= 1e-9 * _pred_scale(l1, l2)), "数值判定：长度 %.6g vs %.6g" % (l1, l2)
+        return (abs(l1 - l2) <= COORD * _pred_scale(l1, l2)), "数值判定：长度 %.6g vs %.6g" % (l1, l2)
     if kind == "concyclic":
         if not all(e.kind == "point" for e in els):
             return None, "数值判定：需要四个点"
@@ -4505,7 +4174,7 @@ def _numeric_verdict(cons, kind, args):
         rows = [[p[0], p[1], p[0] ** 2 + p[1] ** 2, 1] for p in pts]
         det = sympy.Matrix(rows).det()
         scale = _pred_scale(*[c for p in pts for c in p]) ** 4
-        return (abs(float(det)) <= 1e-9 * max(1.0, scale)), "数值判定：共圆行列式 = %.3e" % float(det)
+        return (abs(float(det)) <= COORD * max(1.0, scale)), "数值判定：共圆行列式 = %.3e" % float(det)
     if kind == "concurrent":
         ds = [_pred_dir(e) for e in els]
         if any(d is None for d in ds):
@@ -4533,19 +4202,19 @@ def _numeric_verdict(cons, kind, args):
 
         sc12 = _pred_scale(l1[0], l1[1], l2[0], l2[1])
         det12 = l1[0] * l2[1] - l1[1] * l2[0]
-        if abs(det12) <= 1e-9 * sc12 * sc12:
+        if abs(det12) <= COORD * sc12 * sc12:
             # 前两条平行：不重合 ⇒ 无公共点（必不共点）；重合 ⇒ 看第三条是否也过这条线
             qx, qy = _pt_on(l1)
-            off = abs(l2[0] * qx + l2[1] * qy + l2[2]) / max(1e-12, math.hypot(l2[0], l2[1]))
-            if off > 1e-7 * _pred_scale(qx, qy, 1.0):
+            off = abs(l2[0] * qx + l2[1] * qy + l2[2]) / max(EPSILON, math.hypot(l2[0], l2[1]))
+            if off > LOOSE * _pred_scale(qx, qy, 1.0):
                 return False, "数值判定：前两条直线平行且不重合 → 不共点"
-            on3 = abs(l3[0] * qx + l3[1] * qy + l3[2]) / max(1e-12, math.hypot(l3[0], l3[1]))
-            return (on3 <= 1e-7 * _pred_scale(qx, qy, 1.0)), "数值判定：前两条重合，第三条偏移 = %.3e" % on3
+            on3 = abs(l3[0] * qx + l3[1] * qy + l3[2]) / max(EPSILON, math.hypot(l3[0], l3[1]))
+            return (on3 <= LOOSE * _pred_scale(qx, qy, 1.0)), "数值判定：前两条重合，第三条偏移 = %.3e" % on3
         px = (l1[1] * l2[2] - l2[1] * l1[2]) / det12
         py = (l2[0] * l1[2] - l1[0] * l2[2]) / det12
         val = l3[0] * px + l3[1] * py + l3[2]
         scale = _pred_scale(l3[0], l3[1], px, py)
-        return (abs(val) <= 1e-7 * scale), "数值判定：三线共点残差 = %.3e" % val
+        return (abs(val) <= LOOSE * scale), "数值判定：三线共点残差 = %.3e" % val
     return None, "数值判定：不支持的命题"
 
 
@@ -4631,7 +4300,7 @@ def _cmd_sequence(cons, defn, args):
     vals = []
     point_mode = False
     i = a
-    while i <= b + 1e-9:
+    while i <= b + COORD:
         try:
             v = np.asarray(lam(i), dtype=float)
         except Exception:
@@ -4677,7 +4346,7 @@ def _fit_cmd(cons, defn, args, kind):
             from scipy.optimize import curve_fit
             def model(xv, a, b, c, d):
                 return a * np.sin(b * xv + c) + d
-            p0 = [(ys.max() - ys.min()) / 2, 2 * np.pi / max(xs.max() - xs.min(), 1e-9), 0, ys.mean()]
+            p0 = [(ys.max() - ys.min()) / 2, 2 * np.pi / max(xs.max() - xs.min(), COORD), 0, ys.mean()]
             popt, _ = _fit_silent_fit(model, xs, ys, p0=p0, maxfev=20000)
             a, b, c, d = popt
             expr = a * sympy.sin(b * x + c) + d
@@ -4743,76 +4412,11 @@ def _cmd_setvalue(cons, defn, args):
 # 变换辅助：函数变换 / 圆锥曲线变换 / Dilate 命令
 # ---------------------------------------------------------------------------
 
-def _fn_state(f, expr_fn):
-    """函数变换状态：把 f.expr 经 expr_fn 变形后返回新函数状态。"""
-    import sympy
-    x = f.xsym
-    expr = expr_fn(x)
-    return {"expr": sympy.expand(expr), "xsym": x, "body": "", "_lamb": None}
-
-
-def _conic_t(cn, cx=None, cy=None, a=None, b=None, angle=None):
-    """由变换后的规范参数重建圆锥曲线系数（5 点法）。"""
-    import math as _m
-    from .geom_util import conic_classify, conic_from_five_points
-    ncx = cn.cx if cx is None else cx
-    ncy = cn.cy if cy is None else cy
-    na = cn.semi_a if a is None else a
-    nb = cn.semi_b if b is None else b
-    nang = cn.angle if angle is None else angle
-    ctype = cn.ctype
-    pts = []
-    if ctype in ("ellipse", "circle"):
-        for t in (0.0, _m.pi / 2, _m.pi, 1.5 * _m.pi, _m.pi / 4):
-            xl, yl = na * _m.cos(t), nb * _m.sin(t)
-            pts.append((ncx + xl * _m.cos(nang) - yl * _m.sin(nang),
-                        ncy + xl * _m.sin(nang) + yl * _m.cos(nang)))
-    elif ctype == "hyperbola":
-        for t in (-1.6, -0.7, 0.7, 1.6, 0.0):
-            xl, yl = na * _m.cosh(t), nb * _m.sinh(t)
-            pts.append((ncx + xl * _m.cos(nang) - yl * _m.sin(nang),
-                        ncy + xl * _m.sin(nang) + yl * _m.cos(nang)))
-    elif ctype == "parabola":
-        p = na or 1.0
-        ux, uy = _m.cos(nang), _m.sin(nang)
-        vx, vy = -uy, ux
-        for t in (-5.0, -2.5, 0.0, 2.5, 5.0):
-            pts.append((ncx + t * vx + t * t / (4 * p) * ux,
-                        ncy + t * vy + t * t / (4 * p) * uy))
-    else:
-        raise GeoError("一般圆锥曲线暂不支持变换")
-    coeffs = conic_from_five_points(pts)
-    if coeffs is None:
-        raise GeoError("变换后的圆锥曲线退化")
-    focus = None
-    if ctype == "parabola":
-        focus = (ncx + na * _m.cos(nang), ncy + na * _m.sin(nang))
-    return {"a": coeffs[0], "b": coeffs[1], "c": coeffs[2],
-            "d": coeffs[3], "e": coeffs[4], "f": coeffs[5],
-            "ctype": conic_classify(*coeffs),
-            "cx": ncx, "cy": ncy, "semi_a": na, "semi_b": nb, "angle": nang,
-            "focus": focus, "directrix": cn.directrix}
-
-
-def _dilated_line(line, k, cxp, cyp):
-    """位似变换直线：取线上两点变换后重建。"""
-    a0, b0, c0 = line.a, line.b, line.c
-    norm = math.hypot(a0, b0)
-    if norm < EPS:
-        raise GeoError("退化的直线")
-    p0x = -a0 * c0 / (norm * norm)
-    p0y = -b0 * c0 / (norm * norm)
-    dx, dy = -b0 / norm, a0 / norm
-    p1 = _dilate_pt(p0x, p0y, k, cxp, cyp)
-    p2 = _dilate_pt(p0x + dx, p0y + dy, k, cxp, cyp)
-    return _line_state(*_line_through(p1[0], p1[1], p2[0], p2[1]))
-
-
 def _inv_map(px, py, ox, oy, r):
     """点 (px,py) 关于反演圆 (O,r) 的像：OP·OP' = r²，像与原像同向。"""
     dx, dy = px - ox, py - oy
     d2 = dx * dx + dy * dy
-    if d2 < 1e-18:
+    if d2 < ZERO_SQ:
         raise GeoError("对象经过反演圆心，其像在无穷远处")
     k = r * r / d2
     return ox + dx * k, oy + dy * k
@@ -4839,7 +4443,7 @@ def _inv_circle_conic_state(cx, cy, rr, ox, oy, r):
     dx, dy = cx - ox, cy - oy
     d2 = dx * dx + dy * dy
     den = d2 - rr * rr
-    if abs(den) < 1e-9:
+    if abs(den) < COORD:
         # 过反演圆心：像为直线 (q-O)·(C-O) = r²/2
         A = dx
         B = dy
@@ -4849,7 +4453,7 @@ def _inv_circle_conic_state(cx, cy, rr, ox, oy, r):
     ncx = ox + dx * k
     ncy = oy + dy * k
     nr = abs(k) * rr
-    if nr < 1e-12:
+    if nr < EPSILON:
         raise GeoError("反演退化")
     return {"a": 1.0, "b": 0.0, "c": 1.0,
             "d": -2.0 * ncx, "e": -2.0 * ncy,
@@ -4862,10 +4466,10 @@ def _inv_line_conic_state(line, ox, oy, r):
     """直线反演：不过圆心 → 过圆心的圆；过圆心 → 自身直线。"""
     a, b, c = _linear(line)
     n = math.hypot(a, b)
-    if n < EPS:
+    if n < EPSILON:
         raise GeoError("退化直线")
     dist = (a * ox + b * oy + c) / n
-    if abs(dist) < 1e-12:
+    if abs(dist) < EPSILON:
         return _inv_linear_state(a, b, c)
     rr = r * r / (2 * abs(dist))
     ncx = ox - a / n * (r * r / (2 * dist))
@@ -4886,7 +4490,7 @@ def _source_chains(el, ox=0.0, oy=0.0, r=1.0):
         return ([[(el.sx, el.sy), (el.sx + el.dx, el.sy + el.dy)]], True)
     if k == "ray":
         n = math.hypot(el.dx, el.dy)
-        if n < EPS:
+        if n < EPSILON:
             raise GeoError("退化射线")
         # 远端取到像点落入反演圆心附近（|像-O| = r²/|P-O| ≤ r/200）
         dist0 = math.hypot(el.ox - ox, el.oy - oy)
@@ -5012,13 +4616,13 @@ def _seg_pole(ax, ay, bx, by, ox, oy):
     """若反演圆心 O 落在线段 AB 上（奇点），返回 True。"""
     dx, dy = bx - ax, by - ay
     n2 = dx * dx + dy * dy
-    if n2 < 1e-18:
-        return math.hypot(ox - ax, oy - ay) < 1e-12
+    if n2 < ZERO_SQ:
+        return math.hypot(ox - ax, oy - ay) < EPSILON
     t = ((ox - ax) * dx + (oy - ay) * dy) / n2
-    if t < -1e-9 or t > 1 + 1e-9:
+    if t < -COORD or t > 1 + COORD:
         return False
     px, py = ax + dx * t, ay + dy * t
-    return math.hypot(ox - px, oy - py) < 1e-9 * max(1.0, math.hypot(dx, dy))
+    return math.hypot(ox - px, oy - py) < COORD * max(1.0, math.hypot(dx, dy))
 
 
 def _cmd_image(cons, defn, args):
@@ -5108,13 +4712,13 @@ def _cmd_invert(cons, defn, args):
         ox, oy, r = _inv_circle_params(d[1])
         el = d[0]
         n = math.hypot(el.dx, el.dy)
-        if n < EPS:
+        if n < EPSILON:
             raise GeoError("退化射线")
         ux, uy = el.dx / n, el.dy / n
         dx0, dy0 = el.ox - ox, el.oy - oy
         perp = abs(dx0 * uy - dy0 * ux)
         pole_t = -(dx0 * ux + dy0 * uy)
-        if perp < 1e-9 * max(1.0, math.hypot(dx0, dy0)) and pole_t > -1e-9:
+        if perp < COORD * max(1.0, math.hypot(dx0, dy0)) and pole_t > -COORD:
             raise GeoError("射线经过反演圆心，其像无界")
         # 定义域限制：远端取到像点贴近反演圆心（|像-O| = r²/|P-O| ≤ r/200）
         t1 = 200.0 * r + math.hypot(dx0, dy0) + 1.0
@@ -5131,10 +4735,10 @@ def _cmd_invert(cons, defn, args):
         cx, cy, rr = el.cx, el.cy, el.r
         sweep = (el.ang2 - el.ang1) % (2 * math.pi)
         dc = math.hypot(ox - cx, oy - cy)
-        if abs(dc - rr) < 1e-9:
+        if abs(dc - rr) < COORD:
             aO = math.atan2(oy - cy, ox - cx)
             dO = (aO - el.ang1) % (2 * math.pi)
-            if dO <= sweep + 1e-9:
+            if dO <= sweep + COORD:
                 raise GeoError("圆弧经过反演圆心，其像无界")
         th = el.ang1 + sweep * t
         px = cx + rr * sympy.cos(th)
@@ -5300,7 +4904,7 @@ def _cmd_histogram(cons, defn, args):
     import numpy as np
     arr = np.array(items, dtype=float)
     lo, hi = float(arr.min()), float(arr.max())
-    if hi - lo < 1e-12:
+    if hi - lo < EPSILON:
         raise GeoError("数据无变化（无法分组）")
     if nbin is None:
         nbin = max(2, min(15, int(np.ceil(np.log2(len(arr)) + 1))))  # Sturges
@@ -5613,7 +5217,7 @@ def _pop_state(obj, t):
     if obj.kind == "line":
         a, b, c = obj.a, obj.b, obj.c
         denom = a * a + b * b
-        if denom < 1e-12:
+        if denom < EPSILON:
             raise GeoError("退化直线")
         spr = math.sqrt(denom)
         px, py = -a * c / denom, -b * c / denom
@@ -5625,7 +5229,7 @@ def _pop_state(obj, t):
         return {"x": obj.ox + obj.dx / el * s, "y": obj.oy + obj.dy / el * s}
     if obj.kind == "arc":
         span = (obj.ang2 - obj.ang1) % (2 * math.pi)  # 逆时针正跨度（优弧>π，劣弧<π）
-        if span < 1e-9:
+        if span < COORD:
             span = 2 * math.pi
         ang = obj.ang1 + tv * span
         return {"x": obj.cx + obj.r * math.cos(ang), "y": obj.cy + obj.r * math.sin(ang)}
@@ -5641,12 +5245,12 @@ def _pop_state(obj, t):
             ln = math.hypot(xs[j] - xs[i], ys[j] - ys[i])
             segs.append((xs[i], ys[i], xs[j], ys[j], ln))
             total += ln
-        if total < 1e-12:
+        if total < EPSILON:
             raise GeoError("多边形退化")
         d = tv * total
         acc = 0.0
         for (x1, y1, x2, y2, ln) in segs:
-            if ln < 1e-12:
+            if ln < EPSILON:
                 continue
             if d <= acc + ln:
                 tt = (d - acc) / ln
@@ -5824,7 +5428,7 @@ def _cmd_semicircle(cons, defn, args):
 def _semicircle_state(a, b):
     cx, cy = (a.x + b.x) / 2, (a.y + b.y) / 2
     r = math.hypot(b.x - a.x, b.y - a.y) / 2.0
-    if r < 1e-12:
+    if r < EPSILON:
         raise GeoError("退化半圆")
     ang1 = math.atan2(a.y - cy, a.x - cx)
     return {"sector": False, "semicircle": True, "cx": cx, "cy": cy,
@@ -5848,7 +5452,7 @@ def _arc_state(a, b, c, sector):
     """
     ra = math.hypot(a.x - c.x, a.y - c.y)
     rb = math.hypot(b.x - c.x, b.y - c.y)
-    if ra < 1e-12 or rb < 1e-12:
+    if ra < EPSILON or rb < EPSILON:
         raise GeoError("退化圆弧（端点与圆心重合）")
     if abs(ra - rb) > 0.2 * max(ra, rb):
         raise GeoError("圆弧/扇形要求圆心 C 与两端点近似等距（|CA|=%.4f, |CB|=%.4f）；"

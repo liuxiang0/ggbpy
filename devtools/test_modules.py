@@ -35,9 +35,12 @@ cmd_src = (ROOT / "kernel" / "commands.py").read_text(encoding="utf-8")
 check("geometry3d 不 import 命令层",
       not re.search(r"^from \.commands|^import commands", geo_src, re.M)
       and "from .commands" not in geo_src, "")
-check("geometry3d 只依赖 elements/math/numpy",
-      set(re.findall(r"^from \.(\w+) import", geo_src, re.M)) <= {"elements"}, 
+check("geometry3d 只依赖 elements/tolerance/math/numpy",
+      set(re.findall(r"^from \.(\w+) import", geo_src, re.M)) <= {"elements", "tolerance"},
       str(sorted(set(re.findall(r"^from \.(\w+) import", geo_src, re.M)))))
+tol_src = (ROOT / "kernel" / "tolerance.py").read_text(encoding="utf-8")
+check("tolerance 是叶子模块（不做相对导入）",
+      not re.search(r"^from \.", tol_src, re.M), "")
 check("commands.py 通过 re-export 保持兼容",
       "from .geometry3d import" in cmd_src, "")
 
@@ -77,7 +80,7 @@ check("solids 与 commands re-export 一致",
       all(getattr(C, n, None) is getattr(S, n, None) for n in sol_moved), "")
 check("立体命令入口仍可用",
       all(hasattr(C, n) for n in ("_cube_state", "_cone_state", "_cylinder_state", "_regular_polyhedron")), "")
-check("commands.py 行数已降至 < 6700", len(cmd_src.splitlines()) < 6700, str(len(cmd_src.splitlines())))
+check("commands.py 行数已降至 < 6300", len(cmd_src.splitlines()) < 6300, str(len(cmd_src.splitlines())))
 
 
 def undefined_refs(path):
@@ -107,9 +110,26 @@ def undefined_refs(path):
     return miss
 
 
-for mod in ("kernel/geometry3d.py", "kernel/solids.py"):
+for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py"):
     miss = undefined_refs(mod)
     check(mod + " 无未定义引用（函数与常量跨模块防漏）", not miss, "缺: " + str(miss[:8]))
+
+print("\n=== A3. geo2d 模块（二维几何基元与变换） ===")
+geo2d_src = (ROOT / "kernel" / "geo2d.py").read_text(encoding="utf-8")
+check("geo2d 不 import 命令层", "from .commands" not in geo2d_src, "")
+check("geo2d 只依赖 elements/tolerance",
+      set(re.findall(r"^from \.(\w+) import", geo2d_src, re.M)) <= {"elements", "tolerance"},
+      str(sorted(set(re.findall(r"^from \.(\w+) import", geo2d_src, re.M)))))
+import kernel.geo2d as G2  # noqa: E402
+
+g2_moved = list(G2.__all__)
+check("geo2d 搬迁函数数量 ≥ 15", len(g2_moved) >= 15, "n=%d" % len(g2_moved))
+check("geo2d 与 commands re-export 一致",
+      all(getattr(C, n, None) is getattr(G2, n, None) for n in g2_moved), "")
+check("变换/基元入口仍可用",
+      all(hasattr(C, n) for n in ("_transform_fn", "_line_state", "_line_through", "_conic_t")), "")
+check("geo2d.py 规模合理（300–700 行）", 300 <= len(geo2d_src.splitlines()) <= 700,
+      str(len(geo2d_src.splitlines())))
 
 print("\n=== B. 前端：文案表外置 ===")
 app = (ROOT / "server" / "static" / "app.js").read_text(encoding="utf-8")

@@ -16,6 +16,7 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from .elements import GeoElement, GeoError
+from .tolerance import EPSILON  # 统一数值容差（见 kernel/tolerance.py）
 
 DEFAULT_VIEW = (-10.0, 10.0, -10.0, 10.0)
 UNDO_LIMIT = 200
@@ -287,7 +288,7 @@ class Construction:
             if rigid_group is not None:
                 deps = [d for d in rigid_group.deps if d.kind == "point"]
                 pivot = deps[0]
-                if pivot is not el and abs(math.hypot(el.x - pivot.x, el.y - pivot.y)) > 1e-12:
+                if pivot is not el and abs(math.hypot(el.x - pivot.x, el.y - pivot.y)) > EPSILON:
                     # 拖动非首个顶点 → 绕第一个顶点（pivot）旋转（保距/保形，无平移）
                     import math as _m
                     oa = _m.atan2(oy - pivot.y, ox - pivot.x)
@@ -408,7 +409,7 @@ class Construction:
             if grp is not None:
                 deps = [d for d in grp.deps if d.kind == "point"]
                 pivot = deps[0]
-                if pivot is not el and abs(math.hypot(el.x - pivot.x, el.y - pivot.y)) > 1e-12:
+                if pivot is not el and abs(math.hypot(el.x - pivot.x, el.y - pivot.y)) > EPSILON:
                     oa = math.atan2(el.y - pivot.y, el.x - pivot.x)
                     na = math.atan2(el.y + dy - pivot.y, el.x + dx - pivot.x)
                     th = na - oa
@@ -475,7 +476,7 @@ class Construction:
         elif el.kind == "line":
             el.c = el.c - el.a * dx - el.b * dy
             denom = el.a * el.a + el.b * el.b
-            if denom < 1e-12:
+            if denom < EPSILON:
                 raise GeoError(label + " 退化直线，不能移动")
             px = -el.a * el.c / denom
             py = -el.b * el.c / denom

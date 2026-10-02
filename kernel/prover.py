@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import sympy
 
 from .elements import GeoError
+from .tolerance import COARSE  # 统一数值容差（见 kernel/tolerance.py）
 
 
 class ProverResult:
@@ -382,7 +383,7 @@ class SymbolicGeo:
                     val = float(num.evalf(subs=subs))
                 except Exception:
                     continue
-                if abs(val) > 1e-6:
+                if abs(val) > COARSE:
                     worst = val
                     break
             if worst is not None:

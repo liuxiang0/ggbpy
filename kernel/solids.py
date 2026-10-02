@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from .elements import GeoError
 # 与几何算法层的共用件（网格规范化/多面体状态/正交基）
 from .geometry3d import _frame_from_axis, _normalize_mesh, _poly_state
+from .tolerance import EPSILON, COORD, COARSE  # 统一数值容差（见 kernel/tolerance.py）
 
 _PHI = (1.0 + 5.0 ** 0.5) / 2.0      # 黄金比（正十二面体/正二十面体用）
 
@@ -50,7 +51,7 @@ __all__ = [
 
 
 def _sphere_check(r):
-    if r <= 1e-12:
+    if r <= EPSILON:
         raise GeoError("球半径需为正")
     return r
 
@@ -82,11 +83,11 @@ def _cube_from_edge(p1, p2, dirpt=None):
     """
     u = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]]
     L = math.sqrt(u[0] ** 2 + u[1] ** 2 + u[2] ** 2)
-    if L < 1e-12:
+    if L < EPSILON:
         raise GeoError("线段退化，无法构建立方体")
     n = [u[0] / L, u[1] / L, u[2] / L]
     # 经典 2D 情形
-    if dirpt is None and abs(p1[2]) < 1e-12 and abs(p2[2]) < 1e-12:
+    if dirpt is None and abs(p1[2]) < EPSILON and abs(p2[2]) < EPSILON:
         v = [-u[1], u[0], 0.0]
         base = [list(p1), list(p2),
                 [p2[0] + v[0], p2[1] + v[1], p2[2] + v[2]],
@@ -102,13 +103,13 @@ def _cube_from_edge(p1, p2, dirpt=None):
     dot = w[0] * n[0] + w[1] * n[1] + w[2] * n[2]
     v = [w[0] - dot * n[0], w[1] - dot * n[1], w[2] - dot * n[2]]
     lv = math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2)
-    if lv < 1e-9:
+    if lv < COORD:
         # 方向与棱共线：换参考轴
         ref = [1.0, 0.0, 0.0] if abs(n[0]) < 0.9 else [0.0, 1.0, 0.0]
         dot2 = ref[0] * n[0] + ref[1] * n[1] + ref[2] * n[2]
         v = [ref[0] - dot2 * n[0], ref[1] - dot2 * n[1], ref[2] - dot2 * n[2]]
         lv = math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2)
-        if lv < 1e-12:
+        if lv < EPSILON:
             raise GeoError("无法确定立方体方向")
     v = [v[0] / lv * L, v[1] / lv * L, v[2] / lv * L]
     base = [list(p1), list(p2),
@@ -119,7 +120,7 @@ def _cube_from_edge(p1, p2, dirpt=None):
     ny = n[2] * vn[0] - n[0] * vn[2]
     nz = n[0] * vn[1] - n[1] * vn[0]
     ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if ln < 1e-12:
+    if ln < EPSILON:
         raise GeoError("底面退化，无法构建立方体")
     return _cube_build(base, (nx / ln, ny / ln, nz / ln), L)
 
@@ -136,16 +137,16 @@ def _cube_from_poly(poly):
         return math.sqrt(_dot(a, a))
     e = [_sub(pts[(i + 1) % 4], pts[i]) for i in range(4)]
     lens = [_norm(x) for x in e]
-    if min(lens) < 1e-9:
+    if min(lens) < COORD:
         raise GeoError("正方形边长退化")
-    if max(lens) - min(lens) > 1e-6 * max(lens):
+    if max(lens) - min(lens) > COARSE * max(lens):
         raise GeoError("Cube[正方形] 的四边形边长不等，不是正方形")
-    if abs(_dot(e[0], e[1])) > 1e-6 * (lens[0] * lens[1]):
+    if abs(_dot(e[0], e[1])) > COARSE * (lens[0] * lens[1]):
         raise GeoError("Cube[正方形] 的相邻边不垂直，不是正方形")
     u, v = e[0], e[1]
     nv = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
     ln = _norm(nv)
-    if ln < 1e-12:
+    if ln < EPSILON:
         raise GeoError("正方形退化")
     return _cube_build(pts, (nv[0] / ln, nv[1] / ln, nv[2] / ln), lens[0])
 
@@ -179,11 +180,11 @@ def _cube_state(a, b, c):
     # 找出角点：它到另外两点的距离相等且最短（两条边），第三条距离最长（对角线）
     # 角点 i：到 j、k 的平方距离相等（d_ij == d_ik），且小于 d_jk（对角线最长）
     corner = -1
-    if abs(d01 - d02) < 1e-9 and d01 < d12:
+    if abs(d01 - d02) < COORD and d01 < d12:
         corner = 0          # a 是角点
-    elif abs(d01 - d12) < 1e-9 and d01 < d02:
+    elif abs(d01 - d12) < COORD and d01 < d02:
         corner = 1          # b 是角点
-    elif abs(d02 - d12) < 1e-9 and d02 < d01:
+    elif abs(d02 - d12) < COORD and d02 < d01:
         corner = 2          # c 是角点
     if corner < 0:
         raise GeoError("三点不能确定正方形底面（需两点距离相等为边、第三点在对角）")
@@ -203,7 +204,7 @@ def _cube_state(a, b, c):
     ny = u[2] * v[0] - u[0] * v[2]
     nz = u[0] * v[1] - u[1] * v[0]
     ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if ln < 1e-12:
+    if ln < EPSILON:
         raise GeoError("三点共线/重合，无法确定底面")
     nx, ny, nz = nx / ln, ny / ln, nz / ln
     # 边长 = |u|（正方形两邻边等长）
@@ -215,12 +216,12 @@ def _cube_state2(a, b):
     ax, ay, az = a.x, a.y, a.z or 0
     ux, uy, uz = b.x - ax, b.y - ay, (b.z or 0) - az
     h = math.sqrt(ux * ux + uy * uy + uz * uz)
-    if h < 1e-12:
+    if h < EPSILON:
         raise GeoError("两点重合，无法构成底面")
     # 底面正方形在 AB 的垂直方向补全：v = rot90(u)（xy 平面内）
     vx, vy, vz = -uy, ux, 0.0
     lv = math.sqrt(vx * vx + vy * vy)
-    if lv < 1e-12:
+    if lv < EPSILON:
         # AB 竖直：退化为水平方向补全
         vx, vy, vz = h, 0.0, 0.0
     else:
@@ -234,7 +235,7 @@ def _cube_state2(a, b):
     ny = uz * vx - ux * vz
     nz = ux * vy - uy * vx
     ln = math.sqrt(nx * nx + ny * ny + nz * nz)
-    if ln < 1e-12:
+    if ln < EPSILON:
         nx, ny, nz = 0.0, 0.0, 1.0
     else:
         nx, ny, nz = nx / ln, ny / ln, nz / ln
@@ -244,13 +245,13 @@ def _ortho_frame(a, b, c):
     """由三点构造正交基 (u, v, n)：u 沿 B-A，v 在 ABC 平面内，n = u×v。"""
     u = [b.x - a.x, b.y - a.y, (b.z or 0) - (a.z or 0)]
     lu = math.sqrt(u[0] ** 2 + u[1] ** 2 + u[2] ** 2)
-    if lu < 1e-12:
+    if lu < EPSILON:
         raise GeoError("基准两点重合，无法确定立体方向")
     u = [u[0] / lu, u[1] / lu, u[2] / lu]
     w = [c.x - a.x, c.y - a.y, (c.z or 0) - (a.z or 0)]
     n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]
     ln = math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
-    if ln < 1e-12:
+    if ln < EPSILON:
         n = [0.0, 0.0, 1.0]
     else:
         n = [n[0] / ln, n[1] / ln, n[2] / ln]
@@ -267,7 +268,7 @@ def _with_analytic(state, **kw):
 
 def _cone_mesh_axis(apex, base_center, radius, N=48, cap=True):
     """由 顶点 / 底面中心 / 半径 构造有限圆锥网格（底面垂直于 顶点-底心 轴）。"""
-    if radius <= 1e-12:
+    if radius <= EPSILON:
         raise GeoError("半径需为正")
     axis = [apex[0] - base_center[0], apex[1] - base_center[1], apex[2] - base_center[2]]
     u, v, _ = _frame_from_axis(axis)
@@ -290,7 +291,7 @@ def _cone_from_circle_state(cir, h):
         cx, cy, r = cir.cx, cir.cy, cir.semi_a
     else:
         cx, cy, r = cir.cx, cir.cy, cir.r
-    if h <= 1e-12:
+    if h <= EPSILON:
         raise GeoError("高度需为正")
     return _with_analytic(_cone_mesh_axis([cx, cy, h], [cx, cy, 0.0], r), type="cone", r=r, h=h)
 
@@ -308,10 +309,10 @@ def _cone_state(a, b, c):
 
 def _cyl_mesh_axis(base_center, axis, radius, N=48):
     """由 底面中心 / 轴向向量（长度=高）/ 半径 构造圆柱网格。"""
-    if radius <= 1e-12:
+    if radius <= EPSILON:
         raise GeoError("半径需为正")
     h = [axis[0], axis[1], axis[2]]
-    if math.sqrt(h[0] ** 2 + h[1] ** 2 + h[2] ** 2) < 1e-12:
+    if math.sqrt(h[0] ** 2 + h[1] ** 2 + h[2] ** 2) < EPSILON:
         raise GeoError("圆柱高度退化")
     u, v, _n = _frame_from_axis(h)
     verts, edges, faces = [], [], []
@@ -342,7 +343,7 @@ def _cylinder_from_circle_state(cir, h):
         cx, cy, r = cir.cx, cir.cy, cir.semi_a
     else:
         cx, cy, r = cir.cx, cir.cy, cir.r
-    if h <= 1e-12:
+    if h <= EPSILON:
         raise GeoError("高度需为正")
     return _with_analytic(_cyl_mesh_axis([cx, cy, 0.0], [0.0, 0.0, h], r), type="cylinder", r=r, h=h)
 
