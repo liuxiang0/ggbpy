@@ -136,6 +136,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第四十批（2026-10-03 · render3d 第三步：遮挡判定显式参数化 + 首个前端单元测试）**：
+  - **`static/occlusion3d.js`（64 行）**：把嵌在 `render3d` 内的遮挡逻辑改为**显式参数**模块 —— `pointInPoly2d(px,py,poly)`（纯函数）· `buildFacePolys(faces)`（屏外接矩形 + 平均深度，近→远排序，丢退化面）· `edgeOccluded(p1,p2,facePolys,proj3,onTest)`（包围盒粗筛 + 精确射线法 + 早停）；`render3d` 仅留 3 行适配（`facePolys` 构建 + 同名 `edgeOccluded` 薄包装）
+  - **首个前端单元测试** `devtools/test_occlusion_module.js`（10 项）：点在多边形内/外、退化面丢弃、按深度排序、包围盒正确、近面遮挡、计数回调、中点落在面外不遮挡、边更近时早停
+  - **app.js 5013 → 4981 行**（前端累计 **5979 → 4981**）；加载顺序 `… → proj3d → axes3d → occlusion3d → app`
+  - **踩坑**：替换闭包块时只删了 `pointInPoly2d`，漏删**原 `edgeOccluded` 定义** → JS 后定义覆盖前者 → 运行时报 `pointInPoly2d is not defined`；已按“同名函数只应有一个定义”显式断言防复发
+  - 检测：模块边界 259 → **264**
 - **第三十九批（2026-10-03 · render3d 第二步：三维坐标轴绘制模块）**：
   - **`static/axes3d.js`（约 180 行）**：`drawAxes3d`（71 行）/`drawMiniAxes3d`/`arrowHead3`/`niceStep3d`/`saveAxisTicks3d` 外置为 `window.GGB_AX3.create(env)`；`app.js` 5130 → **5013 行**（前端累计 **5979 → 5013**）
   - **复用链清晰**：`axes3d` 通过注入拿到 `proj3d` 的 `proj3/line3` 与 `panels` 的 `fmtNum`（转发助手一律注入，不搬迁）；`axisTicks3d` 为对象，共享引用即可（`saveAxisTicks3d` 只写 localStorage）
@@ -256,7 +262,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 259 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1416 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 264 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1421 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

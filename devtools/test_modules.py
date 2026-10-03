@@ -426,6 +426,24 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B8. 前端：三维遮挡判定模块（static/occlusion3d.js，render3d 第三步） ===")
+oc_path = ROOT / "server" / "static" / "occlusion3d.js"
+oc_src = oc_path.read_text(encoding="utf-8") if oc_path.exists() else ""
+check("occlusion3d.js 存在", oc_path.exists(), "")
+check("app.js 经 window.GGB_OCC 适配（保留同名 edgeOccluded 薄包装）",
+      "window.GGB_OCC.buildFacePolys(faces)" in app_src
+      and "window.GGB_OCC.edgeOccluded(p1, p2, facePolys, proj3" in app_src
+      and app_src.count("function edgeOccluded(p1, p2) {") == 1, "")
+check("遮挡逻辑改为显式参数（不依赖闭包局部量）",
+      "function edgeOccluded(p1, p2, facePolys, proj3, onTest)" in oc_src
+      and "function buildFacePolys(faces)" in oc_src, "")
+check("index.html 在 app.js 之前加载 occlusion3d.js",
+      index_src.index("/static/occlusion3d.js") < index_src.index("/static/app.js"), "")
+_sub = subprocess.run(["node", "devtools/test_occlusion_module.js"], cwd=str(ROOT), capture_output=True, text=True)
+check("occlusion3d 单元测试（射线法/面表排序/早停/计数回调）",
+      _sub.returncode == 0 and _sub.stdout.count("OK") >= 10,
+      (_sub.stdout.strip().splitlines() or [""])[0][:50] + _sub.stderr.strip()[-50:])
+
 print("\n=== B7. 前端：三维坐标轴绘制模块（static/axes3d.js，render3d 第二步） ===")
 ax_path = ROOT / "server" / "static" / "axes3d.js"
 ax_src = ax_path.read_text(encoding="utf-8") if ax_path.exists() else ""
@@ -492,7 +510,7 @@ check("draw2d 未夺走 panels 的转发助手（fmtNum 仍是 panels 包装）"
 # JS 作用域守卫：四个模块全部标识符可解析
 _sub = subprocess.run(["node", "devtools/check_frontend_modules.js"], cwd=str(ROOT), capture_output=True, text=True)
 check("前端模块 JS 作用域守卫（全部标识符可解析，动态扫描 static/*.js）",
-      _sub.returncode == 0 and _sub.stdout.count("OK") >= 7, _sub.stdout.strip().replace("\n", " | ")[:80])
+      _sub.returncode == 0 and _sub.stdout.count("OK") >= 8, _sub.stdout.strip().replace("\n", " | ")[:80])
 # 守卫自检：删掉 drawGrid 的 cssH 注入必须被抓到
 _mut = re.sub(r"var C = env\.get\('C'\), cssH = env\.get\('cssH'\),", "var C = env.get('C'),", d2_src, count=1)
 if _mut != d2_src:
