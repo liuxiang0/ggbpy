@@ -426,6 +426,27 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B2. 前端：试卷渲染/导出模块（static/exam.js） ===")
+exam_path = ROOT / "server" / "static" / "exam.js"
+exam_src = exam_path.read_text(encoding="utf-8") if exam_path.exists() else ""
+check("exam.js 存在", exam_path.exists(), "")
+check("app.js 通过 window.GGB_EXAM 装配（原实现体已移走，仅剩薄包装）",
+      "window.GGB_EXAM" in app_src and 'class="eq"' not in app_src
+      and "exam_score_l" not in app_src and "function renderExam() { return _examMod" in app_src, "")
+check("app.js 保留同名薄包装（调用点不变）",
+      "function renderExam() { return _examMod" in app_src
+      and "function escHtml(s) { return _examMod" in app_src, "")
+check("index.html 在 app.js 之前加载 exam.js",
+      index_src.index("/static/exam.js") < index_src.index("/static/app.js"), "")
+check("exam.js 不含试卷面板装配代码（只做渲染/导出/转义）",
+      "addEventListener" not in exam_src and "examPanel" not in exam_src, "")
+check("exam.js 状态只读（无对 app 状态赋值）", "exam =" not in exam_src.replace("var exam = env.getExam();", ""), "")
+_sub = subprocess.run(["node", "devtools/test_exam_module.js"], cwd=str(ROOT), capture_output=True, text=True)
+check("exam.js 桩环境冒烟（渲染非空/转义/导出提示）",
+      _sub.returncode == 0 and "renderExam 非空: true" in _sub.stdout
+      and "转义生效: true" in _sub.stdout and "exportExam 提示: true" in _sub.stdout,
+      (_sub.stdout.strip().splitlines() or [""])[-1][:60] + _sub.stderr.strip()[-60:])
+
 print("\n=== B1. 前端：数学键盘面板模块 ===")
 kb_path = ROOT / "server" / "static" / "keyboard.js"
 kb_src = kb_path.read_text(encoding="utf-8") if kb_path.exists() else ""

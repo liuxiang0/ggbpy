@@ -136,6 +136,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第三十四批（2026-10-03 · 前端拆分起步：试卷模块外置 + 耦合面分析工具）**：
+  - **`static/exam.js`（104 行）**：试卷渲染/导出（`renderExam`/`exportExam`/`escHtml`）外置为 `window.GGB_EXAM.create(env)`；**状态只读注入**（`exam`/`lang` 经 `env.getExam()/getLang()`，`t`/`setMsg` 由 env 注入），app.js 保留同名**薄包装**，调用点零改动；`app.js` 5745 → **5679 行**，加载顺序 `i18n → data → keyboard → exam → app`
+  - **前端耦合面分析（自定义脚本）**：对 app.js 175 个函数做「闭包 + 状态变量耦合」分析，得出各组抽取成本 —— `exam` 组 6 函数/109 行（7 个状态）已拆；`panels` 组 17 函数/238 行（18 个状态：`elements/listEl/selected/…`）待拆，`draw2d` 组 8 函数/115 行（5 个状态）待拆
+  - **经验**：JS 函数体边界不能用括号配平（正则字面量 `/[\\/:*?"<>|]/` 会打断扫描）→ 本仓库格式统一，用「缩进 2 的 `}` 行」定界最可靠；首次抽取曾把 `escHtml` 之后的**试卷面板装配代码**一起吞进模块，冒烟测试立刻暴露
+  - **新增冒烟**：`devtools/test_exam_module.js`（桩 env：渲染非空/转义生效/导出提示），已接入模块检测
+  - 检测：模块边界 222 → **229**
 - **第三十三批（2026-10-03 · commands.py 收尾：嵌套求值器外置 + 导入块压缩）**：
   - **`kernel/nested.py`（92 行）**：嵌套命令求值器（`_DetachedConstruction` 影子构造 + `_eval_nested`）外置，导入即向 `cmd_util` 注入求值钩子；依赖 `registry`（命令表）/`cmd_util`/`parser`/`elements`，**不依赖 commands**，依赖方向清晰
   - **命名助手随注册表**：`_result_kind`/`_label_kind`（自动标签类型判定）移入 `registry.py`（与四张表同居一处，也解开 nested 对 commands 的依赖）
@@ -220,7 +226,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 222 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1379 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 229 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1386 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
