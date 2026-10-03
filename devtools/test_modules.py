@@ -426,6 +426,25 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B10. 前端：三维叠加层模块（static/overlay3d.js）+ 状态绑定工具 ===")
+ov_path = ROOT / "server" / "static" / "overlay3d.js"
+ov_src = ov_path.read_text(encoding="utf-8") if ov_path.exists() else ""
+check("overlay3d.js 存在", ov_path.exists(), "")
+check("render3d 经 _overlay 三段调用（原实现体已移走）",
+      all(k in app_src for k in ("_overlay.drawBasePlane();", "_overlay.drawSelection3d();",
+                                  "_overlay.drawZHandle();"))
+      and "rgba(99,102,241,.35)" not in app_src, "")
+check("index.html 在 app.js 之前加载 overlay3d.js",
+      index_src.index("/static/overlay3d.js") < index_src.index("/static/app.js"), "")
+check("overlay3d 含基准平面/选中高亮/z 控制柄",
+      all(("function %s(" % f) in ov_src for f in ("drawBasePlane", "drawSelection3d", "drawZHandle")), "")
+# 状态绑定交叉检查：用常驻工具（曾抓到 planeZ 缺 getter case）
+_sub = subprocess.run([sys.executable, "-B", "devtools/check_state_bindings.py"], cwd=str(ROOT),
+                      capture_output=True, text=True)
+check("状态绑定交叉检查工具（模块 get/set ↔ app.js 分支）",
+      _sub.returncode == 0 and "全部 get/set 均有对应分支" in _sub.stdout,
+      _sub.stdout.strip()[:70])
+
 print("\n=== B9. 前端：三维场景绘制模块（static/scene3d.js，render3d 主绘制段）+ get/set 交叉检查 ===")
 sc_path = ROOT / "server" / "static" / "scene3d.js"
 sc_src = sc_path.read_text(encoding="utf-8") if sc_path.exists() else ""
@@ -439,21 +458,7 @@ check("scene3d 覆盖几何收集/遮挡分类/顶点绘制",
 check("scene3d 的调试计数经 env 读写（不再直接改应用变量）",
       "set('dbgProjReuse'" in sc_src and "set('dbgOccTests'" in sc_src
       and "dbgOccTests++" not in sc_src, "")
-# get/set 交叉检查：模块用到的每个状态名都要在 app.js 的 getter/setter 里有分支
-_mods = [q for q in sorted((ROOT / "server" / "static").glob("*.js"))
-         if q.name not in ("app.js", "data.js", "i18n.js")]
-_get_sec = app_src[app_src.index("function _panelStateGet(k)"):app_src.index("function _panelStateSet(k, v)")]
-_set_sec = app_src[app_src.index("function _panelStateSet(k, v)"):app_src.index("var _panels = window.GGB_PANELS.create")]
-_bad = []
-for _m in _mods:
-    _src = _m.read_text(encoding="utf-8")
-    for _n in sorted(set(re.findall(r"get\('([A-Za-z_$][\w$]*)'\)", _src))):
-        if ("case '%s':" % _n) not in _get_sec:
-            _bad.append("%s:get(%s)" % (_m.name, _n))
-    for _n in sorted(set(re.findall(r"set\('([A-Za-z_$][\w$]*)'", _src))):
-        if ("k === '%s'" % _n) not in _set_sec:
-            _bad.append("%s:set(%s)" % (_m.name, _n))
-check("模块 get/set 状态名都有对应分支（getter/setter 交叉检查）", not _bad, str(_bad[:5]))
+# get/set 交叉检查已固化为 devtools/check_state_bindings.py（见 B10）
 
 print("\n=== B8. 前端：三维遮挡判定模块（static/occlusion3d.js，render3d 第三步） ===")
 oc_path = ROOT / "server" / "static" / "occlusion3d.js"

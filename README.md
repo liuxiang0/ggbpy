@@ -136,6 +136,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第四十二批（2026-10-03 · render3d 收尾：overlay3d.js + 状态绑定工具化）**：
+  - **`static/overlay3d.js`（135 行）**：`render3d` 余下三段外置 —— 基准平面网格（`drawBasePlane`，z=planeZ 工作平面）· 选中三维对象高亮（`drawSelection3d`，橙色虚线）· z 轴控制柄（`drawZHandle`）；`render3d` 现仅 **52 行**（清屏 → 坐标轴 → 叠加层三段 → 场景 → 迷你轴）
+  - **app.js 4754 → 4665 行**（前端累计 **5979 → 4665**，−22%）
+  - **`devtools/check_state_bindings.py`（常驻工具，本批新增）**：模块每个 `get('X')` 必须在 `_panelStateGet` 有 `case 'X'`、每个 `set('X',…)` 必须在 `_panelStateSet` 有分支 —— 它当场抓到 `get('planeZ')` 缺 case（上一批同类 bug 的静态预防）
+  - **块边界自动化**：改用手写行号 → 按注释定位 + **括号配平**自动求结束行（首版手工行号取短，基准平面网格尾部 5 行残留 app.js → `pspan is not defined`）
+  - 检测：模块边界 270 → **274**
 - **第四十一批（2026-10-03 · render3d 主绘制段外置：scene3d.js，app.js 破 5000 行）**：
   - **`static/scene3d.js`（270 行）**：原 `render3d` 内 245 行内联段（几何收集含网格 LOD 与投影复用缓存 → 画家算法排序 → 遮挡分类实线/虚线 → 顶点与标签绘制）外置为 `_scene.drawScene()`；逐行 diff 验证**除调试计数改写外与原实现完全一致**（有效行 232 → 237）
   - **app.js 4981 → 4743 行**（前端累计 **5979 → 4743**）；加载顺序 `… → proj3d → axes3d → occlusion3d → scene3d → app`
@@ -268,7 +274,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 270 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1427 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 274 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1431 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
