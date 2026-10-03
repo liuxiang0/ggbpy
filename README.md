@@ -136,6 +136,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第三十五批（2026-10-03 · 前端 panels 拆分：17 函数面板层外置）**：
+  - **`static/panels.js`（307 行）**：对象列表/三维列表/工具面板/分类条/编辑栏/CAS 单元/工具按钮态共 **17 个渲染函数**外置为 `window.GGB_PANELS.create(env)`；状态经 `env.get/env.set` 注入（**只有 `showCat` 写 `activeCat`**，其余 16 个状态只读），读用别名、被写变量全程走 env（避免快照过期）
+  - **app.js 5679 → 5484 行**（本会话累计 **5745 → 5484**）；app.js 保留 17 个同名薄包装（调用点零改动），`_panelStateGet/_panelStateSet` 提供状态访问；加载顺序 `i18n → data → keyboard → exam → panels → app`
+  - **耦合分析的价值兑现**：拆分前脚本已给出「17 函数/238 行、17 个状态、仅 1 处写入、无组外函数依赖」，因此本次几乎是机械替换；浏览器 2D（64）+ 3D（142）矩阵全过、无 JS 错误
+  - **新增冒烟**：`devtools/test_panels_module.js`（空列表提示/对象行渲染/showCat 写 activeCat/嵌套翻译/转义）接入模块检测
+  - 检测：模块边界 229 → **236**
 - **第三十四批（2026-10-03 · 前端拆分起步：试卷模块外置 + 耦合面分析工具）**：
   - **`static/exam.js`（104 行）**：试卷渲染/导出（`renderExam`/`exportExam`/`escHtml`）外置为 `window.GGB_EXAM.create(env)`；**状态只读注入**（`exam`/`lang` 经 `env.getExam()/getLang()`，`t`/`setMsg` 由 env 注入），app.js 保留同名**薄包装**，调用点零改动；`app.js` 5745 → **5679 行**，加载顺序 `i18n → data → keyboard → exam → app`
   - **前端耦合面分析（自定义脚本）**：对 app.js 175 个函数做「闭包 + 状态变量耦合」分析，得出各组抽取成本 —— `exam` 组 6 函数/109 行（7 个状态）已拆；`panels` 组 17 函数/238 行（18 个状态：`elements/listEl/selected/…`）待拆，`draw2d` 组 8 函数/115 行（5 个状态）待拆
@@ -226,7 +232,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 229 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1386 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 236 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1393 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

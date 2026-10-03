@@ -426,6 +426,28 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B3. 前端：面板渲染模块（static/panels.js） ===")
+pan_path = ROOT / "server" / "static" / "panels.js"
+pan_src = pan_path.read_text(encoding="utf-8") if pan_path.exists() else ""
+check("panels.js 存在", pan_path.exists(), "")
+check("app.js 通过 window.GGB_PANELS 装配（原渲染体已移走）",
+      "window.GGB_PANELS" in app_src and 'class="obj-empty"' not in app_src
+      and "function renderList() { return _panels" in app_src, "")
+check("app.js 为 17 个面板函数保留薄包装",
+      len(re.findall(r"return _panels\.\w+\.apply\(null, arguments\);", app_src)) == 17,
+      str(len(re.findall(r"return _panels\.\w+\.apply\(null, arguments\);", app_src))))
+check("index.html 在 app.js 之前加载 panels.js",
+      index_src.index("/static/panels.js") < index_src.index("/static/app.js"), "")
+check("panels.js 状态经 env 注入（不直接引用应用级变量）",
+      "env.get(" in pan_src and "env.set(" in pan_src and "window.GGB_I18N" not in pan_src, "")
+check("panels.js 无 DOM 事件装配（只做渲染）", "addEventListener" not in pan_src, "")
+_sub = subprocess.run(["node", "devtools/test_panels_module.js"], cwd=str(ROOT), capture_output=True, text=True)
+check("panels.js 桩环境冒烟（列表/工具面板/分类/写状态/翻译/转义）",
+      _sub.returncode == 0 and all(k in _sub.stdout for k in (
+          "空列表提示: true", "对象行渲染: true", "showCat 写 activeCat: true",
+          "翻译可用: true", "esc 转义: true")),
+      ((_sub.stdout.strip().splitlines() or [""])[-1][:50]) + _sub.stderr.strip()[-60:])
+
 print("\n=== B2. 前端：试卷渲染/导出模块（static/exam.js） ===")
 exam_path = ROOT / "server" / "static" / "exam.js"
 exam_src = exam_path.read_text(encoding="utf-8") if exam_path.exists() else ""
