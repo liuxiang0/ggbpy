@@ -426,6 +426,24 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B6. 前端：三维投影/屏幕空间模块（static/proj3d.js，render3d 第一步） ===")
+p3_path = ROOT / "server" / "static" / "proj3d.js"
+p3_src = p3_path.read_text(encoding="utf-8") if p3_path.exists() else ""
+check("proj3d.js 存在", p3_path.exists(), "")
+check("app.js 通过 window.GGB_P3 装配（原实现体已移走，仅剩薄包装）",
+      "window.GGB_P3" in app_src
+      and "var pxScale = Math.min(cssW, cssH) * 0.42 / cam.r;" not in app_src
+      and "function proj3() { return _proj3d" in app_src, "")
+check("index.html 在 app.js 之前加载 proj3d.js",
+      index_src.index("/static/proj3d.js") < index_src.index("/static/app.js"), "")
+check("proj3d 含投影/逆投影/命中判定",
+      all(("function %s(" % f) in p3_src for f in ("proj3", "camBasis3", "line3", "distToSeg",
+                                                   "pointInScreenPoly", "snapAxis3d", "wsegHit")), "")
+check("有写入的模块自动注入 set（dbgProjCalls 自增写回应用状态）",
+      "set: _panelStateSet" in app_src and "env.set('dbgProjCalls', env.get('dbgProjCalls') + 1)" in p3_src, "")
+check("proj3d 未夺走 draw2d 的转发助手（sxp/syp 为注入）",
+      "var sxp = env.sxp;" in p3_src and "var syp = env.syp;" in p3_src, "")
+
 print("\n=== B5. 前端：统计图渲染模块（static/charts.js） ===")
 ch_path = ROOT / "server" / "static" / "charts.js"
 ch_src = ch_path.read_text(encoding="utf-8") if ch_path.exists() else ""
@@ -457,7 +475,7 @@ check("draw2d 未夺走 panels 的转发助手（fmtNum 仍是 panels 包装）"
 # JS 作用域守卫：四个模块全部标识符可解析
 _sub = subprocess.run(["node", "devtools/check_frontend_modules.js"], cwd=str(ROOT), capture_output=True, text=True)
 check("前端模块 JS 作用域守卫（全部标识符可解析，动态扫描 static/*.js）",
-      _sub.returncode == 0 and _sub.stdout.count("OK") >= 5, _sub.stdout.strip().replace("\n", " | ")[:80])
+      _sub.returncode == 0 and _sub.stdout.count("OK") >= 6, _sub.stdout.strip().replace("\n", " | ")[:80])
 # 守卫自检：删掉 drawGrid 的 cssH 注入必须被抓到
 _mut = re.sub(r"var C = env\.get\('C'\), cssH = env\.get\('cssH'\),", "var C = env.get('C'),", d2_src, count=1)
 if _mut != d2_src:

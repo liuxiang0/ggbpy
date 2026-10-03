@@ -236,6 +236,11 @@
   // 面板渲染已抽到 static/panels.js（P2 前端拆分）；此处提供状态访问 + 同名薄包装
   function _panelStateGet(k) {
     switch (k) {
+      case 'cam': return cam;
+      case 'ctx3': return ctx3;
+      case 'dbgProjCalls': return dbgProjCalls;
+      case 'ortho3d': return ortho3d;
+      case 'view3dMode': return view3dMode;
       case 'PIE_PAL': return PIE_PAL;
       case 'canvas': return canvas;
       case 'chartBoxes': return chartBoxes;
@@ -267,7 +272,9 @@
       default: return undefined;
     }
   }
-  function _panelStateSet(k, v) { if (k === 'activeCat') activeCat = v; }
+  function _panelStateSet(k, v) {
+    if (k === 'dbgProjCalls') { dbgProjCalls = v; return; }
+  }
   var _panels = window.GGB_PANELS.create({ get: _panelStateGet, set: _panelStateSet });
   function t() { return _panels.t.apply(null, arguments); }
   function esc() { return _panels.esc.apply(null, arguments); }
@@ -309,6 +316,19 @@
   function drawLineChart() { return _charts.drawLineChart.apply(null, arguments); }
   function drawScatterPlot() { return _charts.drawScatterPlot.apply(null, arguments); }
   function drawDotPlot() { return _charts.drawDotPlot.apply(null, arguments); }
+
+  // 三维投影与屏幕空间命中判定（P2 前端拆分：render3d 第一步） 已抽到 static/proj3d.js（P2 前端拆分）；同名薄包装保持调用点不变
+  var _proj3d = window.GGB_P3.create({ get: _panelStateGet, set: _panelStateSet, sxp: sxp, syp: syp });
+  function is3DEl() { return _proj3d.is3DEl.apply(null, arguments); }
+  function camBasis3() { return _proj3d.camBasis3.apply(null, arguments); }
+  function proj3() { return _proj3d.proj3.apply(null, arguments); }
+  function line3() { return _proj3d.line3.apply(null, arguments); }
+  function pointInScreenPoly() { return _proj3d.pointInScreenPoly.apply(null, arguments); }
+  function snapAxis3d() { return _proj3d.snapAxis3d.apply(null, arguments); }
+  function wptIn() { return _proj3d.wptIn.apply(null, arguments); }
+  function wsegHit() { return _proj3d.wsegHit.apply(null, arguments); }
+  function pointInPoly() { return _proj3d.pointInPoly.apply(null, arguments); }
+  function distToSeg() { return _proj3d.distToSeg.apply(null, arguments); }
 
   function setMsg(msg, isErr) {
     msgEl.textContent = translateMsg(msg);
@@ -710,9 +730,6 @@
     }
   }
 
-  function is3DEl(e) {
-    return e.kind === 'geo3d' || (e.kind === 'point' && e.z !== undefined);
-  }
 
   function render() {
     chartBoxes = {};
@@ -1695,51 +1712,6 @@
   // 相机坐标 x_cam=d·right, y_cam=d·up', z_cam=d·dir（正=前方）；透视 s=F/(F+r+z_cam)
   // 视图基：iso 用 lookAt（右手，z 上）；top/front/right 用固定正交基（工程制图约定）
   // 斜二测（oblique）：高中数学标准画法——x 水平、y 右上 45° 且长度减半、z 竖直（正交投影，proj3 内特殊处理）
-  function camBasis3() {
-    if (view3dMode === 'oblique') {
-      return { right: [1, 0.3536, 0], up: [0, 0.3536, 1], dir: [0, -1, 0] };
-    }
-    if (view3dMode === 'top') {
-      // 俯视：从 +z 向下看 xy 平面；x 右、y 上（屏幕）
-      return { right: [1, 0, 0], up: [0, 1, 0], dir: [0, 0, 1] };
-    }
-    if (view3dMode === 'front') {
-      // 前视：从 -y 看 xz 平面；x 右、z 上
-      return { right: [1, 0, 0], up: [0, 0, 1], dir: [0, -1, 0] };
-    }
-    if (view3dMode === 'right') {
-      // 右视：从 +x 看 yz 平面；z 上、y 屏幕左（right=right×up'=-dir 右手）
-      return { right: [0, -1, 0], up: [0, 0, 1], dir: [1, 0, 0] };
-    }
-    var dir = [Math.cos(cam.phi) * Math.cos(cam.theta), Math.cos(cam.phi) * Math.sin(cam.theta), Math.sin(cam.phi)];
-    var f = [-dir[0], -dir[1], -dir[2]];
-    // right = normalize(f × up=(0,0,1)) = (f.y, -f.x, 0)/|..|
-    var rx = f[1], ry = -f[0];
-    var nr = Math.sqrt(rx * rx + ry * ry) || 1;
-    rx /= nr; ry /= nr;
-    // up' = right × f
-    var ux = ry * f[2], uy = -rx * f[2], uz = rx * f[1] - ry * f[0];
-    return { right: [rx, ry, 0], up: [ux, uy, uz], dir: dir };
-  }
-  function proj3(p) {
-    dbgProjCalls++;
-    var d = [p[0] - cam.tx, p[1] - cam.ty, p[2] - cam.tz];
-    var f = cam.r * 2.2;
-    var pxScale = Math.min(cssW, cssH) * 0.42 / cam.r;
-    // 斜二测（cabinet 正交）：x 水平全尺寸、y 右上 45° 且减半、z 竖直全尺寸
-    if (view3dMode === 'oblique') {
-      var K = 0.3536;   // 0.5·cos45° = 0.5·sin45°
-      var sx = d[0] + K * d[1];
-      var sy = d[2] + K * d[1];
-      return { x: cssW / 2 + sx * pxScale, y: cssH / 2 - sy * pxScale, z: d[1], s: 1 };
-    }
-    var b = camBasis3();
-    var xc = d[0] * b.right[0] + d[1] * b.right[1];
-    var yc = d[0] * b.up[0] + d[1] * b.up[1] + d[2] * b.up[2];
-    var zc = d[0] * b.dir[0] + d[1] * b.dir[1] + d[2] * b.dir[2];
-    var s = ortho3d ? 1 : f / (f + cam.r + zc);   // 正交视图：平行投影
-    return { x: cssW / 2 + xc * pxScale * s, y: cssH / 2 - yc * pxScale * s, z: zc, s: s };
-  }
 
   // 逆投影：屏幕 (sx,sy) → 世界坐标，落在平面 z=z0 上（用于 3D 工具取点）
   // 透视：平面 z=z0 → y_cam·up[2]+z_cam·dir[2]=z0-tz；y_cam=v/s, z_cam=F/s-F-r → s=(v·cp+F·sp)/(z0-tz+(F+r)·sp)
@@ -1783,15 +1755,6 @@
     return [d0[0] + cam.tx, d0[1] + cam.ty, z];
   }
 
-  function line3(p1, p2, color, lw) {
-    var a = proj3(p1), b = proj3(p2);
-    ctx3.strokeStyle = color;
-    ctx3.lineWidth = lw || 1.6;
-    ctx3.beginPath();
-    ctx3.moveTo(a.x, a.y);
-    ctx3.lineTo(b.x, b.y);
-    ctx3.stroke();
-  }
 
   // 3D 坐标轴：带箭头的彩色轴 + x/y/z 标签 + 原点；左下角微缩坐标轴指示器
   function drawAxes3d() {
@@ -2385,14 +2348,6 @@
   }
   // 3D 对象拾取：点 / 多面体边 / 平面边框 / 球线框 / 线段（屏幕距离阈值 10px）
   // 屏幕坐标点在多边形内（用于 3D 实体面命中）
-  function pointInScreenPoly(px, py, poly) {
-    var inside = false;
-    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-      if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
-    }
-    return inside;
-  }
   // 选中对象拖动平移：命中边线或实体面内部
   function hitObjectForDrag3d(sx, sy) {
     var e = hitObject3d(sx, sy);
@@ -2575,21 +2530,6 @@
     }
   }
   // 轴吸附：点击靠近某坐标轴（x/y/z 屏幕投影）时，把点吸附到该轴上（得到轴上的三维点）
-  function snapAxis3d(sx, sy) {
-    var axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-    var best = null, bestD = 12;   // 屏幕像素阈值
-    for (var ai = 0; ai < axes.length; ai++) {
-      var ax = axes[ai];
-      // 沿轴采样 -12..12（世界单位），找屏幕最近点
-      for (var t = -12; t <= 12.01; t += 0.5) {
-        var p3 = [ax[0] * t, ax[1] * t, ax[2] * t];
-        var pr = proj3(p3);
-        var dd = Math.hypot(pr.x - sx, pr.y - sy);
-        if (dd < bestD) { bestD = dd; best = { ax: ax, t: t }; }
-      }
-    }
-    return best;
-  }
   function tool3dPointAt(sx, sy, cb) {
     var hit = hitPoint3d(sx, sy);
     if (hit) { cb(hit.label); return; }
@@ -3642,22 +3582,6 @@
     var wy0 = wyp(my0), wy1 = wyp(my1);
     return { x0: Math.min(wx0, wx1), y0: Math.min(wy0, wy1), x1: Math.max(wx0, wx1), y1: Math.max(wy0, wy1) };
   }
-  function wptIn(x, y, m) { return x >= m.x0 && x <= m.x1 && y >= m.y0 && y <= m.y1; }
-  function wsegHit(x1, y1, x2, y2, m) {
-    // Liang-Barsky：线段与世界矩形相交
-    if (wptIn(x1, y1, m) || wptIn(x2, y2, m)) return true;
-    var dx = x2 - x1, dy = y2 - y1, t0 = 0, t1 = 1;
-    var ps = [-dx, dx, -dy, dy], qs = [x1 - m.x0, m.x1 - x1, y1 - m.y0, m.y1 - y1];
-    for (var wi = 0; wi < 4; wi++) {
-      if (ps[wi] === 0) { if (qs[wi] < 0) return false; }
-      else {
-        var rr2 = qs[wi] / ps[wi];
-        if (ps[wi] < 0) { if (rr2 > t1) return false; if (rr2 > t0) t0 = rr2; }
-        else { if (rr2 < t0) return false; if (rr2 < t1) t1 = rr2; }
-      }
-    }
-    return true;
-  }
   function boxHitEl(e, m) {
     if (e.kind === 'point') return wptIn(e.x, e.y, m);
     if (e.kind === 'segment') return wsegHit(e.x1, e.y1, e.x2, e.y2, m);
@@ -4243,15 +4167,6 @@
   }
 
   // 屏幕坐标射线法：点是否在多边形内
-  function pointInPoly(px, py, pts) {
-    var inside = false;
-    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-      var xi = sxp(pts[i][0]), yi = syp(pts[i][1]);
-      var xj = sxp(pts[j][0]), yj = syp(pts[j][1]);
-      if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
-    }
-    return inside;
-  }
 
   // 动点在其母体对象上的最近参数 t（PointOnPath/PointOnCircle 的驱动滑块值）
   function nearestPathParam(obj, wx, wy) {
@@ -4505,13 +4420,6 @@
     return null;
   }
 
-  function distToSeg(px, py, x1, y1, x2, y2) {
-    var dx = x2 - x1, dy = y2 - y1;
-    var len2 = dx * dx + dy * dy;
-    var t = len2 ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0;
-    t = Math.max(0, Math.min(1, t));
-    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
-  }
   function hitObject(sx, sy, kinds) {
     for (var i = 0; i < elements.length; i++) {
       var e = elements[i];

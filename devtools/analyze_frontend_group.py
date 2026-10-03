@@ -108,7 +108,9 @@ def analyze(seeds):
         body = "".join(lines[i:j])
         clean = strip_literals(body)
         st = sorted(v for v in top_vars if re.search(r"(?<![\w.$])%s(?![\w$])" % re.escape(v), clean))
-        writes = sorted(v for v in st if re.search(r"(?<![\w.$])%s\s*(?:=[^=]|\+=|-=)" % re.escape(v), clean))
+        writes = sorted(v for v in st if re.search(
+            r"(?:(?<![\w.$])%s\s*(?:=[^=]|\+=|-=|\+\+|--)|(?:\+\+|--)\s*%s(?![\w$]))"
+            % (re.escape(v), re.escape(v)), clean))
         ext = sorted(c for c in calls(body) if c in top_fns and c not in got)
         per[n] = {"lines": j - i, "state": st, "writes": writes, "ext_fn": ext}
     return per, lines, top_fns

@@ -59,8 +59,20 @@ def build(module, api, seeds, doc, apply_changes):
             return "  var %s = env.%s;   // 由 app.js 注入（属于其他模块）" % (n, n)
         st, wr = per[n]["state"], per[n]["writes"]
         for w in wr:
-            body = re.sub(r"(?<![\w.$])%s(?!\w|\s*\()" % re.escape(w), "env.get('%s')" % w, body)
-            body = re.sub(r"env\.get\('%s'\)\s*=\s*([^;\n]+);" % re.escape(w),
+            g = "env.get('%s')" % w
+            # 先把裸引用替换为 env.get(...)（不碰函数调用形式），再改写写入形态
+            body = re.sub(r"(?<![\w.$])%s(?!\w|\s*\()" % re.escape(w), g, body)
+            # 自增/自减：env.get('X')++ / --env.get('X')
+            body = re.sub(re.escape(g) + r"\s*\+\+",
+                          "env.set('%s', %s + 1)" % (w, g), body)
+            body = re.sub(re.escape(g) + r"\s*--",
+                          "env.set('%s', %s - 1)" % (w, g), body)
+            body = re.sub(r"\+\+\s*" + re.escape(g),
+                          "env.set('%s', %s + 1)" % (w, g), body)
+            body = re.sub(r"--\s*" + re.escape(g),
+                          "env.set('%s', %s - 1)" % (w, g), body)
+            # 普通赋值：env.get('X') = expr;  →  env.set('X', expr);
+            body = re.sub(re.escape(g) + r"\s*=\s*([^;\n]+);",
                           lambda m, w=w: "env.set('%s', %s);" % (w, m.group(1).strip()), body)
         reads = [v for v in st if v not in wr]
         alias_names = ", ".join("%s = env.get('%s')" % (v, v) for v in reads)
@@ -111,9 +123,10 @@ def build(module, api, seeds, doc, apply_changes):
     inject_helpers = "".join(", %s: %s" % (f, f) for f in forwarders)
     wrappers = "\n".join("  function %s() { return _%s.%s.apply(null, arguments); }" % (n, module, n)
                           for n in ORDER if n not in injected)
+    set_part = ", set: _panelStateSet" if writes else ""
     insert = ("  // %s 已抽到 static/%s.js（P2 前端拆分）；同名薄包装保持调用点不变\n"
-              "  var _%s = window.%s.create({ get: _panelStateGet%s });\n%s\n\n"
-              % (doc, module, module, api, inject_helpers, wrappers))
+              "  var _%s = window.%s.create({ get: _panelStateGet%s%s });\n%s\n\n"
+              % (doc, module, module, api, set_part, inject_helpers, wrappers))
     app = app.replace(anchor, insert + anchor, 1)
     APP.write_text(app, encoding="utf-8")
     print("  已写入 static/%s.js；app.js 现在 %d 行" % (module, len(app.splitlines())))
