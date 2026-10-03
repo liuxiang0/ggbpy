@@ -115,7 +115,8 @@ def undefined_refs(path):
 for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
             "kernel/cmd_util.py", "kernel/charts.py", "kernel/commands3d.py",
             "kernel/primitives.py", "kernel/transforms.py", "kernel/editing.py",
-            "kernel/numeric.py", "kernel/io_cmds.py"):
+            "kernel/numeric.py", "kernel/io_cmds.py", "kernel/conics.py", "kernel/linalg.py",
+            "kernel/measures.py"):
     miss = undefined_refs(mod)
     check(mod + " 无未定义引用（函数与常量跨模块防漏）", not miss, "缺: " + str(miss[:8]))
 
@@ -281,6 +282,7 @@ import importlib as _importlib  # noqa: E402
 CMD_GROUP_MODULES = [
     ("primitives", 70, 900, 1600), ("transforms", 15, 300, 600), ("editing", 8, 60, 260),
     ("numeric", 15, 80, 300), ("io_cmds", 5, 80, 300),
+    ("conics", 10, 150, 420), ("linalg", 12, 80, 260), ("measures", 12, 90, 300),
 ]
 for _name, _min_n, _lo, _hi in CMD_GROUP_MODULES:
     _src = (ROOT / "kernel" / (_name + ".py")).read_text(encoding="utf-8")
@@ -293,7 +295,7 @@ for _name, _min_n, _lo, _hi in CMD_GROUP_MODULES:
           all(getattr(C, n, None) is getattr(_mod, n, None) for n in _mod.__all__), "")
     check("%s.py 规模合理（%d–%d 行）" % (_name, _lo, _hi), _lo <= len(_src.splitlines()) <= _hi,
           str(len(_src.splitlines())))
-check("commands.py 因命令组继续抽出（< 2800 行）", len(cmd_src.splitlines()) < 2800,
+check("commands.py 因命令组继续抽出（< 2300 行）", len(cmd_src.splitlines()) < 2300,
       str(len(cmd_src.splitlines())))
 check("图元/变换/编辑/数值/导入导出入口仍可用",
       all(hasattr(C, n) for n in ("_cmd_midpoint", "_cmd_segment", "_cmd_circle", "_cmd_polygon",
@@ -304,7 +306,8 @@ print("\n=== A7. AST 级守卫：抽出模块不得漏导入 ===")
 for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
             "kernel/cmd_util.py", "kernel/calculus.py", "kernel/schemas.py",
             "kernel/charts.py", "kernel/commands3d.py", "kernel/primitives.py",
-            "kernel/transforms.py", "kernel/editing.py", "kernel/numeric.py", "kernel/io_cmds.py"):
+            "kernel/transforms.py", "kernel/editing.py", "kernel/numeric.py", "kernel/io_cmds.py",
+            "kernel/conics.py", "kernel/linalg.py", "kernel/measures.py"):
     miss = ast_undefined_calls(mod)
     check(mod + " 所有调用均已定义/导入（AST 检查）", not miss, str(miss[:6]))
 

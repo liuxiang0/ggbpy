@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第三十一批（2026-10-03 · 命令组续抽：圆锥曲线/线代复数/度量）**：
+  - **新增 3 个模块**：`conics.py`（12 函数/275 行：椭圆/双曲线/抛物线/五点圆锥/焦点/直径/极线/隐式曲线/参数曲线）· `linalg.py`（16/150：矩阵/行列式/转置/逆/点积/复数 arg·conj·im·re）· `measures.py`（15/178：距离/长度/周长/半周长/半径/斜率/角度）
+  - **规模收益**：`commands.py` **2698 → 2212 行**（本会话拆分前 7867 行 → **累计 −72%**），剩余为四张注册表 + 调度器 + 少量命令（宏/迭代/布尔证明/拟合/随机）
+  - **工具随用随修**：`extract_group.py` 本轮又修三处 —— 导入按模块**合并去重**、同名符号**确定性取单一提供者**（避免 `prover`/`calculus` 同名 `_cmd_of` 冲突）、parser 符号**整体导入**（`_split_brace`/`tokenize` 等，此前只导入 `eval_number`）
+  - 检测：模块边界 140 → **161**（3 组 ×5 项 + 规模/入口）
 - **第三十批（2026-10-03 · 命令组全面抽出：图元/变换/编辑/数值/导入导出 + 抽取工具常驻）**：
   - **新增 5 个命令组模块**：`primitives.py`（77 函数/1232 行：点/线/圆/多边形/中点/垂足/内外心/切点/交点 + 谓词）· `transforms.py`（18/430：反射/旋转/平移/位似/反演）· `editing.py`（11/113：改值/改色/改名/重定义/删除/显隐 + `_COLOR_NAMES`）· `numeric.py`（19/140：求和/均值/方差/排序/四分位/组合数/取整）· `io_cmds.py`（7/145：图片与动态文本）
   - **规模收益**：`commands.py` **4593 → 2699 行**（本会话拆分前 7867 行 → **累计 −66%**）；剩余主要是注册表（COMMANDS/ALIASES/DISPLAY_NAMES/RESULT_KINDS）与调度器
@@ -204,7 +209,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 140 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1297 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 161 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1318 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

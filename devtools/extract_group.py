@@ -100,10 +100,11 @@ def external_deps(top, lines, got, provided):
 
 
 def synthesize_imports(lines, top, moved, provided_mods):
+    """合成 import：按模块合并、同名符号只取一个提供者（按模块名排序，确定性）。"""
     code = "\n".join(src_of(lines, top, n) for n in moved)
     called = calls_in(code) | attr_bases(code)
-    local = set()
     tree = ast.parse(code)
+    local = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
             local.add(node.name)
@@ -111,9 +112,14 @@ def synthesize_imports(lines, top, moved, provided_mods):
             local.add(node.arg)
         elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
             local.add(node.id)
-    imports = []
-    for mod, m in provided_mods.items():
-        # 提供者符号：优先 __all__，同时把模块源码里的顶层 def/赋值也算进来（常量如 _REF_X 常未导出）
+    used_names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | called
+
+    per_mod = {}
+    assigned = set()
+    # elements/tolerance/parser 由下面的专门步骤处理（避免重复 import）
+    SPECIAL = {"elements", "tolerance", "parser"}
+    for mod in sorted(set(provided_mods) - SPECIAL):
+        m = provided_mods[mod]
         prov = set(getattr(m, "__all__", []))
         try:
             mtree = ast.parse((ROOT / "kernel" / (mod + ".py")).read_text(encoding="utf-8"))
@@ -124,21 +130,27 @@ def synthesize_imports(lines, top, moved, provided_mods):
                     prov.add(node.targets[0].id)
         except Exception:
             pass
-        names = sorted((called & prov) - local)
+        names = sorted((used_names & prov) - local - assigned)
         if names:
-            imports.append("from .%s import %s" % (mod, ", ".join(names)))
-    # 用 AST 收集名字，并按「目标模块里确实存在」过滤（避免注释/文档串里的 GeoGebra 之类误判）
+            per_mod[mod] = names
+            assigned |= set(names)
+
+    imports = ["from .%s import %s" % (m, ", ".join(ns)) for m, ns in sorted(per_mod.items())]
+    # 元素类 / 容差常量 / 解析器 / 子模块
     import kernel.elements as _els
     import kernel.tolerance as _tol
-    used_names = {n.id for n in ast.walk(ast.parse(code)) if isinstance(n, ast.Name)} | called
     caps = sorted(n for n in used_names if n.startswith("Geo") and hasattr(_els, n))
     if caps:
         imports.append("from .elements import " + ", ".join(caps))
     tol = sorted(n for n in used_names if n in TOL and hasattr(_tol, n))
     if tol:
         imports.append("from .tolerance import " + ", ".join(tol))
-    if "eval_number" in called:
-        imports.append("from .parser import eval_number")
+    # parse 层：把用到的 parser 符号整体导入（_split_brace/tokenize/parse_line/eval_number…）
+    import kernel.parser as _parser
+    already = set(assigned) | set(caps) | set(tol)
+    pnames = sorted(n for n in used_names if hasattr(_parser, n) and n not in local and n not in already)
+    if pnames:
+        imports.append("from .parser import " + ", ".join(pnames))
     known_modules = {"schemas", "mesh_store", "image_store", "memo", "macro", "blob_store"}
     for b in sorted(attr_bases(code) & known_modules):
         imports.append("from . import %s" % b)
