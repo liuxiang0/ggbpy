@@ -426,6 +426,23 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B7. 前端：三维坐标轴绘制模块（static/axes3d.js，render3d 第二步） ===")
+ax_path = ROOT / "server" / "static" / "axes3d.js"
+ax_src = ax_path.read_text(encoding="utf-8") if ax_path.exists() else ""
+check("axes3d.js 存在", ax_path.exists(), "")
+check("app.js 通过 window.GGB_AX3 装配（原绘制体已移走）",
+      "window.GGB_AX3" in app_src and "axisTicks3d.tickLen" not in app_src
+      and "function drawAxes3d() { return _axes3d" in app_src, "")
+check("index.html 在 app.js 之前加载 axes3d.js",
+      index_src.index("/static/axes3d.js") < index_src.index("/static/app.js"), "")
+check("axes3d 含坐标轴/迷你轴/刻度/箭头/步长",
+      all(("function %s(" % f) in ax_src for f in ("drawAxes3d", "drawMiniAxes3d", "arrowHead3",
+                                                   "niceStep3d", "saveAxisTicks3d")), "")
+check("axes3d 复用 proj3d 的转发助手（proj3/line3 为注入）",
+      "var proj3 = env.proj3;" in ax_src and "var line3 = env.line3;" in ax_src, "")
+check("axes3d 不直接依赖 localStorage 之外的全局状态（axisTicks3d 经 env 注入）",
+      "var axisTicks3d = env.get('axisTicks3d');" in ax_src, "")
+
 print("\n=== B6. 前端：三维投影/屏幕空间模块（static/proj3d.js，render3d 第一步） ===")
 p3_path = ROOT / "server" / "static" / "proj3d.js"
 p3_src = p3_path.read_text(encoding="utf-8") if p3_path.exists() else ""
@@ -475,7 +492,7 @@ check("draw2d 未夺走 panels 的转发助手（fmtNum 仍是 panels 包装）"
 # JS 作用域守卫：四个模块全部标识符可解析
 _sub = subprocess.run(["node", "devtools/check_frontend_modules.js"], cwd=str(ROOT), capture_output=True, text=True)
 check("前端模块 JS 作用域守卫（全部标识符可解析，动态扫描 static/*.js）",
-      _sub.returncode == 0 and _sub.stdout.count("OK") >= 6, _sub.stdout.strip().replace("\n", " | ")[:80])
+      _sub.returncode == 0 and _sub.stdout.count("OK") >= 7, _sub.stdout.strip().replace("\n", " | ")[:80])
 # 守卫自检：删掉 drawGrid 的 cssH 注入必须被抓到
 _mut = re.sub(r"var C = env\.get\('C'\), cssH = env\.get\('cssH'\),", "var C = env.get('C'),", d2_src, count=1)
 if _mut != d2_src:

@@ -236,6 +236,8 @@
   // 面板渲染已抽到 static/panels.js（P2 前端拆分）；此处提供状态访问 + 同名薄包装
   function _panelStateGet(k) {
     switch (k) {
+      case 'COARSE': return COARSE;
+      case 'axisTicks3d': return axisTicks3d;
       case 'cam': return cam;
       case 'ctx3': return ctx3;
       case 'dbgProjCalls': return dbgProjCalls;
@@ -329,6 +331,14 @@
   function wsegHit() { return _proj3d.wsegHit.apply(null, arguments); }
   function pointInPoly() { return _proj3d.pointInPoly.apply(null, arguments); }
   function distToSeg() { return _proj3d.distToSeg.apply(null, arguments); }
+
+  // 三维坐标轴与刻度绘制（P2 前端拆分：render3d 第二步） 已抽到 static/axes3d.js（P2 前端拆分）；同名薄包装保持调用点不变
+  var _axes3d = window.GGB_AX3.create({ get: _panelStateGet, fmtNum: fmtNum, proj3: proj3, line3: line3 });
+  function saveAxisTicks3d() { return _axes3d.saveAxisTicks3d.apply(null, arguments); }
+  function niceStep3d() { return _axes3d.niceStep3d.apply(null, arguments); }
+  function drawAxes3d() { return _axes3d.drawAxes3d.apply(null, arguments); }
+  function arrowHead3() { return _axes3d.arrowHead3.apply(null, arguments); }
+  function drawMiniAxes3d() { return _axes3d.drawMiniAxes3d.apply(null, arguments); }
 
   function setMsg(msg, isErr) {
     msgEl.textContent = translateMsg(msg);
@@ -1649,16 +1659,7 @@
   // 3D 坐标轴刻度属性（可修改，localStorage 持久化）
   var axisTicks3d = { show: true, color: '#64748b', tickLen: 5, font: '10px sans-serif', labelColor: '#64748b' };
   try { var _at = JSON.parse(localStorage.getItem('ggb_axisticks3d') || '{}'); for (var _k in _at) axisTicks3d[_k] = _at[_k]; } catch (e) {}
-  function saveAxisTicks3d() { try { localStorage.setItem('ggb_axisticks3d', JSON.stringify(axisTicks3d)); } catch (e) {} }
   // 3D 轴刻度步长：随缩放（cam.r）实时匹配，目标 ~55px 一格
-  function niceStep3d() {
-    var ps = Math.min(cssW, cssH) * 0.42 / cam.r;
-    var target = 55 / ps;
-    var pow = Math.pow(10, Math.floor(Math.log(target) / Math.LN10));
-    var m = target / pow;
-    var step = (m < 1.5) ? 1 : (m < 3.5) ? 2 : (m < 7.5) ? 5 : 10;
-    return step * pow;
-  }
 
   function resize3d() {
     cv3d.width = Math.round(cssW * dpr);
@@ -1757,126 +1758,8 @@
 
 
   // 3D 坐标轴：带箭头的彩色轴 + x/y/z 标签 + 原点；左下角微缩坐标轴指示器
-  function drawAxes3d() {
-    var axLen = 18;   // 轴长（世界单位，斜二测/扩大一倍）
-    // 先画负半轴（淡色），再画正半轴（亮色 + 箭头）
-    line3([-axLen, 0, 0], [0, 0, 0], 'rgba(225,29,72,.30)', 1);
-    line3([0, -axLen, 0], [0, 0, 0], 'rgba(5,150,105,.30)', 1);
-    line3([0, 0, -axLen], [0, 0, 0], 'rgba(37,99,235,.30)', 1);
-    line3([0, 0, 0], [axLen, 0, 0], '#e11d48', 2.2);
-    line3([0, 0, 0], [0, axLen, 0], '#059669', 2.2);
-    line3([0, 0, 0], [0, 0, axLen], '#2563eb', 2.2);
-    // 箭头
-    arrowHead3([axLen, 0, 0], [0, 0, 0], '#e11d48');
-    arrowHead3([0, axLen, 0], [0, 0, 0], '#059669');
-    arrowHead3([0, 0, axLen], [0, 0, 0], '#2563eb');
-    // 刻度：沿三轴画短线 + 整数标注（随 zoom 实时匹配步长）
-    if (axisTicks3d.show) {
-      var tstep = niceStep3d();
-      var axColors = ['#e11d48', '#059669', '#2563eb'];
-      // 轴方向单位向量（世界）与刻度线垂直方向（屏幕）：用小偏移保证垂直
-      var axisDefs = [
-        { dir: [1, 0, 0], off: [0, 0, 1], len: axLen },
-        { dir: [0, 1, 0], off: [0, 0, 1], len: axLen },
-        { dir: [0, 0, 1], off: [1, 0, 0], len: axLen }
-      ];
-      for (var ai = 0; ai < 3; ai++) {
-        var ad = axisDefs[ai], dir = ad.dir, off = ad.off;
-        ctx3.fillStyle = axisTicks3d.labelColor;
-        ctx3.font = axisTicks3d.font;
-        for (var t = Math.ceil(-ad.len / tstep) * tstep; t <= ad.len + 0.001; t += tstep) {
-          if (Math.abs(t) < tstep / 2) continue;   // 跳过原点附近（原点单独标 O）
-          var pA = [dir[0] * t, dir[1] * t, dir[2] * t];
-          var pA2 = [dir[0] * t + off[0] * axisTicks3d.tickLen * 0.06, dir[1] * t + off[1] * axisTicks3d.tickLen * 0.06, dir[2] * t + off[2] * axisTicks3d.tickLen * 0.06];
-          var pr1 = proj3(pA), pr2 = proj3(pA2);
-          // 刻度短线：沿屏幕方向延伸（用投影后偏移）
-          var dx2 = pr2.x - pr1.x, dy2 = pr2.y - pr1.y;
-          var dl = Math.hypot(dx2, dy2) || 1;
-          var tl = axisTicks3d.tickLen;
-          ctx3.strokeStyle = axisTicks3d.color;
-          ctx3.lineWidth = 1;
-          ctx3.beginPath();
-          ctx3.moveTo(pr1.x, pr1.y);
-          ctx3.lineTo(pr1.x - (dy2 / dl) * tl, pr1.y + (dx2 / dl) * tl);
-          ctx3.stroke();
-          // 整数标注（1/2/5 系步长下取整数）
-          var lbl = fmtNum(t);
-          ctx3.fillText(lbl, pr1.x - (dy2 / dl) * tl - 3, pr1.y + (dx2 / dl) * tl + 3);
-        }
-      }
-    }
-    // 轴标签（投影后画在箭头稍外侧；x 左移、y 下移避免与刻度/箭头重叠）
-    var lx = proj3([axLen + 0.6, 0, 0]), ly = proj3([0, axLen + 0.6, 0]), lz = proj3([0, 0, axLen + 0.6]);
-    ctx3.fillStyle = '#e11d48';
-    ctx3.font = 'bold 15px sans-serif';
-    ctx3.textAlign = 'center';
-    ctx3.textBaseline = 'middle';
-    ctx3.fillText('x', lx.x - 16, lx.y - 6);
-    ctx3.fillStyle = '#059669';
-    ctx3.fillText('y', ly.x - 4, ly.y + 18);
-    ctx3.fillStyle = '#2563eb';
-    ctx3.fillText('z', lz.x + 8, lz.y + 6);
-    ctx3.textAlign = 'left';
-    ctx3.textBaseline = 'alphabetic';
-    // 原点
-    var op = proj3([0, 0, 0]);
-    ctx3.fillStyle = '#374151';
-    ctx3.beginPath();
-    ctx3.arc(op.x, op.y, 3, 0, Math.PI * 2);
-    ctx3.fill();
-    ctx3.fillStyle = C.text;
-    ctx3.font = '12px sans-serif';
-    ctx3.fillText('O', op.x + 5, op.y + 4);
-  }
   // 箭头：屏幕空间画法——方向 = base→tip 投影方向（保证朝外），尖在 tip，两翼向后张开
-  function arrowHead3(tip, base, color) {
-    var pBase = proj3(base), pTip = proj3(tip);
-    var dx = pTip.x - pBase.x, dy = pTip.y - pBase.y;
-    var len = Math.sqrt(dx * dx + dy * dy);
-    if (len < COARSE) return;
-    var ux = dx / len, uy = dy / len;   // 朝外单位方向（屏幕）
-    var size = 9;
-    var spread = 0.55;   // ~31.5° 半张角
-    var wx = -ux, wy = -uy;              // 向后（朝 base）
-    ctx3.fillStyle = color;
-    ctx3.beginPath();
-    ctx3.moveTo(pTip.x, pTip.y);
-    ctx3.lineTo(pTip.x + (wx * Math.cos(spread) - wy * Math.sin(spread)) * size,
-                pTip.y + (wx * Math.sin(spread) + wy * Math.cos(spread)) * size);
-    ctx3.lineTo(pTip.x + (wx * Math.cos(spread) + wy * Math.sin(spread)) * size,
-                pTip.y + (-wx * Math.sin(spread) + wy * Math.cos(spread)) * size);
-    ctx3.closePath();
-    ctx3.fill();
-  }
   // 左下角微缩坐标轴：用当前相机的旋转方向画三条短轴 + 标签（屏幕固定位置）
-  function drawMiniAxes3d() {
-    var mx = 60, my = cssH - 58;   // 左下角锚点
-    var len = 34;
-    // 把世界轴向量 (1,0,0)/(0,1,0)/(0,0,1) 用 proj3 的方向投影成屏幕方向（平移不变部分）
-    var o = proj3([0, 0, 0]);
-    var ex = proj3([1, 0, 0]), ey = proj3([0, 1, 0]), ez = proj3([0, 0, 1]);
-    var ux = ex.x - o.x, uy = ex.y - o.y;
-    var vx = ey.x - o.x, vy = ey.y - o.y;
-    var wx2 = ez.x - o.x, wy2 = ez.y - o.y;
-    // 归一化并固定长度
-    var lux = Math.hypot(ux, uy) || 1, lvx = Math.hypot(vx, vy) || 1, lwx = Math.hypot(wx2, wy2) || 1;
-    var ax1 = mx + ux / lux * len, ay1 = my + uy / lux * len;
-    var ax2 = mx + vx / lvx * len, ay2 = my + vy / lvx * len;
-    var ax3 = mx + wx2 / lwx * len, ay3 = my + wy2 / lwx * len;
-    ctx3.lineWidth = 2.5;
-    ctx3.strokeStyle = '#e11d48'; ctx3.beginPath(); ctx3.moveTo(mx, my); ctx3.lineTo(ax1, ay1); ctx3.stroke();
-    ctx3.strokeStyle = '#059669'; ctx3.beginPath(); ctx3.moveTo(mx, my); ctx3.lineTo(ax2, ay2); ctx3.stroke();
-    ctx3.strokeStyle = '#2563eb'; ctx3.beginPath(); ctx3.moveTo(mx, my); ctx3.lineTo(ax3, ay3); ctx3.stroke();
-    ctx3.fillStyle = '#e11d48'; ctx3.font = 'bold 12px sans-serif';
-    ctx3.fillText('x', ax1 + 4, ay1 + 4);
-    ctx3.fillStyle = '#059669';
-    ctx3.fillText('y', ax2 + 4, ay2 + 4);
-    ctx3.fillStyle = '#2563eb';
-    ctx3.fillText('z', ax3 + 4, ay3 + 4);
-    // 轴交点小点
-    ctx3.fillStyle = '#374151';
-    ctx3.beginPath(); ctx3.arc(mx, my, 3, 0, Math.PI * 2); ctx3.fill();
-  }
   // 大网格渲染预算：面数超限时只画面积最大的面（LOD，保轮廓），
   // 并跳过 O(边×面) 的 hidden-line 遮挡测试，避免等值面/参数曲面卡死。
   var dbgProjCalls = 0, dbgOccTests = 0, dbgLastFaces = 0, dbgLastSegs = 0, dbgProjReuse = 0;

@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第三十九批（2026-10-03 · render3d 第二步：三维坐标轴绘制模块）**：
+  - **`static/axes3d.js`（约 180 行）**：`drawAxes3d`（71 行）/`drawMiniAxes3d`/`arrowHead3`/`niceStep3d`/`saveAxisTicks3d` 外置为 `window.GGB_AX3.create(env)`；`app.js` 5130 → **5013 行**（前端累计 **5979 → 5013**）
+  - **复用链清晰**：`axes3d` 通过注入拿到 `proj3d` 的 `proj3/line3` 与 `panels` 的 `fmtNum`（转发助手一律注入，不搬迁）；`axisTicks3d` 为对象，共享引用即可（`saveAxisTicks3d` 只写 localStorage）
+  - 加载顺序：`i18n → data → keyboard → exam → panels → draw2d → charts → proj3d → axes3d → app`
+  - 检测：模块边界 253 → **259**；3D 浏览器 142 全过
 - **第三十八批（2026-10-03 · render3d 拆分第一步：三维投影/屏幕空间模块）**：
   - **`static/proj3d.js`（约 160 行）**：三维投影与屏幕空间判定（`proj3`/`camBasis3`/`line3`/`distToSeg`/`pointInPoly`/`pointInScreenPoly`/`snapAxis3d`/`wsegHit`/`wptIn`/`is3DEl`）外置为 `window.GGB_P3.create(env)`；`app.js` 5222 → **5130 行**（前端累计 5979 → 5130）
   - **工具补强（两处真实踩坑）**：① 写入识别支持**自增/自减**（`dbgProjCalls++` → `env.set('dbgProjCalls', env.get('dbgProjCalls') + 1)`，改写顺序必须是「先通用替换、再改写写入形态」，否则生成嵌套废码）；② 有写入的模块**自动注入** `set: _panelStateSet`（否则运行时报 `env.set is not a function`）
@@ -251,7 +256,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 253 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1410 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 259 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1416 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
