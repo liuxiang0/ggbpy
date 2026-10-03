@@ -426,6 +426,35 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B4. 前端：绘制基元模块（static/draw2d.js）+ JS 作用域守卫 ===")
+d2_path = ROOT / "server" / "static" / "draw2d.js"
+d2_src = d2_path.read_text(encoding="utf-8") if d2_path.exists() else ""
+check("draw2d.js 存在", d2_path.exists(), "")
+check("app.js 通过 window.GGB_D2 装配（原绘制体已移走）",
+      "window.GGB_D2" in app_src and "ctx.moveTo(sx, 0); ctx.lineTo(sx, h);" not in app_src
+      and "function drawGrid() { return _draw2d" in app_src, "")
+check("index.html 在 app.js 之前加载 draw2d.js",
+      index_src.index("/static/draw2d.js") < index_src.index("/static/app.js"), "")
+check("draw2d 未夺走 panels 的转发助手（fmtNum 仍是 panels 包装）",
+      "function fmtNum() { return _panels.fmtNum" in app_src
+      and "var fmtNum = env.fmtNum;" in d2_src, "")
+# JS 作用域守卫：四个模块全部标识符可解析
+_sub = subprocess.run(["node", "devtools/check_frontend_modules.js"], cwd=str(ROOT), capture_output=True, text=True)
+check("前端模块 JS 作用域守卫（全部标识符可解析）",
+      _sub.returncode == 0 and _sub.stdout.count("OK") == 4, _sub.stdout.strip().replace("\n", " | ")[:80])
+# 守卫自检：删掉 drawGrid 的 cssH 注入必须被抓到
+_mut = re.sub(r"var C = env\.get\('C'\), cssH = env\.get\('cssH'\),", "var C = env.get('C'),", d2_src, count=1)
+if _mut != d2_src:
+    _tmpf = ROOT / "server" / "static" / "_mut_check.js"
+    _tmpf.write_text(_mut, encoding="utf-8")
+    _m = subprocess.run(["node", "devtools/check_frontend_modules.js", str(_tmpf)],
+                        cwd=str(ROOT), capture_output=True, text=True)
+    _tmpf.unlink()
+    check("守卫自检：漏注入状态会被抓到（变异 cssH）",
+          _m.returncode == 1 and "cssH" in _m.stdout, _m.stdout.strip()[:60])
+else:
+    check("守卫自检：漏注入状态会被抓到（变异 cssH）", False, "变异未生效（draw2d.js 结构变化）")
+
 print("\n=== B3. 前端：面板渲染模块（static/panels.js） ===")
 pan_path = ROOT / "server" / "static" / "panels.js"
 pan_src = pan_path.read_text(encoding="utf-8") if pan_path.exists() else ""

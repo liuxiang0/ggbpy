@@ -225,8 +225,6 @@
     return rect;
   }
 
-  function sxp(x) { return (x - view.xmin) * scale; }
-  function syp(y) { return cssH - (y - view.ymin) * scale; }
   function wxp(sx) { return view.xmin + sx / scale; }
   function wyp(sy) { return view.ymin + (cssH - sy) / scale; }
 
@@ -272,6 +270,14 @@
   // 面板渲染已抽到 static/panels.js（P2 前端拆分）；此处提供状态访问 + 同名薄包装
   function _panelStateGet(k) {
     switch (k) {
+      case 'C': return C;
+      case 'cssH': return cssH;
+      case 'cssW': return cssW;
+      case 'ctx': return ctx;
+      case 'scale': return scale;
+      case 'showAxes': return showAxes;
+      case 'showGrid': return showGrid;
+      case 'view': return view;
       case 'I18N': return I18N;
       case 'TOOL_CATS': return TOOL_CATS;
       case 'activeCat': return activeCat;
@@ -312,19 +318,22 @@
   function updateToolButtons() { return _panels.updateToolButtons.apply(null, arguments); }
   function updateToolButtons3d() { return _panels.updateToolButtons3d.apply(null, arguments); }
 
+  // 二维画布绘制基元（网格/坐标轴/线段/多边形/箭头） 已抽到 static/draw2d.js（P2 前端拆分）；同名薄包装保持调用点不变
+  var _draw2d = window.GGB_D2.create({ get: _panelStateGet, fmtNum: fmtNum });
+  function sxp() { return _draw2d.sxp.apply(null, arguments); }
+  function syp() { return _draw2d.syp.apply(null, arguments); }
+  function niceStep() { return _draw2d.niceStep.apply(null, arguments); }
+  function drawGrid() { return _draw2d.drawGrid.apply(null, arguments); }
+  function strokeSeg() { return _draw2d.strokeSeg.apply(null, arguments); }
+  function strokePoly() { return _draw2d.strokePoly.apply(null, arguments); }
+  function drawArrow() { return _draw2d.drawArrow.apply(null, arguments); }
+
   function setMsg(msg, isErr) {
     msgEl.textContent = translateMsg(msg);
     msgEl.className = isErr ? 'err' : '';
   }
 
   // ---------- 绘制 ----------
-  function niceStep() {
-    var target = 70 / scale;
-    var pow = Math.pow(10, Math.floor(Math.log(target) / Math.LN10));
-    var m = target / pow;
-    var step = (m < 1.5) ? 1 : (m < 3.5) ? 2 : (m < 7.5) ? 5 : 10;
-    return step * pow;
-  }
 
 
   var showGrid = true;
@@ -332,67 +341,6 @@
   btn('btn-grid', function () { showGrid = !showGrid; this.classList.toggle('active', showGrid); render(); });
   btn('btn-axes', function () { showAxes = !showAxes; this.classList.toggle('active', showAxes); render(); });
 
-  function drawGrid() {
-    var step = niceStep();
-    var w = cssW, h = cssH;
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = C.grid;
-    ctx.beginPath();
-    if (showGrid) {
-      for (var x = Math.ceil(view.xmin / step) * step; x <= view.xmax; x += step) {
-        var sx = Math.round(sxp(x)) + 0.5;
-        ctx.moveTo(sx, 0); ctx.lineTo(sx, h);
-      }
-      for (var y = Math.ceil(view.ymin / step) * step; y <= view.ymax; y += step) {
-        var sy = Math.round(syp(y)) + 0.5;
-        ctx.moveTo(0, sy); ctx.lineTo(w, sy);
-      }
-    }
-    ctx.stroke();
-    // 极坐标网格：存在极坐标曲线时自动叠加（同心圆 + 每 30° 射线）
-    var hasPolar = false;
-    for (var pi2 = 0; pi2 < elements.length; pi2++) if (elements[pi2].kind === 'polar') { hasPolar = true; break; }
-    if (showGrid && hasPolar) {
-      ctx.strokeStyle = C.grid;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      var orx = Math.round(sxp(0)) + 0.5, ory = Math.round(syp(0)) + 0.5;
-      var rmax = Math.max(Math.abs(view.xmin), Math.abs(view.xmax), Math.abs(view.ymin), Math.abs(view.ymax));
-      for (var pr = step; pr <= rmax; pr += step) {
-        ctx.arc(orx, ory, Math.max(1, pr * scale), 0, Math.PI * 2);
-      }
-      for (var ang = 0; ang < 360; ang += 30) {
-        var rad2 = ang * Math.PI / 180;
-        ctx.moveTo(orx, ory);
-        ctx.lineTo(orx + Math.cos(rad2) * (w + h), ory - Math.sin(rad2) * (w + h));
-      }
-      ctx.stroke();
-    }
-    ctx.strokeStyle = C.major;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    if (showAxes) {
-      var ox = Math.round(sxp(0)) + 0.5;
-      var oy = Math.round(syp(0)) + 0.5;
-      ctx.moveTo(0, oy); ctx.lineTo(w, oy);
-      ctx.moveTo(ox, 0); ctx.lineTo(ox, h);
-      ctx.stroke();
-    }
-    ctx.fillStyle = C.tick;
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    for (var x2 = Math.ceil(view.xmin / step) * step; x2 <= view.xmax; x2 += step) {
-      if (Math.abs(x2) < step / 2) continue;
-      ctx.fillText(fmtNum(x2), sxp(x2), oy + 4);
-    }
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'right';
-    for (var y2 = Math.ceil(view.ymin / step) * step; y2 <= view.ymax; y2 += step) {
-      if (Math.abs(y2) < step / 2) continue;
-      ctx.fillText(fmtNum(y2), ox - 4, syp(y2));
-    }
-  }
 
   // 选中对象 XOR 高亮（橙色虚线轮廓）
   function drawSelectionOverlay(e) {
@@ -538,14 +486,6 @@
     return m[e.kind] || C.text;
   }
 
-  function strokeSeg(x1, y1, x2, y2, color, lw) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lw || 2;
-    ctx.beginPath();
-    ctx.moveTo(sxp(x1), syp(y1));
-    ctx.lineTo(sxp(x2), syp(y2));
-    ctx.stroke();
-  }
 
   // ---- 图片对象：缓存 + 按两基点仿射绘制 ----
   var imgCache = {};   // imgid -> HTMLImageElement
@@ -1179,37 +1119,7 @@
     if (x1 > x0) chartBoxPut(e, co, x0 - 4, y0 - 4, x1 + 4, y1 + 4);
   }
 
-  function strokePoly(pts, color, lw) {
-    if (!pts || pts.length < 2) return;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lw || 2;
-    ctx.beginPath();
-    ctx.moveTo(sxp(pts[0][0]), syp(pts[0][1]));
-    for (var k = 1; k < pts.length; k++) ctx.lineTo(sxp(pts[k][0]), syp(pts[k][1]));
-    ctx.stroke();
-  }
 
-  function drawArrow(x1, y1, x2, y2, color) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    // 箭头（仅当长度足够）
-    var dx = x2 - x1, dy = y2 - y1;
-    var len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 14) return;
-    var ux = dx / len, uy = dy / len;
-    var hs = 10;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(x2 + ux * 3, y2 + uy * 3);
-    ctx.lineTo(x2 - ux * hs + uy * hs * 0.5, y2 - uy * hs - ux * hs * 0.5);
-    ctx.lineTo(x2 - ux * hs - uy * hs * 0.5, y2 - uy * hs + ux * hs * 0.5);
-    ctx.closePath();
-    ctx.fill();
-  }
 
   // 圆锥曲线的世界坐标折线（命中测试用；与 drawConic 参数化一致）
   function conicPathPts(e) {

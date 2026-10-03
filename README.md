@@ -136,6 +136,13 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第三十六批（2026-10-03 · 前端 draw2d 拆分 + JS 作用域守卫）**：
+  - **`static/draw2d.js`（约 190 行）**：二维画布绘制基元（`drawGrid`/`strokeSeg`/`strokePoly`/`drawArrow`/`sxp`/`syp`/`wxp`/`wyp`/`niceStep`）外置为 `window.GGB_D2.create(env)`；`app.js` 5394 行（前端累计 5979 → 5394），加载顺序 `i18n → data → keyboard → exam → panels → draw2d → app`
+  - **`devtools/extract_frontend_group.py`（常驻工具）**：前端函数组「耦合分析 → 生成模块 → 改 app.js/index.html」一键完成；与内核 `extract_group.py` 对应
+  - **`devtools/check_frontend_modules.js`（JS 作用域守卫）**：逐函数解析作用域链，报出「未定义标识符」——**函数作用域级**（文件级抓不到漏注入）。本轮它被真实事故驱动：`var cssW = 0, cssH = 0, dpr = 1;` 的多声明让状态分析漏掉 `cssH` → `drawGrid` 运行时 ReferenceError 被 render 的 try/catch 吞掉 → 对象列表面板不刷新（浏览器矩阵只表现为超时）
+  - **守卫自检**：变异测试（删掉 `drawGrid` 的 `cssH` 注入）必须被抓到，已纳入模块检测
+  - **转发助手归属规则**：`fmtNum` 这类「转发型薄包装」属于其原模块，抽取时作为**注入助手**而非搬迁（否则 app.js 注入的 `fmtNum` 指向新模块 → 无限递归）
+  - 检测：模块边界 236 → **242**
 - **第三十五批（2026-10-03 · 前端 panels 拆分：17 函数面板层外置）**：
   - **`static/panels.js`（307 行）**：对象列表/三维列表/工具面板/分类条/编辑栏/CAS 单元/工具按钮态共 **17 个渲染函数**外置为 `window.GGB_PANELS.create(env)`；状态经 `env.get/env.set` 注入（**只有 `showCat` 写 `activeCat`**，其余 16 个状态只读），读用别名、被写变量全程走 env（避免快照过期）
   - **app.js 5679 → 5484 行**（本会话累计 **5745 → 5484**）；app.js 保留 17 个同名薄包装（调用点零改动），`_panelStateGet/_panelStateSet` 提供状态访问；加载顺序 `i18n → data → keyboard → exam → panels → app`
@@ -232,7 +239,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 236 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1393 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 242 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1399 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
