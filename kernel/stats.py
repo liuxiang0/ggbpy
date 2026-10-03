@@ -27,6 +27,8 @@ _REF_X = re.compile(r"^([xyXY])\((.+)\)$")
 _REF_DOT = re.compile(r"^(.+)\.([xyXY])$")
 
 __all__ = [
+    "_REF_DOT",
+    "_REF_X",
     "_linechart_state",
     "_scatter_state",
     "_dotplot_state",

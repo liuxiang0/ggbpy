@@ -130,13 +130,13 @@ js_line = "  if (denom < 1e-12) { /* ok */ }  // 1e-9 in comment"
 check("JS 行同样只取代码部分", [m.group(1) for m in LIT.finditer(strip_js(js_line))] == ["1e-12"], "")
 
 print("\n=== D. 迁移覆盖面 ===")
-cmd_src = (ROOT / "kernel" / "commands.py").read_text(encoding="utf-8")
-geo_src = (ROOT / "kernel" / "geometry3d.py").read_text(encoding="utf-8")
-sol_src = (ROOT / "kernel" / "solids.py").read_text(encoding="utf-8")
-geo2d_src = (ROOT / "kernel" / "geo2d.py").read_text(encoding="utf-8")
-total_uses = sum(len(re.findall(r"(?<![\w.])" + n + r"(?![\w])", cmd_src + geo_src + sol_src + geo2d_src))
-                 for n in ("EPSILON", "COORD", "LOOSE", "COARSE", "ZERO_SQ", "TIGHT", "NEGLIGIBLE"))
-check("三大内核模块已改用具名常量（引用 ≥ 150 处）", total_uses >= 150, "n=%d" % total_uses)
+# 统计全部内核模块（命令组拆分后不能再只数 3~4 个文件）
+kernel_all = "".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "kernel").glob("*.py"))
+                     if p.name != "tolerance.py")
+total_uses = sum(len(re.findall(r"(?<![\w.])" + n + r"(?![\w])", kernel_all))
+                 for n in ("EPSILON", "TIGHT", "COORD", "ZERO_SQ", "LOOSE", "COARSE",
+                           "NEGLIGIBLE", "ROOT_TOL", "OPT_XATOL", "OPT_FATOL"))
+check("内核全部模块已改用具名常量（引用 ≥ 200 处）", total_uses >= 200, "n=%d" % total_uses)
 check("geometry3d 不再出现裸 1e-12（用户指出的第 75 行）",
       not scan_code_literals(ROOT / "kernel" / "geometry3d.py", strip_py, True), "")
 

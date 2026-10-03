@@ -136,6 +136,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第三十批（2026-10-03 · 命令组全面抽出：图元/变换/编辑/数值/导入导出 + 抽取工具常驻）**：
+  - **新增 5 个命令组模块**：`primitives.py`（77 函数/1232 行：点/线/圆/多边形/中点/垂足/内外心/切点/交点 + 谓词）· `transforms.py`（18/430：反射/旋转/平移/位似/反演）· `editing.py`（11/113：改值/改色/改名/重定义/删除/显隐 + `_COLOR_NAMES`）· `numeric.py`（19/140：求和/均值/方差/排序/四分位/组合数/取整）· `io_cmds.py`（7/145：图片与动态文本）
+  - **规模收益**：`commands.py` **4593 → 2699 行**（本会话拆分前 7867 行 → **累计 −66%**）；剩余主要是注册表（COMMANDS/ALIASES/DISPLAY_NAMES/RESULT_KINDS）与调度器
+  - **抽取工具常驻**（`devtools/extract_group.py`）：`--analyze` 按功能族列出剩余可搬命令组（含闭包规模与组外依赖），`--module/--seeds/--apply` 一键搬迁（AST 闭包 → 导入合成 → 删除 → re-export）；本轮用它完成 5 组搬迁
+  - **工具与守卫的双向加固**：工具改为**动态扫描 kernel/ 模块**作提供者、**从模块源码**收集可提供符号（常量常未导出，如 `_REF_X`）、**模块级常量自动随迁**（如 `_PRED_VIEW`/`DEG`/`_COLOR_NAMES`）；守卫沿用 AST 级「调用名 + 属性基名必须可解析」
+  - 检测：模块边界 103 → **140**（5 组 ×5 项 + 规模与入口）
 - **第二十九批（2026-10-03 · 命令组继续抽出：统计图 + 三维）**：
   - **`kernel/charts.py`（11 函数 / 247 行）**：统计图命令组整体抽出（`BarChart`/`Histogram`/`BoxPlot`/`PieChart`/`LineChart`/`ScatterPlot`/`DotPlot`/`BarChart3D`/`ScatterPlot3D`/`SurfaceChart3D` + `_anon_list`）
   - **`kernel/commands3d.py`（40 函数 / 760 行）**：三维命令组整体抽出（立方体/球/圆锥/圆柱/棱柱/棱锥/正多面体/平面/曲面/参数曲面/隐式曲面/网格/体积/面积/截面/凸包/包围盒/协方差等）
@@ -198,7 +204,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 103 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1260 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 140 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1297 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

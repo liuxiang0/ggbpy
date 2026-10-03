@@ -113,7 +113,9 @@ def undefined_refs(path):
 
 
 for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
-            "kernel/cmd_util.py", "kernel/charts.py", "kernel/commands3d.py"):
+            "kernel/cmd_util.py", "kernel/charts.py", "kernel/commands3d.py",
+            "kernel/primitives.py", "kernel/transforms.py", "kernel/editing.py",
+            "kernel/numeric.py", "kernel/io_cmds.py"):
     miss = undefined_refs(mod)
     check(mod + " 无未定义引用（函数与常量跨模块防漏）", not miss, "缺: " + str(miss[:8]))
 
@@ -273,10 +275,36 @@ check("统计图/三维命令入口仍可用",
       all(hasattr(C, n) for n in ("_cmd_barchart", "_cmd_piechart", "_cmd_linechart", "_cmd_cube",
                                   "_cmd_surface", "_cmd_volume")), "")
 
+print("\n=== A10. 命令组模块（图元/变换/编辑/数值/导入导出） ===")
+import importlib as _importlib  # noqa: E402
+
+CMD_GROUP_MODULES = [
+    ("primitives", 70, 900, 1600), ("transforms", 15, 300, 600), ("editing", 8, 60, 260),
+    ("numeric", 15, 80, 300), ("io_cmds", 5, 80, 300),
+]
+for _name, _min_n, _lo, _hi in CMD_GROUP_MODULES:
+    _src = (ROOT / "kernel" / (_name + ".py")).read_text(encoding="utf-8")
+    _mod = _importlib.import_module("kernel." + _name)
+    check("%s 不 import 命令层" % _name, "from .commands" not in _src, "")
+    check("%s 不引用命令注册表" % _name,
+          not re.search(r"\b(COMMANDS|ALIASES|RESULT_KINDS|DISPLAY_NAMES)\b", _src), "")
+    check("%s 搬迁函数 ≥ %d" % (_name, _min_n), len(_mod.__all__) >= _min_n, "n=%d" % len(_mod.__all__))
+    check("%s 与 commands re-export 同一对象" % _name,
+          all(getattr(C, n, None) is getattr(_mod, n, None) for n in _mod.__all__), "")
+    check("%s.py 规模合理（%d–%d 行）" % (_name, _lo, _hi), _lo <= len(_src.splitlines()) <= _hi,
+          str(len(_src.splitlines())))
+check("commands.py 因命令组继续抽出（< 2800 行）", len(cmd_src.splitlines()) < 2800,
+      str(len(cmd_src.splitlines())))
+check("图元/变换/编辑/数值/导入导出入口仍可用",
+      all(hasattr(C, n) for n in ("_cmd_midpoint", "_cmd_segment", "_cmd_circle", "_cmd_polygon",
+                                  "_cmd_rotate", "_cmd_reflect", "_cmd_setvalue", "_cmd_setcolor",
+                                  "_cmd_sum", "_cmd_mean", "_cmd_image", "_cmd_text")), "")
+
 print("\n=== A7. AST 级守卫：抽出模块不得漏导入 ===")
 for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
             "kernel/cmd_util.py", "kernel/calculus.py", "kernel/schemas.py",
-            "kernel/charts.py", "kernel/commands3d.py"):
+            "kernel/charts.py", "kernel/commands3d.py", "kernel/primitives.py",
+            "kernel/transforms.py", "kernel/editing.py", "kernel/numeric.py", "kernel/io_cmds.py"):
     miss = ast_undefined_calls(mod)
     check(mod + " 所有调用均已定义/导入（AST 检查）", not miss, str(miss[:6]))
 
