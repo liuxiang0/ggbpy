@@ -426,14 +426,43 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B9. 前端：三维场景绘制模块（static/scene3d.js，render3d 主绘制段）+ get/set 交叉检查 ===")
+sc_path = ROOT / "server" / "static" / "scene3d.js"
+sc_src = sc_path.read_text(encoding="utf-8") if sc_path.exists() else ""
+check("scene3d.js 存在", sc_path.exists(), "")
+check("app.js 经 _scene.drawScene() 调用（原 245 行内联段已移走）",
+      "_scene.drawScene();" in app_src and "画家算法" not in app_src.replace("// 三维场景绘制", ""), "")
+check("index.html 在 app.js 之前加载 scene3d.js",
+      index_src.index("/static/scene3d.js") < index_src.index("/static/app.js"), "")
+check("scene3d 覆盖几何收集/遮挡分类/顶点绘制",
+      all(k in sc_src for k in ("var faces = []", "GGB_OCC.buildFacePolys", "ctx3.font = '13px sans-serif'")), "")
+check("scene3d 的调试计数经 env 读写（不再直接改应用变量）",
+      "set('dbgProjReuse'" in sc_src and "set('dbgOccTests'" in sc_src
+      and "dbgOccTests++" not in sc_src, "")
+# get/set 交叉检查：模块用到的每个状态名都要在 app.js 的 getter/setter 里有分支
+_mods = [q for q in sorted((ROOT / "server" / "static").glob("*.js"))
+         if q.name not in ("app.js", "data.js", "i18n.js")]
+_get_sec = app_src[app_src.index("function _panelStateGet(k)"):app_src.index("function _panelStateSet(k, v)")]
+_set_sec = app_src[app_src.index("function _panelStateSet(k, v)"):app_src.index("var _panels = window.GGB_PANELS.create")]
+_bad = []
+for _m in _mods:
+    _src = _m.read_text(encoding="utf-8")
+    for _n in sorted(set(re.findall(r"get\('([A-Za-z_$][\w$]*)'\)", _src))):
+        if ("case '%s':" % _n) not in _get_sec:
+            _bad.append("%s:get(%s)" % (_m.name, _n))
+    for _n in sorted(set(re.findall(r"set\('([A-Za-z_$][\w$]*)'", _src))):
+        if ("k === '%s'" % _n) not in _set_sec:
+            _bad.append("%s:set(%s)" % (_m.name, _n))
+check("模块 get/set 状态名都有对应分支（getter/setter 交叉检查）", not _bad, str(_bad[:5]))
+
 print("\n=== B8. 前端：三维遮挡判定模块（static/occlusion3d.js，render3d 第三步） ===")
 oc_path = ROOT / "server" / "static" / "occlusion3d.js"
 oc_src = oc_path.read_text(encoding="utf-8") if oc_path.exists() else ""
 check("occlusion3d.js 存在", oc_path.exists(), "")
-check("app.js 经 window.GGB_OCC 适配（保留同名 edgeOccluded 薄包装）",
-      "window.GGB_OCC.buildFacePolys(faces)" in app_src
-      and "window.GGB_OCC.edgeOccluded(p1, p2, facePolys, proj3" in app_src
-      and app_src.count("function edgeOccluded(p1, p2) {") == 1, "")
+check("遮挡适配已随场景段进入 scene3d（app.js 不再有 edgeOccluded 定义）",
+      "window.GGB_OCC.buildFacePolys(faces)" in sc_src
+      and "window.GGB_OCC.edgeOccluded(p1, p2, facePolys, proj3" in sc_src
+      and app_src.count("function edgeOccluded(p1, p2) {") == 0, "")
 check("遮挡逻辑改为显式参数（不依赖闭包局部量）",
       "function edgeOccluded(p1, p2, facePolys, proj3, onTest)" in oc_src
       and "function buildFacePolys(faces)" in oc_src, "")
@@ -510,7 +539,7 @@ check("draw2d 未夺走 panels 的转发助手（fmtNum 仍是 panels 包装）"
 # JS 作用域守卫：四个模块全部标识符可解析
 _sub = subprocess.run(["node", "devtools/check_frontend_modules.js"], cwd=str(ROOT), capture_output=True, text=True)
 check("前端模块 JS 作用域守卫（全部标识符可解析，动态扫描 static/*.js）",
-      _sub.returncode == 0 and _sub.stdout.count("OK") >= 8, _sub.stdout.strip().replace("\n", " | ")[:80])
+      _sub.returncode == 0 and _sub.stdout.count("OK") >= 9, _sub.stdout.strip().replace("\n", " | ")[:80])
 # 守卫自检：删掉 drawGrid 的 cssH 注入必须被抓到
 _mut = re.sub(r"var C = env\.get\('C'\), cssH = env\.get\('cssH'\),", "var C = env.get('C'),", d2_src, count=1)
 if _mut != d2_src:
