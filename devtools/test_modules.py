@@ -178,8 +178,12 @@ node_data = (
     "const d=window.GGB_DATA||{};const t=d.TOOLS||{};const cats=d.TOOL_CATS||[];"
     "const listed=new Set();cats.forEach(c=>(c.tools||[]).forEach(k=>listed.add(k)));"
     "const missing=[...listed].filter(k=>!t[k]);const extra=Object.keys(t).filter(k=>!listed.has(k));"
+    "const seen={},dup=[];cats.forEach(c=>(c.tools||[]).forEach(k=>{"
+    "if(seen[k])dup.push(k+':'+seen[k]+'+'+c.id);else seen[k]=c.id;}));"
+    "const calc=(cats.find(c=>c.id==='calculates')||{}).tools||[];"
+    "const ch=(cats.find(c=>c.id==='charts')||{}).tools||[];"
     "console.log(JSON.stringify({cas:(d.CAS_COMMANDS||[]).length,tools:Object.keys(t).length,"
-    "cats:cats.length,missing,extra}));"
+    "cats:cats.length,missing,extra,dup,calc,ch}));"
 ) % str(data_path)
 try:
     out3 = subprocess.run(["node", "-e", node_data], capture_output=True, text=True, timeout=30)
@@ -196,6 +200,11 @@ else:
     orphan = [k for k in d3["extra"] if ('id="btn-%s"' % k) not in index_src]
     check("未列入分类的工具都有顶栏按钮（无孤儿工具）", not orphan,
           "无分类且无按钮=%s；仅顶栏=%s" % (orphan, d3["extra"][:6]))
+    # 用户反馈：菜单「计算→直方图」与「统计图→直方图」是同一个按钮（同一 barchart 工具）
+    check("工具分类无重复登记（同一工具只属一个分类）", not d3.get("dup"), str(d3.get("dup", [])[:4]))
+    check("「计算」分类不含直方图（barchart 仅归统计图）", "barchart" not in d3.get("calc", []),
+        str(d3.get("calc")))
+    check("「统计图」分类仍含直方图（功能未丢）", "barchart" in d3.get("ch", []), str(d3.get("ch")[:4]))
 # 软预算：data.js 外置后 5542 行，统计图绘制（六类 + 拖动命中盒）加入后 ~5697 行
 check("app.js 行数受控（< 5800）", len(app_src.splitlines()) < 5800, str(len(app_src.splitlines())))
 

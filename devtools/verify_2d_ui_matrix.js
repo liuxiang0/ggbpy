@@ -574,6 +574,25 @@ function check(name, ok, detail) {
                        'barchart3d', 'scatterplot3d', 'surfacechart3d'];
   check('统计图分类含 10 个工具按钮（2D 七类 + 3D 三类）',
     expectTools.every((k) => chartToolKeys.indexOf(k) !== -1), chartToolKeys.join(','));
+  // 分类登记不重复（用户反馈：计算 / 统计图 两处都有「直方图」）
+  const catDup = await page.evaluate(() => {
+    const seen = {}, dup = [];
+    (window.GGB_DATA.TOOL_CATS || []).forEach((c) => (c.tools || []).forEach((t) => {
+      if (seen[t]) dup.push(t + ':' + seen[t] + '+' + c.id); else seen[t] = c.id;
+    }));
+    return dup;
+  });
+  check('工具分类无重复登记（同一工具只属一个分类）', catDup.length === 0, catDup.join(','));
+  const calcCatIcon = await page.$('.cat-icon[data-cat="calculates"]');
+  if (calcCatIcon) { await calcCatIcon.click(); await page.waitForTimeout(250); }
+  const calcKeys = await page.$$eval('#cat-tools .tool-btn[data-tool]', (els) => els.map((e) => e.getAttribute('data-tool')));
+  const calcTexts = await page.$$eval('#cat-tools .tool-btn', (els) => els.map((e) => e.textContent.trim()));
+  check('「计算」分类不含直方图（barchart 仅归统计图）', calcKeys.indexOf('barchart') === -1, calcKeys.join(','));
+  check('「计算」分类按钮文案里没有「直方图」', calcTexts.indexOf('直方图') === -1, calcTexts.join(','));
+  if (chartsCat) { await chartsCat.click(); await page.waitForTimeout(250); }
+  const backKeys = await page.$$eval('#cat-tools .tool-btn[data-tool]', (els) => els.map((e) => e.getAttribute('data-tool')));
+  check('「统计图」分类仍含直方图（功能未丢）', backKeys.indexOf('barchart') !== -1, backKeys.join(','));
+
   const clickChartTool = async (tool, answers, wait) => {
     dialogQueue.push(...answers);
     const btn = await page.$('#cat-tools .tool-btn[data-tool="' + tool + '"]');

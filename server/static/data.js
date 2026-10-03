@@ -103,7 +103,8 @@ window.GGB_DATA.TOOL_CATS = [
     { id: 'conics', zh: '圆锥曲线', en: 'Conics', icon: 'conics.png', def: 'ellipse', tools: ['ellipse', 'hyperbola', 'parabola', 'conic5'] },
     { id: 'transformers', zh: '变换', en: 'Transform', icon: 'transformers.png', def: 'translate', tools: ['reflect', 'rotate', 'translate', 'dilate', 'invert'] },
     { id: 'measures', zh: '测量', en: 'Measure', icon: 'measures.png', def: 'dist', tools: ['text', 'dist', 'slope', 'angle', 'area', 'perimeter'] },
-    { id: 'calculates', zh: '计算', en: 'Calculate', icon: 'calculates.png', def: 'function', tools: ['function', 'locus', 'barchart', 'ineq'] },
+    // 注意：直方图(barchart) 只归「统计图」分类，不要再放进「计算」——同一按钮会在两个分类里重复出现
+    { id: 'calculates', zh: '计算', en: 'Calculate', icon: 'calculates.png', def: 'function', tools: ['function', 'locus', 'ineq'] },
     { id: 'charts', zh: '统计图', en: 'Charts', icon: 'measures.png', def: 'barchart',
       tools: ['barchart', 'histogram', 'boxplot', 'piechart', 'linechart', 'scatterplot', 'dotplot',
               'barchart3d', 'scatterplot3d', 'surfacechart3d'] },
