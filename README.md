@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第二十七批（2026-10-03 · 第十八批剩余拆分：结构收敛 + 前端面板）**：
+  - **元素 data 载荷集中定义（`kernel/schemas.py`）**：REVIEW 指出 `data` 约定散落各处（内核二十余处内联 objtype 字典），现统一为具名 builder（`line3d`/`segment3d`/`plane`/`sphere`/`circle3d`/`section`/`curve3d`/`polyhedron`/`surface`/`cube`/`chart3d`，支持 `**extra` 追加 lo/hi、points、grid、expr、param、center、axes、ranges、fit 等键）；`commands.py`/`geometry3d.py`/`solids.py`/`stats.py` 共 **26 处**改为调用 builder，**键顺序与载荷完全不变**；`test_modules.py` 新增守卫：kernel 内再出现内联 objtype 字面量即失败
+  - **前端数学键盘面板外置（`static/keyboard.js`）**：47 个按键的 HTML 仍在 `index.html`，行为抽为 `window.GGB_KB`（展开/收起、插入/退格/清空/Enter、目标输入框 `#cas-cmd` 优先）；`app.js` **5797 → 5745 行**，加载顺序 `i18n.js → data.js → keyboard.js → app.js`
+  - **运行环境健壮性**：机器上 `python3` 可能指向无三方库的 venv（实测 3.15rc2 无 numpy/sympy，导致服务与检测直接失败）→ 新增 `devtools/_env.sh` 自动挑选**能 import numpy+sympy** 的解释器，`run.sh` 与两个检测 runner 均改用它并打印实际解释器版本
+  - 检测：模块边界 50 → **63**，2D 前端 59 → **64**（键盘展开·插入·退格·清空·收起）
 - **第二十五批（2026-10-02 · 统计图全家桶 + 可整体移动 + 三维统计图）**：
   - **新增 2D 图型**：`LineChart`（折线，支持单序列或 x/y 双序列）、`ScatterPlot`（散点，支持点列表/数值列表/x·y 双序列）、`DotPlot`（点图，相同值向上叠点）；与既有 `BarChart`/`Histogram`/`BoxPlot`/`PieChart` 共六类
   - **每张统计图都是一个可整体移动的对象**：元素新增世界坐标 `offset`（`GeoChart2D` 基类），前端绘制时整张图一起平移（柱/箱/扇区/折线/散点同步），**鼠标直接拖动整张图**即可在平面上移动，可撤销；`move(图, x, y)` 设偏移、`shift(图, dx, dy)` 累加；`.ggk` v4 保存 offset（旧文件兼容）
@@ -143,7 +148,8 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **命名规则**：统计图使用可辨识前缀 `bc1`（条形/直方图）、`bp1`（箱线）、`pie1`（饼）、`lc1`（折线）、`sc1`（散点）、`dp1`（点图）、`bc3_1`/`sc3_1`/`sf3_1`（三维），不再落到默认字母池（此前饼图/箱线图会被命名成 `a`、`b`）
   - **修掉一个潜伏真 bug**：统计图的状态函数原是「改元素属性 + 返回 `{}`」，而**计算记忆命中时只回放返回值、不再调用函数** → 同一 `defn` 第二次创建时新元素数据为空（浏览器里实测 `lc.xs=0`、`pie.items=0`）。改为返回完整状态字典（`{xs,ys}` / `{pts}` / `{values,stacks}` / `{items,total}` / `{five,n}`），memo 回放正确
   - 检测：2D 内核 +29（167）、2D API +13（44）、2D 前端 +7（53）、3D 前端 +8（142）；覆盖命名/偏移/move·shift/锁定/`.ggk` 往返/三维网格欧拉与面序/拖动像素位移/悬停名称
-  - **工具栏菜单入口（图形化，不必敲命令）**：新增「**统计图**」分类，含 10 个按钮 —— 直方图 / 直方图分组 / 箱线图 / 饼图 / **折线图 / 散点图 / 点图** / **三维柱状图 / 三维散点图 / 三维曲面图**；点按钮即弹出数据输入框（散点用 `1,2; 3,4`，三维点用 `1,2,3; 4,5,6`，曲面图再问列数），生成后自动命名 `bc1/bp1/pie1/lc1/sc1/dp1` 与 `bc3_1/sc3_1/sf3_1`；3D 统计图对象在对象列表里显示「三维柱状图/三维散点图/三维曲面图」（`solid.chart_*` 文案）  - **工具栏菜单入口（图形化，不必敲命令）**：新增「**统计图**」分类，含 10 个按钮 —— 直方图 / 直方图分组 / 箱线图 / 饼图 / **折线图 / 散点图 / 点图** / **三维柱状图 / 三维散点图 / 三维曲面图**；点按钮即弹出数据输入框（散点用 `1,2; 3,4`，三维点用 `1,2,3; 4,5,6`，曲面图再问列数），生成后自动命名 `bc1/bp1/pie1/lc1/sc1/dp1` 与 `bc3_1/sc3_1/sf3_1`；3D 统计图对象在对象列表里显示「三维柱状图/三维散点图/三维曲面图」（`solid.chart_*` 文案）
+  - **第二十六批（2026-10-02 · 统计图菜单入口 + 顶部工具栏下拉菜单）**：
+  - **工具栏菜单入口（图形化，不必敲命令）**：新增「**统计图**」分类，含 10 个按钮 —— 直方图 / 直方图分组 / 箱线图 / 饼图 / **折线图 / 散点图 / 点图** / **三维柱状图 / 三维散点图 / 三维曲面图**；点按钮即弹出数据输入框（散点用 `1,2; 3,4`，三维点用 `1,2,3; 4,5,6`，曲面图再问列数），生成后自动命名 `bc1/bp1/pie1/lc1/sc1/dp1` 与 `bc3_1/sc3_1/sf3_1`；3D 统计图对象在对象列表里显示「三维柱状图/三维散点图/三维曲面图」（`solid.chart_*` 文案）
   - **顶部工具栏重排为下拉菜单**（用户要求「第一行按钮重新分类、导出/导入各自合并」）：第一行从 19 个平铺按钮收敛为 **5 个下拉菜单 + 5 个常驻按钮**（单行不再换行）——
     **📂 文件**（示例 / 保存 .ggk / 加载 .ggk·.ggb / 分享链接 / 清空画布）· **📤 导出**（SVG 2D / SVG·3D 投影 / PNG / OBJ / STL / glTF）· **📥 导入**（三维网格 OBJ·STL·glTF / 插入图片）· **👁 视图**（网格 / 坐标轴 / 吸附 / 角度单位 / 主题 / 语言）· **🧰 工具**（几何工具面板 / 选择 / 数学键盘 / CAS / 试卷 / 脚本 / 宏）；常驻：命令输入框、`?` 帮助、撤销、重做、3D 切换
     实现：`index.html` 只重排结构与保持**原按钮 id 不变**（JS 绑定、脚本与检测无需改动），`style.css` 加 `.menu/.menu-list` 样式，`app.js` 加菜单开合（点标题展开、点条目/空白/Esc 收起），i18n 加 `menu_*` 文案；浏览器矩阵新增 `clickBtn()` 助手（自动展开所在菜单后再点击）
@@ -180,7 +186,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 50 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 59 = 1202 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 63 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1220 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

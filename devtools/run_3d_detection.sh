@@ -9,6 +9,7 @@
 # 注意: API/浏览器层测的是**运行中的服务**。服务若启动于本轮代码改动之前，
 #       不会反映新行为（脚本会探测 solid 字段并明确报错）。
 #       启动带新代码的实例:  PORT=8091 ./run.sh
+. "$(dirname "$0")/_env.sh"
 set -u
 
 PORT="${PORT:-8090}"
@@ -45,13 +46,13 @@ fi
 echo "服务可达 (HTTP 200)"
 
 # ---- 1. 内核层 ----
-step "1/5 内核 3D 检测矩阵" python3 -B devtools/test_3d_matrix.py
-step "2/5 内核 3D 生成回归" python3 -B devtools/test_3d_generation_kernel.py
-step "3/5 内核 圆柱/退化回归" python3 -B devtools/test_cylinder_kernel.py
-python3 -B devtools/test_3d_degenerate.py >/dev/null && echo "  (degenerate 探针 OK)" || true
+step "1/5 内核 3D 检测矩阵" "$PY" -B devtools/test_3d_matrix.py
+step "2/5 内核 3D 生成回归" "$PY" -B devtools/test_3d_generation_kernel.py
+step "3/5 内核 圆柱/退化回归" "$PY" -B devtools/test_cylinder_kernel.py
+"$PY" -B devtools/test_3d_degenerate.py >/dev/null && echo "  (degenerate 探针 OK)" || true
 
 # ---- 2. API 层 ----
-step "4/5 API 3D 检测矩阵" python3 -B devtools/test_3d_api.py --base "$BASE"
+step "4/5 API 3D 检测矩阵" "$PY" -B devtools/test_3d_api.py --base "$BASE"
 
 # ---- 3. 浏览器层 ----
 step "5/5 浏览器 3D 检测矩阵" env GGBPY_BASE="$BASE" node devtools/verify_3d_ui_matrix.js

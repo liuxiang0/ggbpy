@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Optional, Tuple
 
+from . import schemas
 from .elements import Geo3D, GeoError
 from .tolerance import EPSILON, COORD, ZERO_SQ, LOOSE, COARSE  # 统一数值容差（见 kernel/tolerance.py）
 
@@ -399,9 +400,8 @@ def _ix_plane_plane(p1, p2):
         px, py, pz = 0.0, y, z
     # 延展成线段（两端）
     L = 15.0
-    return {"objtype": "line3d",
-            "data": {"x1": px - dx / ln * L, "y1": py - dy / ln * L, "z1": pz - dz / ln * L,
-                     "x2": px + dx / ln * L, "y2": py + dy / ln * L, "z2": pz + dz / ln * L}}
+    return schemas.line3d(px - dx / ln * L, py - dy / ln * L, pz - dz / ln * L,
+                          px + dx / ln * L, py + dy / ln * L, pz + dz / ln * L)
 
 def _ix_line_plane(seg, pl):
     """线段与平面交点。"""
@@ -482,8 +482,7 @@ def _ix_solid_plane(solid, pl):
         return math.atan2(dx * wx + dy * wy + dz * wz, dx * ux + dy * uy + dz * uz)
 
     uniq.sort(key=_ang)
-    return {"objtype": "section",
-            "data": {"pts": uniq, "normal": [nx, ny, nz], "count": len(uniq)}}
+    return schemas.section(uniq, [nx, ny, nz])
 
 def _ix_sphere_sphere(s1, s2):
     """两球求交 → 交圆（空间圆）：交平面垂直于连心线，半径 √(r1²−a²)。"""
@@ -504,9 +503,7 @@ def _ix_sphere_sphere(s1, s2):
         raise GeoError("两球相切（交线退化为一点）")
     ox, oy, oz = a1 + t * ux, b1 + t * uy, c1 + t * uz
     u, v, _n = _frame_from_axis([ux, uy, uz])
-    return {"objtype": "circle3d",
-            "data": {"cx": ox, "cy": oy, "cz": oz, "r": math.sqrt(rr2),
-                     "normal": [ux, uy, uz], "u": u, "v": v}}
+    return schemas.circle3d(ox, oy, oz, math.sqrt(rr2), [ux, uy, uz], u, v)
 
 def _ix_sphere_circle3d(sph, cir, idx=None):
     """球 ∩ 空间圆 → 交点（0/1/2 个）。圆上点 P(t)=C+r(cos t·u+sin t·v)，解 |P−S|²=R²。"""
@@ -739,7 +736,7 @@ def _ix_sphere_solid(sph, solid):
             segs.append([list(keep[k]), list(keep[k + 1])])
     if not segs:
         raise GeoError("球面与立体不相交（或交线退化）")
-    return {"objtype": "curve3d", "data": {"segs": segs, "count": len(segs)}}
+    return schemas.curve3d(segs)
 
 def _ix_sphere_plane(sph, pl):
     """球 ∩ 平面 → 3D 圆（objtype=circle3d，带圆心/半径/所在平面法向与基）。"""
@@ -758,9 +755,7 @@ def _ix_sphere_plane(sph, pl):
         raise GeoError("平面与球相切（交线退化为一点）")
     ox, oy, oz = cx - sdist * nx, cy - sdist * ny, cz - sdist * nz   # 圆心 = 球心在平面上的投影
     u, v, _n = _frame_from_axis([nx, ny, nz])
-    return {"objtype": "circle3d",
-            "data": {"cx": ox, "cy": oy, "cz": oz, "r": rr,
-                     "normal": [nx, ny, nz], "u": u, "v": v}}
+    return schemas.circle3d(ox, oy, oz, rr, [nx, ny, nz], u, v)
 
 def _ix_solid_solid(s1, s2):
     """两个凸立体求交 → 凸多面体（半空间裁剪）。"""
@@ -785,7 +780,7 @@ def _ix_solid_solid(s1, s2):
     mesh = {"verts": [list(v) for v in verts], "faces": [list(f) for f in faces], "edges": [list(e) for e in edges]}
     if _mesh_volume(mesh) < COORD:
         raise GeoError("两个立体的交集退化为零体积（面/点接触）")
-    return {"objtype": "polyhedron", "data": mesh}
+    return schemas.polyhedron(mesh=mesh)
 
 def _ix_solid_line(solid, lin, idx, bounded):
     """凸立体与直线/线段求交 → 按 idx 取第 idx 个交点（1-based，默认第 1 个）。"""
@@ -846,5 +841,4 @@ def _ix_sphere_line(sph, lin, idx, bounded):
     return {"x": p[0] + t * dx, "y": p[1] + t * dy, "z": p[2] + t * dz}
 
 def _poly_state(verts, faces, edges):
-    return {"objtype": "polyhedron",
-            "data": {"verts": verts, "faces": _normalize_mesh(verts, faces), "edges": edges}}
+    return schemas.polyhedron(verts, _normalize_mesh(verts, faces), edges)

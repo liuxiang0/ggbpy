@@ -16,6 +16,7 @@ import math
 import re
 from typing import Dict, List, Optional, Tuple
 
+from . import schemas
 from .elements import GeoError
 from .tolerance import COARSE, COORD, EPSILON
 
@@ -110,8 +111,7 @@ def _fitsphere_state(items):
     dev = float(np.max(np.abs(np.linalg.norm(pts - np.array([cx, cy, cz]), axis=1) - r)))
     if dev > COARSE * max(1.0, r):
         raise GeoError("点云不共球（最大偏差 %.6g）" % dev)
-    return {"objtype": "sphere", "solid": "sphere",
-            "data": {"cx": cx, "cy": cy, "cz": cz, "r": r}}
+    return schemas.sphere(cx, cy, cz, r)
 
 def _fitplane_state(items):
     import numpy as np
@@ -142,11 +142,8 @@ def _fitplane_state(items):
     vx = ny * uz - nz * uy
     vy = nz * ux - nx * uz
     vz = nx * uy - ny * ux
-    return {"objtype": "plane", "solid": "plane",
-            "data": {"a": nx, "b": ny, "c": nz, "d": dd,
-                     "ax": float(ctr[0]), "ay": float(ctr[1]), "az": float(ctr[2]),
-                     "ux": ux, "uy": uy, "uz": uz, "vx": vx, "vy": vy, "vz": vz,
-                     "fit": True}}
+    return schemas.plane(nx, ny, nz, dd, float(ctr[0]), float(ctr[1]), float(ctr[2]),
+                         ux, uy, uz, vx, vy, vz, fit=True)
 
 
 # ---------------------------------------------------------------------------

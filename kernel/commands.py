@@ -13,6 +13,7 @@ import math
 import re
 from typing import Callable, Dict, List, Optional, Tuple
 
+from . import schemas
 from .elements import (
     EPSILON, Geo3D, GeoAngle, GeoArc, GeoBarChart, GeoBoolean, GeoChart2D, GeoCircle, GeoConic,
     GeoDotPlot, GeoLineChart, GeoScatterPlot,
@@ -447,9 +448,7 @@ def _line3d_state(p, q):
         raise GeoError("两点重合，无法确定直线")
     R = 25.0   # 直线延伸半长（世界单位）
     dx, dy, dz = dx / ln * R, dy / ln * R, dz / ln * R
-    return {"objtype": "line3d",
-            "data": {"x1": px - dx, "y1": py - dy, "z1": pz - dz,
-                     "x2": px + dx, "y2": py + dy, "z2": pz + dz}}
+    return schemas.line3d(px - dx, py - dy, pz - dz, px + dx, py + dy, pz + dz)
 
 
 def _parallel_state(pt, lin):
@@ -470,9 +469,7 @@ def _cmd_segment(cons, label, args):
 def _seg3d_state(p, q):
     if math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + ((q.z or 0) - (p.z or 0)) ** 2) < EPSILON:
         raise GeoError("线段两端点重合")
-    return {"objtype": "segment",
-            "data": {"x1": p.x, "y1": p.y, "z1": p.z or 0,
-                     "x2": q.x, "y2": q.y, "z2": q.z or 0}}
+    return schemas.segment3d(p.x, p.y, p.z or 0, q.x, q.y, q.z or 0)
 
 
 def _cmd_ray(cons, label, args):
@@ -694,9 +691,8 @@ def _bbox_state(items):
     faces = [[0, 1, 3, 2], [4, 6, 7, 5], [0, 1, 5, 4], [1, 3, 7, 5], [3, 2, 6, 7], [2, 0, 4, 6]]
     edges = [[0, 1], [1, 3], [3, 2], [2, 0], [4, 5], [5, 7], [7, 6], [6, 4],
              [0, 4], [1, 5], [3, 7], [2, 6]]
-    return {"objtype": "polyhedron", "solid": "box",
-            "data": {"verts": corners, "faces": _normalize_mesh(corners, faces), "edges": edges,
-                     "lo": [float(v) for v in lo], "hi": [float(v) for v in hi]}}
+    return schemas.polyhedron(corners, _normalize_mesh(corners, faces), edges, solid="box",
+                              lo=[float(v) for v in lo], hi=[float(v) for v in hi])
 
 
 def _cmd_covariance(cons, defn, args):
@@ -759,9 +755,8 @@ def _convexhull_state(items):
             if key not in seen:
                 seen.add(key)
                 edges.append([key[0], key[1]])
-    return {"objtype": "polyhedron", "solid": "hull",
-            "data": {"verts": verts, "faces": _normalize_mesh(verts, faces), "edges": edges,
-                     "points": int(len(pts))}}
+    return schemas.polyhedron(verts, _normalize_mesh(verts, faces), edges, solid="hull",
+                              points=int(len(pts)))
 
 
 def _surface_eval(d):
@@ -905,9 +900,8 @@ def _cov_ellipsoid_state(items, k):
             faces.append([vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)])
             edges.append([vid(i, j), vid(i + 1, j)])
             edges.append([vid(i, j), vid(i, j + 1)])
-    return {"objtype": "polyhedron", "solid": "surface",
-            "data": {"verts": verts, "faces": faces, "edges": edges, "grid": n,
-                     "center": [float(c) for c in ctr], "axes": axes}}
+    return schemas.surface(verts, faces, edges, n,
+                           center=[float(c) for c in ctr], axes=axes)
 
 
 def _cmd_isoline(cons, defn, args):
@@ -981,7 +975,7 @@ def _isoline_state(surf, val, dim):
     else:
         raise GeoError("该曲面类型不支持参数线（需要 Surface / SurfaceParam）")
     segs = [[pts[i], pts[i + 1]] for i in range(len(pts) - 1)]
-    return {"objtype": "curve3d", "data": {"segs": segs, "count": len(segs)}}
+    return schemas.curve3d(segs)
 
 
 def _cmd_fitsphere(cons, defn, args):
@@ -3433,10 +3427,8 @@ def _surface_compute(expr, xmin, xmax, ymin, ymax, n):
             raise
         except Exception as ex:
             raise GeoError("曲面表达式无法求值：" + str(ex)[:80])
-        return {"objtype": "polyhedron", "solid": "surface",
-                "data": {"verts": verts, "faces": faces, "edges": edges,
-                         "grid": n, "expr": expr,
-                         "ranges": [xmin, xmax, ymin, ymax]}}
+        return schemas.surface(verts, faces, edges, n, expr=expr,
+                               ranges=[xmin, xmax, ymin, ymax])
     return fn
 
 
@@ -3452,7 +3444,7 @@ def _cmd_mesh(cons, defn, args):
     data = {"verts": rec["verts"], "faces": rec["faces"],
             "edges": mesh_store.edges_of(rec["faces"]), "meshid": mid}
     el = _mk(cons, Geo3D, "geo3d", defn, [],
-             lambda d: {"objtype": "polyhedron", "solid": "mesh", "data": data})
+             lambda d: schemas.polyhedron(solid="mesh", mesh=data))
     el.meshid = mid
     return el
 
@@ -3524,10 +3516,8 @@ def _surface_param_compute(xb, yb, zb, sname, tname, smin, smax, tmin, tmax, n):
             edges.append([vid(i, n), vid(i + 1, n)])
         for j in range(n):
             edges.append([vid(n, j), vid(n, j + 1)])
-        return {"objtype": "polyhedron", "solid": "surface",
-                "data": {"verts": verts, "faces": faces, "edges": edges, "grid": n,
-                         "param": [xb, yb, zb, sname, tname,
-                                   smin, smax, tmin, tmax]}}
+        return schemas.surface(verts, faces, edges, n,
+                               param=[xb, yb, zb, sname, tname, smin, smax, tmin, tmax])
     return fn
 
 
@@ -3665,9 +3655,8 @@ def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
             for m in range(3):
                 p, q = f3[m], f3[(m + 1) % 3]
                 edges.add((min(p, q), max(p, q)))
-        return {"objtype": "polyhedron", "solid": "surface",
-                "data": {"verts": [list(v) for v in verts], "faces": fixed,
-                         "edges": [[a, b] for a, b in sorted(edges)], "grid": n}}
+        return schemas.surface([list(v) for v in verts], fixed,
+                               [[a, b] for a, b in sorted(edges)], n)
     return fn
 
 
@@ -3716,10 +3705,7 @@ def _plane_state(a, b, c):
         raise GeoError("三点共线，无法确定平面")
     nx, ny, nz = n[0] / ln, n[1] / ln, n[2] / ln
     dd = -(nx * ax + ny * ay + nz * az)
-    return {"objtype": "plane", "solid": "plane",
-            "data": {"a": nx, "b": ny, "c": nz, "d": dd,
-                     "ax": ax, "ay": ay, "az": az, "ux": ux, "uy": uy, "uz": uz,
-                     "vx": vx, "vy": vy, "vz": vz}}
+    return schemas.plane(nx, ny, nz, dd, ax, ay, az, ux, uy, uz, vx, vy, vz)
 
 
 def _is_segment_el(el) -> bool:
@@ -5046,8 +5032,7 @@ def _cmd_barchart3d(cons, defn, args):
         values = [float(v) for v in d[0].items] if d else vals
         verts, faces = _bars3d_mesh(values)
         from . import mesh_store
-        return {"objtype": "polyhedron", "solid": "chart_bar3d",
-                "data": {"verts": verts, "faces": faces, "edges": mesh_store.edges_of(faces)}}
+        return schemas.chart3d("chart_bar3d", verts, faces, mesh_store.edges_of(faces))
 
     return _mk(cons, Geo3D, "geo3d", defn, deps, state)
 
@@ -5064,8 +5049,7 @@ def _cmd_scatterplot3d(cons, defn, args):
         pts = [[float(p[0]), float(p[1]), float(p[2])] for p in d[0].items]
         verts, faces = _scatter3d_mesh(pts)
         from . import mesh_store
-        return {"objtype": "polyhedron", "solid": "chart_scatter3d",
-                "data": {"verts": verts, "faces": faces, "edges": mesh_store.edges_of(faces)}}
+        return schemas.chart3d("chart_scatter3d", verts, faces, mesh_store.edges_of(faces))
 
     return _mk(cons, Geo3D, "geo3d", defn, [L], build)
 
@@ -5084,8 +5068,7 @@ def _cmd_surfacechart3d(cons, defn, args):
         values = [float(v) for v in d[0].items] if d else vals
         verts, faces = _surface3d_mesh(values, cols)
         from . import mesh_store
-        return {"objtype": "polyhedron", "solid": "chart_surface3d",
-                "data": {"verts": verts, "faces": faces, "edges": mesh_store.edges_of(faces)}}
+        return schemas.chart3d("chart_surface3d", verts, faces, mesh_store.edges_of(faces))
 
     return _mk(cons, Geo3D, "geo3d", defn, deps, state)
 

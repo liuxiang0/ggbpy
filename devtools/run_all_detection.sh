@@ -2,6 +2,7 @@
 # ggbpy 全量检测：2D 内核矩阵 + 2D/平台 API 矩阵 + 3D 三层矩阵（内核/API/浏览器）
 # 用法：bash devtools/run_all_detection.sh [BASE]
 #   默认 BASE=http://127.0.0.1:8090（需先启动服务：PORT=8090 ./run.sh）
+. "$(dirname "$0")/_env.sh"
 set -u
 BASE="${1:-http://127.0.0.1:8090}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -25,16 +26,16 @@ step() {
 }
 
 cd "$ROOT"
-step "1/10 命令注册表一致性" python3 -B devtools/test_registry.py
-step "2/10 内容寻址仓库检测" python3 -B devtools/test_stores.py
-step "3/10 统一容差检测（零魔数/前后端一致）" python3 -B devtools/test_tolerance.py
-step "4/10 模块边界检测（内核拆分/前端文案外置）" python3 -B devtools/test_modules.py
-step "5/10 多会话隔离检测" python3 -B devtools/test_sessions.py --base "$BASE"
-step "6/10 2D 内核检测矩阵" python3 -B devtools/test_2d_matrix.py
-step "7/10 2D/平台 API 检测矩阵" python3 -B devtools/test_2d_api.py --base "$BASE"
+step "1/10 命令注册表一致性" "$PY" -B devtools/test_registry.py
+step "2/10 内容寻址仓库检测" "$PY" -B devtools/test_stores.py
+step "3/10 统一容差检测（零魔数/前后端一致）" "$PY" -B devtools/test_tolerance.py
+step "4/10 模块边界检测（内核拆分/前端文案外置）" "$PY" -B devtools/test_modules.py
+step "5/10 多会话隔离检测" "$PY" -B devtools/test_sessions.py --base "$BASE"
+step "6/10 2D 内核检测矩阵" "$PY" -B devtools/test_2d_matrix.py
+step "7/10 2D/平台 API 检测矩阵" "$PY" -B devtools/test_2d_api.py --base "$BASE"
 step "8/10 3D 三层检测矩阵（内核/API/浏览器）" bash devtools/run_3d_detection.sh
 step "9/10 2D 前端回归矩阵（编辑栏/CAS/分享/图片/导出/工具）" node devtools/verify_2d_ui_matrix.js
-step "10/10 微积分/求根回归" python3 -B devtools/test_mixed_smoke.py 2>/dev/null || true
+step "10/10 微积分/求根回归" "$PY" -B devtools/test_mixed_smoke.py 2>/dev/null || true
 
 echo ""
 echo "==================================================================="

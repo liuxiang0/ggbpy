@@ -605,6 +605,36 @@ function check(name, ok, detail) {
     mesh3.map((e) => e.label + ':' + ((e.data || {}).verts || []).length + 'v').join(' '));
 
   // -------------------------------------------------------------------------
+  section('K5. 数学键盘面板（static/keyboard.js）');
+  await clear();
+  await page.waitForTimeout(250);
+  await clickBtn('btn-kbd');
+  await page.waitForTimeout(250);
+  const kbState = await page.evaluate(() => ({
+    open: window.__ggbpyKb ? window.__ggbpyKb.isOpen() : null,
+    display: getComputedStyle(document.getElementById('mathkb')).display,
+  }));
+  check('点 ⌨ 展开数学键盘', kbState.open === true && kbState.display !== 'none', JSON.stringify(kbState));
+  await page.fill('#cmd', '');
+  await page.evaluate(() => document.getElementById('cmd').focus());
+  for (const k of ['7', '*', 'sqrt(']) {          // 面板实际按键：数字 / 算符 / 函数名
+    await page.click('#mathkb .kb-key[data-k="' + k + '"]');
+    await page.waitForTimeout(80);
+  }
+  const kbVal1 = await page.inputValue('#cmd');
+  check('点按键插入到输入框', kbVal1 === '7*sqrt(', JSON.stringify(kbVal1));
+  await page.click('#mathkb .kb-key[data-k="bs"]');
+  await page.waitForTimeout(80);
+  const kbVal2 = await page.inputValue('#cmd');
+  check('退格键删除末位', kbVal2 === '7*sqrt', JSON.stringify(kbVal2));
+  await page.click('#mathkb .kb-key[data-k="clear"]');
+  await page.waitForTimeout(80);
+  check('清空键清空输入框', (await page.inputValue('#cmd')) === '', '');
+  await clickBtn('btn-kbd');
+  await page.waitForTimeout(200);
+  check('再点 ⌨ 收起键盘', (await page.evaluate(() => window.__ggbpyKb.isOpen())) === false, '');
+
+  // -------------------------------------------------------------------------
   section('K. 会话隔离（cookie 持久 + 新上下文独立）');
   await clear();
   await page.waitForTimeout(300);

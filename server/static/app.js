@@ -4448,60 +4448,8 @@
     setMsg(lang === 'en' ? 'Exported exam HTML (print to save as PDF)' : '已导出试卷 HTML（浏览器打印可存为 PDF）', false);
   }
 
-  // ---------- 虚拟数学键盘 ----------
-  var kbEl = document.getElementById('mathkb');
-  btn('btn-kbd', function () {
-    var show = kbEl.style.display === 'none';
-    kbEl.style.display = show ? 'block' : 'none';
-    this.classList.toggle('active', show);
-    if (show) kbTarget().focus();
-  });
-  function kbTarget() {
-    var ae = document.activeElement;
-    if (ae && ae.id === 'cas-cmd') return ae;
-    return document.getElementById('cmd');
-  }
-  function kbInsert(txt) {
-    var el = kbTarget();
-    el.focus();
-    var st = el.selectionStart || el.value.length, en = el.selectionEnd || el.value.length;
-    el.value = el.value.slice(0, st) + txt + el.value.slice(en);
-    var pos = st + txt.length;
-    el.setSelectionRange(pos, pos);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  function kbBackspace() {
-    var el = kbTarget();
-    el.focus();
-    var st = el.selectionStart || el.value.length, en = el.selectionEnd || el.value.length;
-    if (st === en && st > 0) st = st - 1;
-    el.value = el.value.slice(0, st) + el.value.slice(en);
-    el.setSelectionRange(st, st);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  function kbClear() {
-    var el = kbTarget();
-    el.focus();
-    el.value = '';
-    el.setSelectionRange(0, 0);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  function kbEnter() {
-    var el = kbTarget();
-    el.focus();
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  }
-  kbEl.addEventListener('pointerdown', function (ev) {
-    ev.preventDefault();  // 保持输入框焦点
-    var b = ev.target.closest('button.kb-key');
-    if (!b) return;
-    var k = b.getAttribute('data-k');
-    if (k === 'bs') kbBackspace();
-    else if (k === 'clear') kbClear();
-    else if (k === 'enter') kbEnter();
-    else if (k === 'pi') kbInsert('pi');
-    else kbInsert(k);
-  });
+  // ---------- 虚拟数学键盘（面板行为见 static/keyboard.js） ----------
+  var kb = window.GGB_KB ? window.GGB_KB.init() : null;
 
   // ---------- 几何工具（画布交互创建） ----------
   var TOOLS = GGB_DATA.TOOLS || {};

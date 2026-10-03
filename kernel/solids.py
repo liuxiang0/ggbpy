@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Optional, Tuple
 
+from . import schemas
 from .elements import GeoError
 # 与几何算法层的共用件（网格规范化/多面体状态/正交基）
 from .geometry3d import _frame_from_axis, _normalize_mesh, _poly_state
@@ -57,13 +58,13 @@ def _sphere_check(r):
 
 def _sphere_state(c, p):
     r = math.sqrt((p.x - c.x) ** 2 + (p.y - c.y) ** 2 + ((p.z or 0) - (c.z or 0)) ** 2)
-    return {"objtype": "sphere", "solid": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r)}}
+    return schemas.sphere(c.x, c.y, c.z or 0, _sphere_check(r))
 
 def _sphere_state_r(c, r):
-    return {"objtype": "sphere", "solid": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r.value)}}
+    return schemas.sphere(c.x, c.y, c.z or 0, _sphere_check(r.value))
 
 def _sphere_state_fixed(c, r):
-    return {"objtype": "sphere", "solid": "sphere", "data": {"cx": c.x, "cy": c.y, "cz": c.z or 0, "r": _sphere_check(r)}}
+    return schemas.sphere(c.x, c.y, c.z or 0, _sphere_check(r))
 
 def _cube_seg_pts(el):
     """取线段两端点（3D 元组），支持 2D 线段与 3D 线段。"""
@@ -162,8 +163,7 @@ def _cube_build(base_verts, n, h):
     ]
     edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4],
              [0, 4], [1, 5], [2, 6], [3, 7]]
-    return {"objtype": "cube", "solid": "cube",
-            "data": {"verts": verts, "faces": _normalize_mesh(verts, faces), "edges": edges}}
+    return schemas.cube(verts, _normalize_mesh(verts, faces), edges)
 
 def _cube_state(a, b, c):
     """三点构成立方体底面正方形：自动识别哪一点是角点（两条最短边共用的顶点），

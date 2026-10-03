@@ -191,6 +191,60 @@ else:
 # 软预算：data.js 外置后 5542 行，统计图绘制（六类 + 拖动命中盒）加入后 ~5697 行
 check("app.js 行数受控（< 5800）", len(app_src.splitlines()) < 5800, str(len(app_src.splitlines())))
 
+print("\n=== A5. schemas 模块（元素 data 载荷集中定义） ===")
+schemas_src = (ROOT / "kernel" / "schemas.py").read_text(encoding="utf-8")
+check("schemas 是叶子模块（不做相对导入）", not re.search(r"^from \.", schemas_src, re.M), "")
+import kernel.schemas as SCH  # noqa: E402
+
+built = {
+    "line3d": SCH.line3d(0, 0, 0, 1, 1, 1),
+    "segment3d": SCH.segment3d(0, 0, 0, 1, 0, 0),
+    "plane": SCH.plane(0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0),
+    "sphere": SCH.sphere(0, 0, 0, 2),
+    "circle3d": SCH.circle3d(0, 0, 0, 1, [0, 0, 1], [1, 0, 0], [0, 1, 0]),
+    "section": SCH.section([[0, 0, 0]], [0, 0, 1]),
+    "curve3d": SCH.curve3d([[0, 0, 0, 1, 1, 1]]),
+    "polyhedron": SCH.polyhedron(mesh={"verts": [], "faces": [], "edges": []}, solid="mesh"),
+    "surface": SCH.surface([], [], [], 8, expr="x"),
+    "cube": SCH.cube([], [], []),
+    "chart3d": SCH.chart3d("chart_bar3d", [], [], []),
+}
+check("schema builder 均可调用且带 objtype", len(built) == 11 and all(b.get("objtype") for b in built.values()), "")
+check("键顺序保持 objtype → solid → data（不改动载荷结构）",
+      list(built["plane"].keys()) == ["objtype", "solid", "data"]
+      and list(built["polyhedron"].keys()) == ["objtype", "solid", "data"]
+      and list(built["line3d"].keys()) == ["objtype", "data"], str(list(built["plane"].keys())))
+check("curve3d 自动带 count", built["curve3d"]["data"].get("count") == 1, "")
+check("plane 支持额外键（FitPlane 的 fit=True）",
+      SCH.plane(0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, fit=True)["data"].get("fit") is True, "")
+check("surface/chart3d 走 polyhedron 且 solid 正确",
+      built["surface"]["solid"] == "surface" and built["chart3d"]["solid"] == "chart_bar3d", "")
+
+inline_hits = []
+for pth in sorted((ROOT / "kernel").glob("*.py")):
+    if pth.name == "schemas.py":
+        continue
+    for i, line in enumerate(pth.read_text(encoding="utf-8").splitlines(), 1):
+        code = line.split("#", 1)[0]
+        if re.search(r'"objtype"\s*:', code):
+            inline_hits.append("%s:%d" % (pth.name, i))
+check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
+      str(inline_hits[:4]))
+
+print("\n=== B1. 前端：数学键盘面板模块 ===")
+kb_path = ROOT / "server" / "static" / "keyboard.js"
+kb_src = kb_path.read_text(encoding="utf-8") if kb_path.exists() else ""
+check("keyboard.js 存在", kb_path.exists(), "")
+check("app.js 通过 window.GGB_KB 装配（不再自带 kb* 实现）",
+      "window.GGB_KB" in app_src and "function kbInsert" not in app_src and "function kbTarget" not in app_src, "")
+check("index.html 在 app.js 之前加载 keyboard.js",
+      index_src.index("/static/keyboard.js") < index_src.index("/static/app.js"), "")
+check("键盘面板按键仍由 index.html 提供（≥40 个 .kb-key）",
+      index_src.count('class="kb-key"') >= 40, str(index_src.count('class="kb-key"')))
+check("keyboard.js 覆盖 bs/clear/enter 三种功能键",
+      all(k in kb_src for k in ("'bs'", "'clear'", "'enter'")), "")
+check("app.js 行数继续受控（< 5800）", len(app_src.splitlines()) < 5800, str(len(app_src.splitlines())))
+
 print("\n=== B. 前端：文案表外置 ===")
 app = (ROOT / "server" / "static" / "app.js").read_text(encoding="utf-8")
 i18n_path = ROOT / "server" / "static" / "i18n.js"
