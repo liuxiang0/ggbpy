@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第四十四批（2026-10-03 · 分类登记守卫扩展到全部分类）**：
+  - **数据层**（`test_modules.py`，扩展 data.js 解析输出）：新增「分类 id 唯一」「每个分类都有工具（无空分类）」「每个分类的默认工具 `def` 都在其 `tools` 内」「分类总数 ≥ 10 且无重复登记」——配合已有的「无重复登记／计算不含直方图／统计图仍含直方图」，共 **7 条**分类结构断言
+  - **浏览器层**（`verify_2d_ui_matrix.js`）：**逐分类**点击 12 个分类，断言「渲染出的按钮集合 == 数据定义的 tools」（缺/多都报），另加 id 唯一／非空／`def ∈ tools`
+  - 结果：12 个分类全部一致（points 8 / lines 10 / circles 7 / polygons 3 / conics 4 / transformers 5 / measures 6 / calculates 3 / charts 10 / sliders 1 / d3 15 / viewpoint 3）
+  - 检测：模块边界 277 → **281**，2D 前端 68 → **72**
 - **第四十三批（2026-10-03 · 修复菜单重复项：计算/统计图 两处「直方图」）**：
   - **问题**：用户发现「计算 → 直方图」与「统计图 → 直方图」两处都有 —— 排查确认二者是**同一个工具**（同一个静态按钮 `data-tool="barchart"`，同一命令 `BarChart`），只是 `barchart` 同时登记在 `calculates` 与 `charts` 两个分类里（统计图分类是第二十五批新增，漏从「计算」移除）
   - **修复**：`data.js` 的 `calculates` 分类工具改为 `['function', 'locus', 'ineq']`（并加注释禁止再放回）；按钮本体保留（统计图分类仍需）。修复后「计算」显示 函数/轨迹/不等式，「统计图」仍含 10 个图表工具
@@ -279,7 +284,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 277 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 68 = 1438 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 281 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 = 1450 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

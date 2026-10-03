@@ -583,6 +583,29 @@ function check(name, ok, detail) {
     return dup;
   });
   check('工具分类无重复登记（同一工具只属一个分类）', catDup.length === 0, catDup.join(','));
+  // 全分类逐项校验：id 唯一 / 非空 / def ∈ tools / 渲染按钮集合 == 数据定义
+  const catDefs = await page.evaluate(() => (window.GGB_DATA.TOOL_CATS || []).map((c) => ({
+    id: c.id, tools: c.tools || [], def: c.def || null,
+  })));
+  const dupCatIds = catDefs.map((c) => c.id).filter((v, i, a) => a.indexOf(v) !== i);
+  check('分类 id 唯一', dupCatIds.length === 0, dupCatIds.join(','));
+  const emptyCats = catDefs.filter((c) => !c.tools.length).map((c) => c.id);
+  check('每个分类都有工具（无空分类）', emptyCats.length === 0, emptyCats.join(','));
+  const badDefCat = catDefs.filter((c) => c.def && c.tools.indexOf(c.def) === -1).map((c) => c.id);
+  check('每个分类的默认工具 def 都在其 tools 内', badDefCat.length === 0, badDefCat.join(','));
+  const catMismatch = [];
+  for (const c of catDefs) {
+    const icon = await page.$('.cat-icon[data-cat="' + c.id + '"]');
+    if (!icon) { catMismatch.push(c.id + ':无分类按钮'); continue; }
+    await icon.click();
+    await page.waitForTimeout(180);
+    const keys = await page.$$eval('#cat-tools .tool-btn[data-tool]', (els) => els.map((e) => e.getAttribute('data-tool')));
+    const miss = c.tools.filter((t) => keys.indexOf(t) === -1);
+    const extra = keys.filter((k) => c.tools.indexOf(k) === -1);
+    if (miss.length || extra.length) catMismatch.push(c.id + ':缺' + miss.join('/') + '多' + extra.join('/'));
+  }
+  check('全部 ' + catDefs.length + ' 个分类的渲染按钮集合 = 数据定义（逐分类校验）',
+    catMismatch.length === 0, catMismatch.join(';'));
   const calcCatIcon = await page.$('.cat-icon[data-cat="calculates"]');
   if (calcCatIcon) { await calcCatIcon.click(); await page.waitForTimeout(250); }
   const calcKeys = await page.$$eval('#cat-tools .tool-btn[data-tool]', (els) => els.map((e) => e.getAttribute('data-tool')));

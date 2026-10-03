@@ -182,8 +182,9 @@ node_data = (
     "if(seen[k])dup.push(k+':'+seen[k]+'+'+c.id);else seen[k]=c.id;}));"
     "const calc=(cats.find(c=>c.id==='calculates')||{}).tools||[];"
     "const ch=(cats.find(c=>c.id==='charts')||{}).tools||[];"
+    "const catIds=cats.map(c=>c.id);const catDefs=cats.map(c=>({id:c.id,tools:c.tools||[],def:c.def||null}));"
     "console.log(JSON.stringify({cas:(d.CAS_COMMANDS||[]).length,tools:Object.keys(t).length,"
-    "cats:cats.length,missing,extra,dup,calc,ch}));"
+    "cats:cats.length,missing,extra,dup,calc,ch,catIds,catDefs}));"
 ) % str(data_path)
 try:
     out3 = subprocess.run(["node", "-e", node_data], capture_output=True, text=True, timeout=30)
@@ -205,6 +206,14 @@ else:
     check("「计算」分类不含直方图（barchart 仅归统计图）", "barchart" not in d3.get("calc", []),
         str(d3.get("calc")))
     check("「统计图」分类仍含直方图（功能未丢）", "barchart" in d3.get("ch", []), str(d3.get("ch")[:4]))
+
+    # 全分类结构校验：id 唯一 / 非空 / def ∈ tools（不只是「计算/统计图」两处）
+    _ids = d3.get("catIds", [])
+    check("分类 id 唯一", len(_ids) == len(set(_ids)), str([i for i in _ids if _ids.count(i) > 1]))
+    _defs = d3.get("catDefs", [])
+    check("每个分类都有工具（无空分类）", all(c["tools"] for c in _defs), str([c["id"] for c in _defs if not c["tools"]]))
+    check("每个分类的默认工具 def 都在其 tools 内", all((not c["def"]) or c["def"] in c["tools"] for c in _defs), str([c["id"] for c in _defs if c["def"] and c["def"] not in c["tools"]]))
+    check("分类总数与工具覆盖合理（≥ 10 个分类且无重复登记）", len(_defs) >= 10 and not d3.get("dup"), "cats=%d" % len(_defs))
 # 软预算：data.js 外置后 5542 行，统计图绘制（六类 + 拖动命中盒）加入后 ~5697 行
 check("app.js 行数受控（< 5800）", len(app_src.splitlines()) < 5800, str(len(app_src.splitlines())))
 
