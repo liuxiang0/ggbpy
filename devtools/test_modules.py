@@ -90,7 +90,8 @@ def undefined_refs(path):
     函数搬走了但模块级常量没搬（第一版漏了 `_PHI`）。
     """
     txt = (ROOT / path).read_text(encoding="utf-8")
-    defined = set(re.findall(r"def (\w+)\(", txt))
+    # 任意缩进的 def/class 都算定义（如函数内 `class _L:`）
+    defined = set(re.findall(r"^\s*(?:def|class)\s+(\w+)", txt, re.M))
     # 含类型注解的赋值也算定义（如 `_nested_evaluator: Optional[Callable] = None`）
     assigned = set(re.findall(r"^(_?[A-Za-z]\w*)\s*(?::[^=\n]+)?=", txt, re.M))
     imported_names = set()
@@ -112,7 +113,7 @@ def undefined_refs(path):
 
 
 for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
-            "kernel/cmd_util.py"):
+            "kernel/cmd_util.py", "kernel/charts.py", "kernel/commands3d.py"):
     miss = undefined_refs(mod)
     check(mod + " 无未定义引用（函数与常量跨模块防漏）", not miss, "缺: " + str(miss[:8]))
 
@@ -228,7 +229,10 @@ def ast_undefined_calls(path):
             local.add(node.id)
     called = {n.func.id for n in _ast.walk(tree)
               if isinstance(n, _ast.Call) and isinstance(n.func, _ast.Name)}
-    return sorted(called - top - local - set(dir(_bi)))
+    # 属性访问的基名（schemas.x / mesh_store.y）也必须在模块内可解析
+    bases = {n.value.id for n in _ast.walk(tree)
+             if isinstance(n, _ast.Attribute) and isinstance(n.value, _ast.Name)}
+    return sorted((called | bases) - top - local - set(dir(_bi)))
 
 
 print("\n=== A8. calculus 模块（微积分/符号计算命令） ===")
@@ -249,9 +253,30 @@ check("calculus.py 规模合理（300–900 行）", 300 <= len(calc_src.splitli
 check("commands.py 因 calculus 拆分继续下降（< 5700）", len(cmd_src.splitlines()) < 5700,
       str(len(cmd_src.splitlines())))
 
+print("\n=== A9. charts / commands3d 模块（命令组继续抽出） ===")
+import kernel.charts as CH  # noqa: E402
+import kernel.commands3d as C3  # noqa: E402
+
+for name, mod, min_n, lo, hi in (("charts", CH, 10, 150, 420), ("commands3d", C3, 35, 500, 1100)):
+    src_m = (ROOT / "kernel" / (name + ".py")).read_text(encoding="utf-8")
+    check("%s 不 import 命令层" % name, "from .commands" not in src_m, "")
+    check("%s 不引用命令注册表" % name,
+          not re.search(r"\b(COMMANDS|ALIASES|RESULT_KINDS|DISPLAY_NAMES)\b", src_m), "")
+    check("%s 搬迁函数 ≥ %d" % (name, min_n), len(mod.__all__) >= min_n, "n=%d" % len(mod.__all__))
+    check("%s 与 commands re-export 同一对象" % name,
+          all(getattr(C, n, None) is getattr(mod, n, None) for n in mod.__all__), "")
+    check("%s.py 规模合理（%d–%d 行）" % (name, lo, hi), lo <= len(src_m.splitlines()) <= hi,
+          str(len(src_m.splitlines())))
+check("commands.py 因命令组抽出继续下降（< 4700）", len(cmd_src.splitlines()) < 4700,
+      str(len(cmd_src.splitlines())))
+check("统计图/三维命令入口仍可用",
+      all(hasattr(C, n) for n in ("_cmd_barchart", "_cmd_piechart", "_cmd_linechart", "_cmd_cube",
+                                  "_cmd_surface", "_cmd_volume")), "")
+
 print("\n=== A7. AST 级守卫：抽出模块不得漏导入 ===")
 for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
-            "kernel/cmd_util.py", "kernel/calculus.py", "kernel/schemas.py"):
+            "kernel/cmd_util.py", "kernel/calculus.py", "kernel/schemas.py",
+            "kernel/charts.py", "kernel/commands3d.py"):
     miss = ast_undefined_calls(mod)
     check(mod + " 所有调用均已定义/导入（AST 检查）", not miss, str(miss[:6]))
 

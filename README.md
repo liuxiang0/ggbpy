@@ -136,6 +136,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第二十九批（2026-10-03 · 命令组继续抽出：统计图 + 三维）**：
+  - **`kernel/charts.py`（11 函数 / 247 行）**：统计图命令组整体抽出（`BarChart`/`Histogram`/`BoxPlot`/`PieChart`/`LineChart`/`ScatterPlot`/`DotPlot`/`BarChart3D`/`ScatterPlot3D`/`SurfaceChart3D` + `_anon_list`）
+  - **`kernel/commands3d.py`（40 函数 / 760 行）**：三维命令组整体抽出（立方体/球/圆锥/圆柱/棱柱/棱锥/正多面体/平面/曲面/参数曲面/隐式曲面/网格/体积/面积/截面/凸包/包围盒/协方差等）
+  - **规模收益**：`commands.py` **5541 → 4594 行**（本会话拆分前 7867 行 → **累计 −42%**）；两组闭包均先确认**组外依赖为 0** 再搬，`cmd_util` 共享层是关键前提
+  - **抽取流程工业化**：写了通用抽取脚本（AST 求闭包 → 生成模块 → 合成导入 → 删除原函数 → 加 re-export），并把守卫升到「**属性基名**也要可解析」（本轮抓到 `schemas.chart3d(...)` 这类模块属性访问漏导入）与「**任意缩进的 def/class 都算定义**」（修 `class _L` 误报）
+  - 检测：模块边界 87 → **103**（charts 5 / commands3d 5 / 规模与入口 6）
 - **第二十八批（2026-10-03 · 解开命令层循环依赖 + 微积分命令抽出）**：
   - **`kernel/cmd_util.py`（命令层共享工具，约 200 行）**：14 个参数解析/元素构造助手（`_resolve`/`_lookup`/`_list_arg`/`_point_arg`/`_mk`/`_auto`/`_num_deps`/`_num_series`/`label_of`…）+ 嵌套命令常量（`_NESTED_CALL_RE`/`_NESTED_MAX_DEPTH`）迁出；**用钩子解开循环依赖** —— `_lookup` 遇到嵌套命令时调用 `set_nested_evaluator()` 注入的 `commands._eval_nested`，本模块不依赖命令注册表
   - **`kernel/calculus.py`（22 函数 / 611 行）**：微积分与符号计算命令（Derivative/Integral/Root/Extremum/黎曼和/序列与数论/正态分布/SolveIneq/FitExpr 及解法格式化助手）整体抽出，只依赖 `elements`/`tolerance`/`parser`/`cmd_util`；`commands.py` 通过 re-export 与命令表继续引用
@@ -192,7 +198,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 87 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1244 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 103 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1260 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
