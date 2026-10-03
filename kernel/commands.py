@@ -58,6 +58,60 @@ from .calculus import (  # noqa: F401
     _fmt_sol_num,
 )
 
+# 杂项命令（随机数/线框显示，P2 结构拆分）。（P2 结构拆分：命令组抽出）
+from .misc import (  # noqa: F401
+    _cmd_randombetween,
+    _cmd_randomize,
+    _cmd_setwire,
+)
+
+# 自定义宏命令（MacroCreate/MacroList，P2 结构拆分）。（P2 结构拆分：命令组抽出）
+from .macros import (  # noqa: F401
+    _cmd_macrocreate,
+    _cmd_macrolist,
+)
+
+# 迭代与轨迹命令（Iteration/IterationList/Locus，P2 结构拆分）。（P2 结构拆分：命令组抽出）
+from .iteration import (  # noqa: F401
+    _iter_setup,
+    _cmd_iteration,
+    _cmd_iterationlist,
+    _cmd_locus,
+    _locus_state,
+)
+
+# 拟合与相关命令（指数/对数/多项式/幂/正弦拟合、PMCC、协方差椭球，P2 结构拆分）。（P2 结构拆分：命令组抽出）
+from .fits import (  # noqa: F401
+    _cmd_cov_ellipsoid,
+    _cov_ellipsoid_state,
+    _cmd_pmcc,
+    _cmd_fitpoly,
+    _fit_cmd,
+    _cmd_fitexp,
+    _cmd_fitlog,
+    _cmd_fitpow,
+    _cmd_fitsin,
+)
+
+# 三角形四心命令（外心/垂心/旁心，P2 结构拆分）。（P2 结构拆分：命令组抽出）
+from .centers import (  # noqa: F401
+    _tri_points,
+    _cmd_orthocenter,
+    _orthocenter_state,
+    _cmd_circumcenter,
+    _circumcenter_state,
+    _cmd_excenter,
+    _excenter_state,
+)
+
+# 布尔判定与证明命令（共点/共圆/全等/Prove，P2 结构拆分）。（P2 结构拆分：命令组抽出）
+from .proofs import (  # noqa: F401
+    _cmd_areconcyclic,
+    _cmd_arecongruent,
+    _cmd_areconcurrent,
+    _cmd_prove,
+)
+
 # 度量命令（距离/长度/周长/半周长/半径/斜率/角度，P2 结构拆分：从 commands.py 抽出）。（P2 结构拆分：命令组抽出）
 from .measures import (  # noqa: F401
     _cmd_distance,
@@ -329,6 +383,9 @@ from .charts import (  # noqa: F401
     _anon_list,
 )
 from .cmd_util import _NESTED_CALL_RE, _NESTED_MAX_DEPTH  # noqa: F401
+
+# 四张注册表已抽到 kernel/registry.py（P2 结构拆分）
+from .registry import ALIASES, COMMANDS, DISPLAY_NAMES, RESULT_KINDS  # noqa: F401
 from .elements import (
     EPSILON, Geo3D, GeoAngle, GeoArc, GeoBarChart, GeoBoolean, GeoChart2D, GeoCircle, GeoConic,
     GeoDotPlot, GeoLineChart, GeoScatterPlot,
@@ -608,53 +665,8 @@ def _number(cons, s: str):
 
 
 
-def _cmd_cov_ellipsoid(cons, defn, args):
-    """CovarianceEllipsoid[点列表, 倍数?]：协方差椭球（特征向量为轴，半轴 = k√λ）。"""
-    if len(args) not in (1, 2):
-        raise GeoError("CovarianceEllipsoid 需要点列表[, 倍数]")
-    L = _list_arg(cons, args[0])
-    if L.itemkind not in ("point", "point3d"):
-        raise GeoError("CovarianceEllipsoid 需要三维点列表")
-    k = eval_number(cons, args[1]) if len(args) == 2 else 2.0
-    return _mk(cons, Geo3D, "geo3d", defn, [L], lambda d: _cov_ellipsoid_state(d[0].items, k))
 
 
-def _cov_ellipsoid_state(items, k):
-    import numpy as np
-    if len(items) < 2:
-        raise GeoError("协方差椭球至少需要两个点")
-    pts = np.array([[float(p[0]), float(p[1]), float(p[2] if len(p) > 2 else 0.0)] for p in items])
-    ctr = pts.mean(axis=0)
-    q = pts - ctr
-    cov = (q.T @ q) / len(pts)
-    w, v = np.linalg.eigh(cov)          # 升序：w[i] 对应 v[:,i]
-    axes = [float(k) * math.sqrt(max(0.0, float(w[i]))) for i in range(3)]
-    if max(axes) < EPSILON:
-        raise GeoError("点云退化（方差为 0），无法构成椭球")
-    n = 20
-    verts, faces, edges = [], [], []
-    for j in range(n + 1):
-        phi = math.pi * j / n
-        for i in range(n + 1):
-            th = 2 * math.pi * i / n
-            u = [math.sin(phi) * math.cos(th), math.sin(phi) * math.sin(th), math.cos(phi)]
-            p = [float(ctr[t]) for t in range(3)]
-            for a in range(3):
-                coef = axes[a] * sum(u[b] * float(v[b, a]) for b in range(3))
-                for t in range(3):
-                    p[t] += coef * float(v[t, a])
-            verts.append(p)
-
-    def vid(i, j):
-        return j * (n + 1) + i
-
-    for j in range(n):
-        for i in range(n):
-            faces.append([vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)])
-            edges.append([vid(i, j), vid(i + 1, j)])
-            edges.append([vid(i, j), vid(i, j + 1)])
-    return schemas.surface(verts, faces, edges, n,
-                           center=[float(c) for c in ctr], axes=axes)
 
 
 
@@ -838,66 +850,18 @@ def _fn_line_diff(f, lin, x):
 
 
 
-def _tri_points(cons, args):
-    """心类/半周长公共参数解析：接受 [poly]（三角形多边形）或 [A, B, C] 三点 → 三个顶点元素。"""
-    if len(args) == 1:
-        poly = _resolve(cons, args[0], ("polygon",))
-        pts = [p for p in poly.deps if p.kind == "point"]
-        if len(pts) != 3:
-            raise GeoError("需要三角形（三个顶点的多边形）")
-        return pts
-    if len(args) == 3:
-        return [_point_arg(cons, a) for a in args]
-    raise GeoError("需要 三角形/多边形 或 三个顶点")
 
 
-def _cmd_orthocenter(cons, defn, args):
-    pts = _tri_points(cons, args)
-    return _mk(cons, GeoPoint, "point", defn, pts, lambda d: _orthocenter_state(d[0], d[1], d[2]))
 
 
-def _orthocenter_state(a, b, c):
-    """垂心：过 A 垂直 BC 与过 B 垂直 AC 两条高线的交点。"""
-    d1x, d1y = c.x - b.x, c.y - b.y   # BC 方向
-    d2x, d2y = c.x - a.x, c.y - a.y   # AC 方向
-    det = d1x * d2y - d2x * d1y
-    if abs(det) < EPSILON:
-        raise GeoError("退化三角形")
-    e1 = d1x * a.x + d1y * a.y        # 高 A：d1·(X-A)=0 → d1x·x + d1y·y = e1
-    e2 = d2x * b.x + d2y * b.y        # 高 B：d2·(X-B)=0
-    hx = (e1 * d2y - e2 * d1y) / det
-    hy = (d1x * e2 - d2x * e1) / det
-    return {"x": hx, "y": hy}
 
 
-def _cmd_circumcenter(cons, defn, args):
-    pts = _tri_points(cons, args)
-    return _mk(cons, GeoPoint, "point", defn, pts, lambda d: _circumcenter_state(d[0], d[1], d[2]))
 
 
-def _circumcenter_state(a, b, c):
-    res = _circumcircle((a.x, a.y), (b.x, b.y), (c.x, c.y))
-    if res is None:
-        raise GeoError("三点共线，无外心")
-    return {"x": res[0], "y": res[1]}
 
 
-def _cmd_excenter(cons, defn, args):
-    pts = _tri_points(cons, args)
-    return _mk(cons, GeoPoint, "point", defn, pts, lambda d: _excenter_state(d[0], d[1], d[2]))
 
 
-def _excenter_state(a, b, c):
-    """与顶点 A 相对的旁心（旁切圆圆心）：
-    (-a·A + b·B + c·C) / (-a + b + c)，a=|BC|, b=|CA|, c=|AB|。"""
-    aa = _dist((b.x, b.y), (c.x, c.y))
-    bb = _dist((c.x, c.y), (a.x, a.y))
-    cc = _dist((a.x, a.y), (b.x, b.y))
-    denom = -aa + bb + cc
-    if abs(denom) < EPSILON:
-        raise GeoError("退化三角形")
-    return {"x": (-aa * a.x + bb * b.x + cc * c.x) / denom,
-            "y": (-aa * a.y + bb * b.y + cc * c.y) / denom}
 
 
 
@@ -911,35 +875,6 @@ def _excenter_state(a, b, c):
 # 教学批次2：随机 / 排列组合 / 向量点积 / 相关系数
 # ---------------------------------------------------------------------------
 
-def _cmd_randombetween(cons, defn, args):
-    """RandomBetween[min, max]：闭区间随机整数（创建时落定；Randomize 重滚）。"""
-    if len(args) != 2:
-        raise GeoError("RandomBetween 需要 最小值, 最大值")
-    lo = int(eval_number(cons, args[0]))
-    hi = int(eval_number(cons, args[1]))
-    if hi < lo:
-        raise GeoError("最大值必须不小于最小值")
-    import random
-    el = GeoNumber(label_of(defn), defn, float(random.randint(lo, hi)))
-    el._random_src = (lo, hi)
-    return cons.add(el)
-
-
-def _cmd_randomize(cons, defn, args):
-    """Randomize[A]：把 RandomBetween 数值重新随机（抛硬币/掷骰模拟）。"""
-    if len(args) != 1:
-        raise GeoError("Randomize 需要一个对象")
-    from . import memo as _memo
-    _memo.clear()          # 随机结果不参与计算记忆，清空以确保依赖它的对象重新生成
-    el = _resolve(cons, args[0], ("number",))
-    src = getattr(el, "_random_src", None)
-    if not src:
-        raise GeoError(el.label + " 不是 RandomBetween 创建的数值（无随机源）")
-    import random
-    el.value = float(random.randint(src[0], src[1]))
-    el.defn = el.label + "=RandomBetween[" + str(src[0]) + "," + str(src[1]) + "]"
-    cons._recompute(el)
-    return []
 
 
 
@@ -952,40 +887,8 @@ def _cmd_randomize(cons, defn, args):
 
 
 
-def _cmd_pmcc(cons, defn, args):
-    """PMCC[点列表] 或 PMCC[列表x, 列表y]：线性相关系数 r。"""
-    import numpy as np
-    if len(args) == 1:
-        L = _list_arg(cons, args[0])
-        if L.itemkind != "point":
-            raise GeoError("PMCC 需要点列表，如 PMCC[{(1,2),(2,3)}]")
-        deps = [L]
-        mode = "pts"
-    elif len(args) == 2:
-        L1 = _list_arg(cons, args[0])
-        L2 = _list_arg(cons, args[1])
-        if L1.itemkind != "number" or L2.itemkind != "number":
-            raise GeoError("PMCC 两个参数都需是数值列表")
-        deps = [L1, L2]
-        mode = "xy"
-    else:
-        raise GeoError("PMCC 需要点列表 或 两个数值列表")
 
-    def fn(d):
-        if mode == "pts":
-            xs = np.array([float(p[0]) for p in d[0].items], dtype=float)
-            ys = np.array([float(p[1]) for p in d[0].items], dtype=float)
-        else:
-            xs = np.array(list(d[0].items), dtype=float)
-            ys = np.array(list(d[1].items), dtype=float)
-        if len(xs) < 2 or len(xs) != len(ys):
-            raise GeoError("至少需要两个配对数据")
-        r = np.corrcoef(xs, ys)[0, 1]
-        if not np.isfinite(r):
-            raise GeoError("数据线性相关无法计算（常数数据）")
-        return {"value": float(r)}
 
-    return _mk(cons, GeoNumber, "number", defn, deps, fn)
 
 
 
@@ -1000,66 +903,10 @@ def _cmd_pmcc(cons, defn, args):
 # 教学批次5：迭代（数列递推）与数论（GCD/LCM/素数/因数）
 # ---------------------------------------------------------------------------
 
-def _iter_setup(cons, args):
-    """Iteration/IterationList 公共解析 → (f, x0, deps, n_el, n_fix)。"""
-    if len(args) != 3:
-        raise GeoError("需要 函数, 初值, 次数")
-    f = _resolve(cons, args[0], ("function",))
-    x0 = eval_number(cons, args[1])
-    deps = [f]
-    n_el = None
-    n_txt = args[2].strip()
-    if n_txt in cons.elements and cons.elements[n_txt].kind == "number":
-        n_el = cons.elements[n_txt]
-        deps.append(n_el)
-        n_fix = 1
-    else:
-        n_fix = int(eval_number(cons, n_txt))
-        if n_fix < 0 or n_fix > 100000:
-            raise GeoError("迭代次数需在 0..100000")
-    return f, x0, deps, n_el, n_fix
 
 
-def _cmd_iteration(cons, defn, args):
-    """Iteration[函数, 初值, 次数]：迭代末值（数列第 n 项）。"""
-    f, x0, deps, n_el, n_fix = _iter_setup(cons, args)
-
-    def fn(d):
-        n = int(round(d[1].value)) if n_el is not None else n_fix
-        n = max(0, min(100000, n))
-        v = x0
-        for _ in range(n):
-            nv = f._eval1(v)
-            if nv is None:
-                raise GeoError("迭代在 x=" + str(v) + " 处发散")
-            v = nv
-        return {"value": float(v)}
-
-    return _mk(cons, GeoNumber, "number", defn, deps, fn)
 
 
-def _cmd_iterationlist(cons, defn, args):
-    """IterationList[函数, 初值, 次数]：含初值的迭代序列（递推数列可视化）。"""
-    f, x0, deps, n_el, n_fix = _iter_setup(cons, args)
-
-    def fn(d):
-        n = int(round(d[1].value)) if n_el is not None else n_fix
-        n = max(0, min(100000, n))
-        items = [x0]
-        v = x0
-        for _ in range(n):
-            nv = f._eval1(v)
-            if nv is None:
-                raise GeoError("迭代在 x=" + str(v) + " 处发散")
-            v = nv
-            items.append(v)
-        return {"items": items, "itemkind": "number"}
-
-    el = GeoList(label_of(defn), defn, None, "number")
-    el.free = False
-    el.set_deps(deps, fn)
-    el.compute()
-    return cons.add(el)
 
 
 
@@ -1200,27 +1047,6 @@ def _list_defn(items, itemkind):
 
 
 
-def _cmd_fitpoly(cons, defn, args):
-    L = _list_arg(cons, args[0])
-    if L.itemkind != "point":
-        raise GeoError("FitPoly 需要点列表")
-    n = int(eval_number(cons, args[1])) if len(args) >= 2 else 2
-    el = GeoFunction(label_of(defn), defn)
-    el.free = False
-
-    def fn(d):
-        import numpy as np
-        import sympy
-        xs = np.array([p[0] for p in d[0].items])
-        ys = np.array([p[1] for p in d[0].items])
-        if len(xs) < n + 1:
-            raise GeoError("点的数量不足")
-        coeffs = np.polyfit(xs, ys, n)
-        x = sympy.Symbol("x")
-        poly = sum(float(c) * x ** (n - i) for i, c in enumerate(coeffs))
-        return {"expr": sympy.expand(poly), "xsym": x, "body": "", "_lamb": None}
-    el.set_deps([L], fn)
-    return cons.add(el)
 
 
 # ---- 圆锥曲线 ----
@@ -1338,91 +1164,22 @@ _PHI = _solids_PHI
 
 
 
-def _cmd_areconcyclic(cons, defn, args):
-    return _prove_cmd(cons, defn, args, "concyclic", 4)
 
 
-def _cmd_arecongruent(cons, defn, args):
-    return _prove_cmd(cons, defn, args, "congruent", 2)
 
 
-def _cmd_areconcurrent(cons, defn, args):
-    return _prove_cmd(cons, defn, args, "concurrent", 3)
 
 
-def _cmd_prove(cons, defn, args):
-    """Prove[b]：对 Are* 生成的布尔元素重新证明并生成新元素。"""
-    if len(args) != 1:
-        raise GeoError("Prove 需要一个布尔命题")
-    el = _resolve(cons, args[0])
-    if el.kind != "boolean" or not getattr(el, "_prove_args", None):
-        raise GeoError("Prove 的参数必须是 AreParallel 等命题")
-    kind, labels = el._prove_args
-    from .prover import SymbolicGeo
-    sg = SymbolicGeo(cons)
-    res = sg.prove(kind, labels)
-    new_el = GeoBoolean(label_of(defn), defn)
-    new_el.free = False
-    new_el.value = res.value
-    new_el.detail = res.detail
-    return cons.add(new_el)
 
 
-def _fit_cmd(cons, defn, args, kind):
-    L = _list_arg(cons, args[0])
-    if L.itemkind != "point":
-        raise GeoError("拟合需要点列表")
-    el = GeoFunction(label_of(defn), defn)
-    el.free = False
-
-    def fn(d):
-        import numpy as np
-        import sympy
-        pts = d[0].items
-        xs = np.array([p[0] for p in pts])
-        ys = np.array([p[1] for p in pts])
-        x = sympy.Symbol("x")
-        if kind == "exp":
-            m = (ys > 0)
-            k, c = np.polyfit(xs[m], np.log(ys[m]), 1)
-            expr = sympy.exp(c) * sympy.exp(k * x)
-        elif kind == "log":
-            m = (xs > 0)
-            a, b = np.polyfit(np.log(xs[m]), ys[m], 1)
-            expr = a * sympy.log(x) + b
-        elif kind == "pow":
-            m = (xs > 0) & (ys > 0)
-            k, c = np.polyfit(np.log(xs[m]), np.log(ys[m]), 1)
-            expr = sympy.exp(c) * x ** k
-        elif kind == "sin":
-            from scipy.optimize import curve_fit
-            def model(xv, a, b, c, d):
-                return a * np.sin(b * xv + c) + d
-            p0 = [(ys.max() - ys.min()) / 2, 2 * np.pi / max(xs.max() - xs.min(), COORD), 0, ys.mean()]
-            popt, _ = _fit_silent_fit(model, xs, ys, p0=p0, maxfev=20000)
-            a, b, c, d = popt
-            expr = a * sympy.sin(b * x + c) + d
-        else:
-            raise GeoError("未知拟合类型")
-        return {"expr": sympy.expand(expr), "xsym": x, "body": "", "_lamb": None}
-    el.set_deps([L], fn)
-    return cons.add(el)
 
 
-def _cmd_fitexp(cons, defn, args):
-    return _fit_cmd(cons, defn, args, "exp")
 
 
-def _cmd_fitlog(cons, defn, args):
-    return _fit_cmd(cons, defn, args, "log")
 
 
-def _cmd_fitpow(cons, defn, args):
-    return _fit_cmd(cons, defn, args, "pow")
 
 
-def _cmd_fitsin(cons, defn, args):
-    return _fit_cmd(cons, defn, args, "sin")
 
 
 
@@ -1517,62 +1274,8 @@ def _cmd_fitsin(cons, defn, args):
 
 
 
-def _cmd_locus(cons, defn, args):
-    """Locus[Q, P]：P 为圆上点（PointOnCircle），Q 依赖 P → 轨迹。"""
-    if len(args) != 2:
-        raise GeoError("Locus 需要 被驱动点 和 驱动点（圆上点）")
-    q = _resolve(cons, args[0], ("point",))
-    p = _resolve(cons, args[1], ("point",))
-    el = GeoLocus(label_of(defn), defn)
-    el.free = False
-    el.set_deps([q, p], lambda d: _locus_state(cons, d[0], d[1]))
-    return cons.add(el)
 
 
-def _locus_state(cons, q, p):
-    """扫描 P 的路径参数，记录 Q 的位置序列。"""
-    import numpy as np
-    import re
-    mpoc = re.match(r"^[A-Za-z_][A-Za-z0-9_]*=PointOnCircle\[([^,]+),([^\]]+)\]", p.defn.strip())
-    mpop = re.match(r"^[A-Za-z_][A-Za-z0-9_]*=PointOnPath\[([^,]+),([^\]]+)\]", p.defn.strip())
-    if mpoc:
-        plab, tlab = mpoc.group(1).strip(), mpoc.group(2).strip()
-        lo, hi = 0.0, 2 * math.pi
-    elif mpop:
-        plab, tlab = mpop.group(1).strip(), mpop.group(2).strip()
-        lo, hi = 0.0, 1.0
-    else:
-        raise GeoError("Locus 需要驱动点 P 是 PointOnCircle 或 PointOnPath 上的动点")
-    c = cons.elements.get(plab)
-    th = cons.elements.get(tlab)
-    if c is None or th is None or th.kind != "number":
-        raise GeoError("无法解析驱动点路径")
-    # Q 的传递上游（含 P），按深度排序
-    upstream = set()
-    stack = [q]
-    while stack:
-        e = stack.pop()
-        if e in upstream:
-            continue
-        upstream.add(e)
-        stack.extend(e.deps)
-    ordered = sorted(upstream, key=lambda e: e.depth)
-    orig = th.value
-    pts = []
-    try:
-        for t in np.linspace(lo, hi, 200):
-            th.value = float(t)
-            for e in ordered:
-                if not e.free:
-                    e.compute()
-            if q.error is None:
-                pts.append([q.x, q.y])
-    finally:
-        th.value = orig
-        for e in ordered:
-            if not e.free:
-                e.compute()
-    return {"pts": pts}
 
 
 # ---------------------------------------------------------------------------
@@ -1641,50 +1344,16 @@ def _sol_lo(part: str) -> float:
 
 
 
-def _cmd_setwire(cons, defn, args):
-    """SetWire[label, true/false]：3D 物体线框显示模式。"""
-    if len(args) != 2:
-        raise GeoError("SetWire 需要 对象 和 true/false")
-    el = _resolve(cons, args[0])
-    if el.kind != "geo3d":
-        raise GeoError("线框模式仅适用于 3D 物体")
-    v = args[1].strip().lower()
-    if v in ("true", "1", "yes", "线框"):
-        el.wire = True
-    elif v in ("false", "0", "no", "实体"):
-        el.wire = False
-    else:
-        raise GeoError("SetWire 需要 true 或 false")
-    return []
 
 
 # ---------------------------------------------------------------------------
 # 自定义宏（Macro）
 # ---------------------------------------------------------------------------
 
-def _cmd_macrocreate(cons, defn, args):
-    """MacroCreate[名称, {输入}, {输出}]：从当前构造创建宏。"""
-    if len(args) != 3:
-        raise GeoError("MacroCreate 需要 名称、输入对象集合、输出对象集合")
-    from . import macro
-    name = args[0].strip()
-    inputs = [s.strip() for s in args[1].strip("{}").split(",") if s.strip()]
-    outputs = [s.strip() for s in args[2].strip("{}").split(",") if s.strip()]
-    try:
-        m = macro.create_macro(cons, name, inputs, outputs)
-    except ValueError as e:
-        raise GeoError(str(e))
-    return [cons.get(outputs[0])] if outputs and outputs[0] in cons.elements else []
 
 
 
 
-def _cmd_macrolist(cons, defn, args):
-    from . import macro
-    ms = macro.list_macros(cons)
-    if not ms:
-        raise GeoError("暂无宏")
-    return []
 
 
 # ---------------------------------------------------------------------------
@@ -1692,180 +1361,14 @@ def _cmd_macrolist(cons, defn, args):
 # ---------------------------------------------------------------------------
 
 # 规范显示名（命令解析大小写不敏感；帮助面板/补全用它展示与插入）
-DISPLAY_NAMES = {
-    "surfacepoint": "SurfacePoint", "surfaceproject": "SurfaceProject",
-    "surfaceisoline": "SurfaceIsoline", "surfaceparam": "SurfaceParam",
-    "implicitsurface": "ImplicitSurface", "covarianceellipsoid": "CovarianceEllipsoid",
-    "boundingbox": "BoundingBox", "convexhull": "ConvexHull", "fitplane": "FitPlane",
-    "fitsphere": "FitSphere", "fitline": "FitLine", "fitpoly": "FitPoly", "fitexpr": "FitExpr",
-    "pointoncircle": "PointOnCircle", "randompointin": "RandomPointIn",
-    "anglebisector": "AngleBisector", "barchart": "BarChart", "piechart": "PieChart",
-    "linechart": "LineChart", "scatterplot": "ScatterPlot", "dotplot": "DotPlot",
-    "barchart3d": "BarChart3D", "scatterplot3d": "ScatterPlot3D",
-    "surfacechart3d": "SurfaceChart3D",
-    "boxplot": "BoxPlot", "histogram": "Histogram", "circumcircle": "CircumCircle",
-    "rigidpolygon": "RigidPolygon", "randombetween": "RandomBetween",
-    "areparallel": "AreParallel", "areperpendicular": "ArePerpendicular",
-    "arecollinear": "AreCollinear", "areconcyclic": "AreConcyclic",
-    "arecongruent": "AreCongruent", "areconcurrent": "AreConcurrent",
-    "leftsum": "LeftSum", "rightsum": "RightSum", "midpointsum": "MidpointSum",
-    "lowersum": "LowerSum", "uppersum": "UpperSum", "trapezoidalsum": "TrapezoidalSum",
-    "rectanglesum": "RectangleSum", "iterationlist": "IterationList",
-    "factorslist": "FactorsList", "partialfractions": "PartialFractions",
-    "solveode": "SolveODE", "nsolve": "NSolve", "setcoords": "SetCoords",
-    "setvalue": "SetValue", "setcolor": "SetColor", "setvisible": "SetVisible",
-    "setlocked": "SetLocked", "setwire": "SetWire", "isfinite": "IsFinite",
-    "isprime": "IsPrime", "divisors": "Divisors", "sequence": "Sequence",
-    "normaldist": "NormalDist", "surfacearea": "SurfaceArea", "centroid": "Centroid",
-    # 多词命令的规范写法（其余单词命令由首字母大写自动生成）
-    "circumcenter": "CircumCenter", "orthocenter": "OrthoCenter",
-    "correlationcoefficient": "CorrelationCoefficient",
-    "macrocreate": "MacroCreate", "macrodelete": "MacroDelete", "macrolist": "MacroList",
-    "perpendicularline": "PerpendicularLine", "perpendicularbisector": "PerpendicularBisector",
-    "pointonpath": "PointOnPath", "semicircle": "SemiCircle", "semiperimeter": "SemiPerimeter",
-    "solveineq": "SolveIneq", "regularpolygon": "RegularPolygon",
-}
 
 
-ALIASES = {
-    "中点": "midpoint", "直线": "line", "线段": "segment", "射线": "ray",
-    "圆": "circle", "多边形": "polygon", "刚性多边形": "rigidpolygon", "刚体多边形": "rigidpolygon", "折线": "polyline", "向量": "vector",
-    "交点": "intersect", "距离": "distance", "斜率": "slope", "角度": "angle",
-    "长度": "length", "平移": "translate", "旋转": "rotate", "镜像": "reflect",
-    "对称": "reflect", "位似": "dilate", "缩放": "dilate", "椭圆": "ellipse",
-    "反演": "invert",
-    "图片": "image", "插入图片": "image", "图像": "image",
-    "双曲线": "hyperbola", "抛物线": "parabola", "圆锥曲线": "conic",
-    "焦点": "focus", "切线": "tangent", "导数": "derivative", "积分": "integral",
-    "求根": "root", "极值": "extremum",
-    "平行线": "perpendicularline", "垂线": "perpendicularline", "垂足": "foot",
-    "角平分线": "anglebisector", "中垂线": "perpendicularbisector", "正多边形": "regularpolygon",
-    "面积": "area", "体积": "volume", "表面积": "area", "周长": "perimeter",
-    "曲面": "surface", "拟合平面": "fitplane", "平面拟合": "fitplane",
-    "网格": "mesh", "导入网格": "mesh",
-    "参数曲面": "surfaceparam", "隐式曲面": "implicitsurface",
-    "质心": "centroid", "拟合球": "fitsphere", "球拟合": "fitsphere",
-    "包围盒": "boundingbox", "点云包围盒": "boundingbox", "协方差": "covariance", "协方差矩阵": "covariance",
-    "协方差椭球": "covarianceellipsoid", "椭球": "covarianceellipsoid", "参数线": "surfaceisoline",
-    "凸包": "convexhull", "曲面取点": "surfacepoint", "曲面投影": "surfaceproject",
-    "内切圆": "incircle", "内心": "incenter", "重心": "centroid",
-    "滑动条": "slider", "文本": "text", "轨迹": "locus", "圆上点": "pointoncircle", "动点": "pointonpath",
-    "删除": "delete", "重命名": "rename", "重定义": "redefine",
-    "颜色": "setcolor", "显示": "setvisible", "隐藏": "setvisible",
-    "线框": "setwire", "实体": "setwire",
-    "平行": "areparallel", "垂直": "areperpendicular", "共线": "arecollinear",
-    "共圆": "areconcyclic", "相等": "arecongruent", "共点": "areconcurrent",
-    "证明": "prove", "序列": "sequence", "平均": "mean", "中位数": "median",
-    "众数": "mode", "方差": "variance", "标准差": "stdev", "求和": "sum",
-    "最大值": "max", "最小值": "min", "排序": "sort", "直线拟合": "fitline",
-    "多项式拟合": "fitpoly", "指数拟合": "fitexp", "对数拟合": "fitlog",
-    "幂拟合": "fitpow", "正弦拟合": "fitsin", "直方图": "barchart",
-    "正态": "normal", "正态分布": "normaldist", "正态函数": "normaldist",
-    "坐标": "setcoords", "赋值": "setvalue",
-    "随机整数": "randombetween", "随机化": "randomize", "重新随机": "randomize",
-    "排列": "npr", "组合": "ncr", "点积": "dot", "相关系数": "pmcc",
-    "左端点矩形和": "leftsum", "右端点矩形和": "rightsum", "中点矩形和": "midpointsum",
-    "下和": "lowersum", "上和": "uppersum", "梯形和": "trapezoidalsum", "矩形和": "rectanglesum",
-    "饼图": "piechart", "扇形统计图": "piechart",
-    "折线图": "linechart", "折线": "linechart",
-    "散点图": "scatterplot", "散布图": "scatterplot",
-    "点图": "dotplot", "点阵图": "dotplot",
-    "三维柱状图": "barchart3d", "三维条形图": "barchart3d",
-    "三维散点图": "scatterplot3d",
-    "三维曲面图": "surfacechart3d", "高度场": "surfacechart3d",
-    "分组直方图": "histogram", "直方图分组": "histogram",
-    "下四分位数": "q1", "上四分位数": "q3", "四分位距": "iqr", "箱线图": "boxplot",
-    "迭代": "iteration", "迭代表": "iterationlist", "迭代序列": "iterationlist",
-    "最大公约数": "gcd", "最小公倍数": "lcm", "素数": "isprime", "质数": "isprime",
-    "因数": "divisors", "质因数": "factorslist",
-    "随机点": "randompointin",
-    "共轭": "conj", "共轭复数": "conj", "实部": "re", "虚部": "im",
-    "辐角": "arg", "幅角": "arg",
-    "解不等式": "solveineq", "圆弧": "arc", "扇形": "sector", "半圆": "semicircle",
-    "外接圆": "circle", "圆周长": "circumference", "椭圆周长": "circumference",
-    "垂心": "orthocenter", "外心": "circumcenter", "旁心": "excenter",
-    "半径": "radius", "直径": "diameter", "半周长": "semiperimeter",
-    "矩阵": "matrix", "行列式": "det", "转置": "transpose", "逆矩阵": "inverse",
-    "锁定": "setlocked",
-    "参数曲线": "parametric", "极坐标": "polar", "隐式方程": "implicit", "隐式": "implicit",
-    "拟合": "fitexpr", "回归": "fitexpr",
-    "球": "sphere", "球面": "sphere", "平面": "plane", "立方体": "cube",
-    "圆锥": "cone", "圆柱": "cylinder", "棱柱": "prism", "三棱柱": "prism",
-    "棱锥": "pyramid", "三棱锥": "pyramid", "正四面体": "tetrahedron",
-    "正八面体": "octahedron", "正六面体": "hexahedron", "正方体": "hexahedron", "正二十面体": "icosahedron", "正十二面体": "dodecahedron",
-}
 
 
 # ---------------------------------------------------------------------------
 # 结果类型提示（自动标签用）
 # ---------------------------------------------------------------------------
 
-RESULT_KINDS = {
-    "circumcircle": "circle", "pointonpath": "point",
-    "macrocreate": "result", "macrodelete": "result", "macrolist": "result",
-        "midpoint": "point", "line": "line", "segment": "segment", "ray": "ray",
-        "circle": "circle", "polygon": "polygon", "intersect": "point",
-        "distance": "number", "slope": "number", "angle": "number",
-        "length": "number", "translate": "point", "rotate": "point",
-        "reflect": "point", "vector": "vector",
-        "invert": "point",
-        "image": "image",
-        "derivative": "function", "integral": "function", "tangent": "line",
-        "root": "point", "extremum": "point",
-        "ellipse": "conic", "hyperbola": "conic", "parabola": "conic",
-        "conic": "conic", "focus": "point",
-        "sum": "number", "mean": "number", "median": "number", "mode": "number",
-        "variance": "number", "stdev": "number", "min": "number", "max": "number",
-        "length": "number", "sort": "list", "fitline": "line", "fitpoly": "function",
-        "sphere": "geo3d", "plane": "geo3d", "cube": "geo3d",
-        "surface": "geo3d", "fitplane": "geo3d", "mesh": "geo3d",
-        "barchart3d": "geo3d", "scatterplot3d": "geo3d", "surfacechart3d": "geo3d",
-        "linechart": "linechart", "scatterplot": "scatterplot", "dotplot": "dotplot",
-        "surfaceparam": "geo3d", "implicitsurface": "geo3d",
-        "centroid": "point", "fitsphere": "geo3d", "boundingbox": "geo3d", "covariance": "matrix",
-        "covarianceellipsoid": "geo3d", "surfaceisoline": "geo3d",
-        "convexhull": "geo3d", "surfacepoint": "point", "surfaceproject": "point",
-        "cone": "geo3d", "cylinder": "geo3d", "prism": "geo3d", "pyramid": "geo3d",
-        "tetrahedron": "geo3d", "octahedron": "geo3d", "hexahedron": "geo3d", "icosahedron": "geo3d", "dodecahedron": "geo3d",
-        "parametric": "parametric", "polar": "polar", "implicit": "implicit",
-        "fitexpr": "function",
-        "perpendicularbisector": "line", "regularpolygon": "polygon",
-"areparallel": "boolean", "areperpendicular": "boolean",
-        "arecollinear": "boolean", "areconcyclic": "boolean",
-        "arecongruent": "boolean", "areconcurrent": "boolean",
-        "prove": "boolean", "sequence": "list",
-        "fitexp": "function", "fitlog": "function", "fitpow": "function", "fitsin": "function",
-        "setcoords": "number", "setvalue": "number",
-        "delete": "point", "rename": "point", "redefine": "point",
-        "setcolor": "point", "setvisible": "point", "setwire": "point",
-        "polyline": "polyline", "dilate": "point",
-        "perpendicularline": "line", "foot": "point", "anglebisector": "line",
-        "area": "number", "volume": "number", "perimeter": "number", "circumference": "number",
-        "incenter": "point", "incircle": "circle", "centroid": "point",
-        "rigidpolygon": "polygon",
-        "slider": "number", "angle": "angle",
-        "normal": "number", "normaldist": "function", "barchart": "barchart",
-        "text": "text", "pointoncircle": "point", "locus": "locus",
-        "arc": "arc", "sector": "arc", "semicircle": "arc", "solveineq": "result",
-        "setlocked": "point",
-        "matrix": "matrix", "det": "number", "transpose": "matrix", "inverse": "matrix",
-        "orthocenter": "point", "circumcenter": "point", "excenter": "point",
-        "radius": "number", "diameter": "number", "semiperimeter": "number",
-        "randombetween": "number", "randomize": "number",
-        "npr": "number", "ncr": "number", "dot": "number",
-        "pmcc": "number", "correlationcoefficient": "number",
-        "leftsum": "sumrect", "rightsum": "sumrect", "midpointsum": "sumrect",
-        "lowersum": "sumrect", "uppersum": "sumrect", "trapezoidalsum": "sumrect",
-        "rectanglesum": "sumrect", "piechart": "piechart",
-        "histogram": "barchart", "q1": "number", "q3": "number",
-        "iqr": "number", "boxplot": "boxplot",
-        "iteration": "number", "iterationlist": "list",
-        "gcd": "number", "lcm": "number", "isprime": "boolean",
-        "divisors": "list", "factorslist": "list",
-        "randompointin": "point",
-        "conj": "complex", "conjugate": "complex",
-        "re": "number", "im": "number", "arg": "number", "abs": "number",
-}
 
 
 def _result_kind(name: str) -> str:
@@ -1902,145 +1405,6 @@ def _label_kind(cons, lname: str, args) -> str:
 # 命令表与主入口
 # ---------------------------------------------------------------------------
 
-COMMANDS = {
-    "midpoint": _cmd_midpoint,
-    "line": _cmd_line,
-    "segment": _cmd_segment,
-    "ray": _cmd_ray,
-    "circle": _cmd_circle, "circumcircle": _cmd_circle,
-    "polygon": _cmd_polygon, "rigidpolygon": _cmd_rigidpolygon,
-    "intersect": _cmd_intersect,
-    "distance": _cmd_distance,
-    "slope": _cmd_slope,
-    "angle": _cmd_angle,
-    "length": _cmd_length,
-    "translate": _cmd_translate,
-    "rotate": _cmd_rotate,
-    "reflect": _cmd_reflect,
-    "invert": _cmd_invert,
-    "image": _cmd_image,
-    "vector": _cmd_vector,
-    "derivative": _cmd_derivative,
-    "integral": _cmd_integral,
-    "tangent": _cmd_tangent,
-    "root": _cmd_root,
-    "extremum": _cmd_extremum,
-    "ellipse": _cmd_ellipse,
-    "hyperbola": _cmd_hyperbola,
-    "parabola": _cmd_parabola,
-    "conic": _cmd_conic5,
-    "focus": _cmd_focus,
-    "sum": _cmd_sum,
-    "mean": _cmd_mean,
-    "median": _cmd_median,
-    "mode": _cmd_mode,
-    "variance": _cmd_variance,
-    "stdev": _cmd_stdev,
-    "min": _cmd_min,
-    "max": _cmd_max,
-    "sort": _cmd_sort,
-    "fitline": _cmd_fitline,
-    "fitpoly": _cmd_fitpoly,
-    "fitexpr": _cmd_fitexpr,
-    "sphere": _cmd_sphere, "surface": _cmd_surface, "fitplane": _cmd_fitplane,
-    "mesh": _cmd_mesh, "surfaceparam": _cmd_surface_param, "implicitsurface": _cmd_implicit_surface,
-    "linechart": _cmd_linechart, "scatterplot": _cmd_scatterplot, "dotplot": _cmd_dotplot,
-    "barchart3d": _cmd_barchart3d, "scatterplot3d": _cmd_scatterplot3d,
-    "surfacechart3d": _cmd_surfacechart3d,
-    "fitsphere": _cmd_fitsphere, "boundingbox": _cmd_bbox, "covariance": _cmd_covariance,
-    "covarianceellipsoid": _cmd_cov_ellipsoid, "surfaceisoline": _cmd_isoline,
-    "convexhull": _cmd_convexhull, "surfacepoint": _cmd_surfacepoint,
-    "surfaceproject": _cmd_surfaceproject,
-    "plane": _cmd_plane,
-    "cube": _cmd_cube,
-    "cone": _cmd_cone,
-    "cylinder": _cmd_cylinder,
-    "prism": _cmd_prism,
-    "pyramid": _cmd_pyramid,
-    "tetrahedron": _cmd_tetrahedron,
-    "octahedron": _cmd_octahedron,
-    "hexahedron": _cmd_hexahedron,
-    "icosahedron": _cmd_icosahedron,
-    "dodecahedron": _cmd_dodecahedron,
-    "areparallel": _cmd_areparallel,
-    "areperpendicular": _cmd_areperpendicular,
-    "arecollinear": _cmd_arecollinear,
-    "areconcyclic": _cmd_areconcyclic,
-    "arecongruent": _cmd_arecongruent,
-    "areconcurrent": _cmd_areconcurrent,
-    "prove": _cmd_prove,
-    "sequence": _cmd_sequence,
-    "fitexp": _cmd_fitexp,
-    "fitlog": _cmd_fitlog,
-    "fitpow": _cmd_fitpow,
-    "fitsin": _cmd_fitsin,
-    "setcoords": _cmd_setcoords,
-    "setvalue": _cmd_setvalue,
-    "delete": _cmd_delete,
-    "rename": _cmd_rename,
-    "redefine": _cmd_redefine,
-    "setcolor": _cmd_setcolor,
-    "setvisible": _cmd_setvisible,
-    "setwire": _cmd_setwire,
-    "macrocreate": _cmd_macrocreate,
-    "macrodelete": _cmd_macrodelete,
-    "macrolist": _cmd_macrolist,
-    "polyline": _cmd_polyline,
-    "dilate": _cmd_dilate,
-    "perpendicularline": _cmd_perpendicularline,
-    "foot": _cmd_foot,
-    "anglebisector": _cmd_anglebisector,
-    "perpendicularbisector": _cmd_perpbis,
-    "regularpolygon": _cmd_regularpolygon,
-    "area": _cmd_area,
-    "volume": _cmd_volume,
-    "perimeter": _cmd_perimeter,
-    "circumference": _cmd_circumference,
-    "incenter": _cmd_incenter,
-    "incircle": _cmd_incircle,
-    "centroid": _cmd_centroid,
-    "slider": _cmd_slider,
-    "parametric": _cmd_parametric,
-    "polar": _cmd_polar,
-    "implicit": _cmd_implicit,
-    "normal": _cmd_normal,
-    "normaldist": _cmd_normaldist,
-    "barchart": _cmd_barchart,
-    "text": _cmd_text,
-    "pointoncircle": _cmd_pointoncircle,
-    "pointonpath": _cmd_pointonpath,
-    "locus": _cmd_locus,
-    "arc": _cmd_arc,
-    "sector": _cmd_sector,
-    "semicircle": _cmd_semicircle,
-    "solveineq": _cmd_solveineq,
-    "setlocked": _cmd_setlocked,
-    "matrix": _cmd_matrix,
-    "det": _cmd_det,
-    "transpose": _cmd_transpose,
-    "inverse": _cmd_inverse,
-    "orthocenter": _cmd_orthocenter, "circumcenter": _cmd_circumcenter, "excenter": _cmd_excenter,
-    "radius": _cmd_radius, "diameter": _cmd_diameter, "semiperimeter": _cmd_semiperimeter,
-    "randombetween": _cmd_randombetween, "randomize": _cmd_randomize,
-    "npr": _cmd_npr, "ncr": _cmd_ncr, "dot": _cmd_dot, "pmcc": _cmd_pmcc,
-    "correlationcoefficient": _cmd_pmcc,
-    "leftsum": lambda c, d, a: _cmd_rectsum(c, d, a, "left"),
-    "rightsum": lambda c, d, a: _cmd_rectsum(c, d, a, "right"),
-    "midpointsum": lambda c, d, a: _cmd_rectsum(c, d, a, "mid"),
-    "lowersum": lambda c, d, a: _cmd_rectsum(c, d, a, "lower"),
-    "uppersum": lambda c, d, a: _cmd_rectsum(c, d, a, "upper"),
-    "trapezoidalsum": lambda c, d, a: _cmd_rectsum(c, d, a, "trap"),
-    "rectanglesum": lambda c, d, a: _cmd_rectsum(c, d, a, "rect"),
-    "piechart": _cmd_piechart,
-    "histogram": _cmd_histogram, "q1": _cmd_q1, "q3": _cmd_q3,
-    "iqr": _cmd_iqr, "boxplot": _cmd_boxplot,
-    "iteration": _cmd_iteration, "iterationlist": _cmd_iterationlist,
-    "gcd": _cmd_gcd, "lcm": _cmd_lcm, "isprime": _cmd_isprime,
-    "divisors": _cmd_divisors, "factorslist": _cmd_factorslist,
-    "randompointin": _cmd_randpointin,
-    "conj": _cmd_conj, "conjugate": _cmd_conj,
-    "re": _cmd_re, "im": _cmd_im, "arg": _cmd_arg, "abs": _cmd_complex_abs,
-}
 
 
 def process_line(cons, line: str) -> List:

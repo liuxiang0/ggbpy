@@ -13,7 +13,8 @@ from .geom_util import conic_canonical, conic_classify, conic_from_five_points
 from .primitives import _dist
 from .elements import GeoConic, GeoCurve, GeoError, GeoImplicit, GeoNumber, GeoPoint, GeoPolar
 from .tolerance import EPSILON
-from .parser import eval_number, re
+import re
+from .parser import eval_number
 
 
 __all__ = [

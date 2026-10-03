@@ -116,7 +116,8 @@ for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kern
             "kernel/cmd_util.py", "kernel/charts.py", "kernel/commands3d.py",
             "kernel/primitives.py", "kernel/transforms.py", "kernel/editing.py",
             "kernel/numeric.py", "kernel/io_cmds.py", "kernel/conics.py", "kernel/linalg.py",
-            "kernel/measures.py"):
+            "kernel/measures.py", "kernel/proofs.py", "kernel/centers.py", "kernel/fits.py",
+            "kernel/iteration.py", "kernel/macros.py", "kernel/misc.py", "kernel/registry.py"):
     miss = undefined_refs(mod)
     check(mod + " 无未定义引用（函数与常量跨模块防漏）", not miss, "缺: " + str(miss[:8]))
 
@@ -283,6 +284,8 @@ CMD_GROUP_MODULES = [
     ("primitives", 70, 900, 1600), ("transforms", 15, 300, 600), ("editing", 8, 60, 260),
     ("numeric", 15, 80, 300), ("io_cmds", 5, 80, 300),
     ("conics", 10, 150, 420), ("linalg", 12, 80, 260), ("measures", 12, 90, 300),
+    ("proofs", 3, 15, 140), ("centers", 5, 30, 160), ("fits", 7, 90, 300),
+    ("iteration", 3, 60, 240), ("macros", 2, 12, 120), ("misc", 2, 25, 140),
 ]
 for _name, _min_n, _lo, _hi in CMD_GROUP_MODULES:
     _src = (ROOT / "kernel" / (_name + ".py")).read_text(encoding="utf-8")
@@ -295,19 +298,49 @@ for _name, _min_n, _lo, _hi in CMD_GROUP_MODULES:
           all(getattr(C, n, None) is getattr(_mod, n, None) for n in _mod.__all__), "")
     check("%s.py 规模合理（%d–%d 行）" % (_name, _lo, _hi), _lo <= len(_src.splitlines()) <= _hi,
           str(len(_src.splitlines())))
-check("commands.py 因命令组继续抽出（< 2300 行）", len(cmd_src.splitlines()) < 2300,
+check("commands.py 因命令组继续抽出（< 1950 行）", len(cmd_src.splitlines()) < 1950,
       str(len(cmd_src.splitlines())))
 check("图元/变换/编辑/数值/导入导出入口仍可用",
       all(hasattr(C, n) for n in ("_cmd_midpoint", "_cmd_segment", "_cmd_circle", "_cmd_polygon",
                                   "_cmd_rotate", "_cmd_reflect", "_cmd_setvalue", "_cmd_setcolor",
                                   "_cmd_sum", "_cmd_mean", "_cmd_image", "_cmd_text")), "")
 
+print("\n=== A11. registry 模块（四张注册表集中） ===")
+reg_src = (ROOT / "kernel" / "registry.py").read_text(encoding="utf-8")
+import kernel.registry as REG  # noqa: E402
+
+check("registry 不 import 命令层（单向依赖，无环）",
+      not re.search(r"^\s*(?:from \.commands import|import kernel\.commands)", reg_src, re.M), "")
+check("registry 四张表齐全且规模合理",
+      len(REG.COMMANDS) >= 160 and len(REG.ALIASES) >= 180
+      and len(REG.DISPLAY_NAMES) >= 60 and len(REG.RESULT_KINDS) >= 160,
+      "COMMANDS=%d ALIASES=%d DISPLAY_NAMES=%d RESULT_KINDS=%d" % (
+          len(REG.COMMANDS), len(REG.ALIASES), len(REG.DISPLAY_NAMES), len(REG.RESULT_KINDS)))
+check("commands 与 registry 指向同一批表（re-export）",
+      C.COMMANDS is REG.COMMANDS and C.ALIASES is REG.ALIASES
+      and C.DISPLAY_NAMES is REG.DISPLAY_NAMES and C.RESULT_KINDS is REG.RESULT_KINDS, "")
+check("registry 从命令组模块汇总实现（≥ 15 条 import）",
+      len(re.findall(r"^from \.\w+ import", reg_src, re.M)) >= 15,
+      str(len(re.findall(r"^from \.\w+ import", reg_src, re.M))))
+check("registry.py 规模合理（200–600 行）", 200 <= len(reg_src.splitlines()) <= 600,
+      str(len(reg_src.splitlines())))
+check("commands.py 已退化为调度器规模（< 1650 行）", len(cmd_src.splitlines()) < 1650,
+      str(len(cmd_src.splitlines())))
+_sub = subprocess.run([sys.executable, "-B", "-c",
+                       "import sys; sys.path.insert(0, %r); import kernel.registry; "
+                       "print('COMMANDS_LOADED' if 'kernel.commands' in sys.modules else 'ISOLATED')" % str(ROOT)],
+                      capture_output=True, text=True)
+check("新进程只导入 registry 不会拉起 commands（依赖方向正确）",
+      _sub.stdout.strip() == "ISOLATED", _sub.stdout.strip()[:40] + _sub.stderr.strip()[:40])
+
 print("\n=== A7. AST 级守卫：抽出模块不得漏导入 ===")
 for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
             "kernel/cmd_util.py", "kernel/calculus.py", "kernel/schemas.py",
             "kernel/charts.py", "kernel/commands3d.py", "kernel/primitives.py",
             "kernel/transforms.py", "kernel/editing.py", "kernel/numeric.py", "kernel/io_cmds.py",
-            "kernel/conics.py", "kernel/linalg.py", "kernel/measures.py"):
+            "kernel/conics.py", "kernel/linalg.py", "kernel/measures.py",
+            "kernel/proofs.py", "kernel/centers.py", "kernel/fits.py", "kernel/iteration.py",
+            "kernel/macros.py", "kernel/misc.py", "kernel/registry.py"):
     miss = ast_undefined_calls(mod)
     check(mod + " 所有调用均已定义/导入（AST 检查）", not miss, str(miss[:6]))
 
