@@ -117,7 +117,8 @@ for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kern
             "kernel/primitives.py", "kernel/transforms.py", "kernel/editing.py",
             "kernel/numeric.py", "kernel/io_cmds.py", "kernel/conics.py", "kernel/linalg.py",
             "kernel/measures.py", "kernel/proofs.py", "kernel/centers.py", "kernel/fits.py",
-            "kernel/iteration.py", "kernel/macros.py", "kernel/misc.py", "kernel/registry.py"):
+            "kernel/iteration.py", "kernel/macros.py", "kernel/misc.py", "kernel/registry.py",
+            "kernel/nested.py"):
     miss = undefined_refs(mod)
     check(mod + " 无未定义引用（函数与常量跨模块防漏）", not miss, "缺: " + str(miss[:8]))
 
@@ -333,6 +334,28 @@ _sub = subprocess.run([sys.executable, "-B", "-c",
 check("新进程只导入 registry 不会拉起 commands（依赖方向正确）",
       _sub.stdout.strip() == "ISOLATED", _sub.stdout.strip()[:40] + _sub.stderr.strip()[:40])
 
+print("\n=== A12. nested 模块（嵌套命令求值器）+ commands 调度器化 ===")
+nest_src = (ROOT / "kernel" / "nested.py").read_text(encoding="utf-8")
+import kernel.nested as NEST  # noqa: E402
+import kernel.cmd_util as _CU  # noqa: E402
+import kernel.registry as _REG  # noqa: E402
+
+check("nested 不 import 命令层（依赖 registry 命令表）",
+      not re.search(r"^\s*(?:from \.commands import|import kernel\.commands)", nest_src, re.M), "")
+check("nested 依赖 registry + cmd_util + parser + elements",
+      set(re.findall(r"^from \.(\w+) import", nest_src, re.M)) == {"cmd_util", "registry", "parser", "elements"},
+      str(sorted(set(re.findall(r"^from \.(\w+) import", nest_src, re.M)))))
+check("nested 导入即注入嵌套求值钩子", "set_nested_evaluator(_eval_nested)" in nest_src, "")
+check("cmd_util 的钩子指向 nested._eval_nested", _CU._nested_evaluator is NEST._eval_nested, "")
+check("命名助手随注册表（registry 提供 _result_kind/_label_kind）",
+      _REG._result_kind is C._result_kind and _REG._label_kind is C._label_kind, "")
+check("commands 与 nested re-export 同一对象",
+      C._eval_nested is NEST._eval_nested and C._DetachedConstruction is NEST._DetachedConstruction, "")
+check("commands.py 已接近纯调度器（< 1200 行）", len(cmd_src.splitlines()) < 1200,
+      str(len(cmd_src.splitlines())))
+check("commands.py 仅剩调度与共享助手（顶层 def ≤ 14 个）",
+      len(re.findall(r"^def ", cmd_src, re.M)) <= 14, str(len(re.findall(r"^def ", cmd_src, re.M))))
+
 print("\n=== A7. AST 级守卫：抽出模块不得漏导入 ===")
 for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
             "kernel/cmd_util.py", "kernel/calculus.py", "kernel/schemas.py",
@@ -340,7 +363,7 @@ for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kern
             "kernel/transforms.py", "kernel/editing.py", "kernel/numeric.py", "kernel/io_cmds.py",
             "kernel/conics.py", "kernel/linalg.py", "kernel/measures.py",
             "kernel/proofs.py", "kernel/centers.py", "kernel/fits.py", "kernel/iteration.py",
-            "kernel/macros.py", "kernel/misc.py", "kernel/registry.py"):
+            "kernel/macros.py", "kernel/misc.py", "kernel/registry.py", "kernel/nested.py"):
     miss = ast_undefined_calls(mod)
     check(mod + " 所有调用均已定义/导入（AST 检查）", not miss, str(miss[:6]))
 
@@ -357,8 +380,8 @@ check("commands 与 cmd_util re-export 同一对象",
       all(getattr(C, n, None) is getattr(CU, n, None) for n in CU.__all__), "")
 check("嵌套常量随迁且 re-export 一致",
       C._NESTED_CALL_RE is CU._NESTED_CALL_RE and C._NESTED_MAX_DEPTH == CU._NESTED_MAX_DEPTH, "")
-check("commands 注入嵌套求值钩子（set_nested_evaluator(_eval_nested)）",
-      "set_nested_evaluator(_eval_nested)" in cmd_src, "")
+check("commands 经 nested 模块完成嵌套求值钩子注入",
+      "from .nested import" in cmd_src and "set_nested_evaluator(_eval_nested)" not in cmd_src, "")
 check("cmd_util.py 规模合理（120–340 行）", 120 <= len(cu_src.splitlines()) <= 340,
       str(len(cu_src.splitlines())))
 check("commands.py 因拆分继续下降（< 6200）", len(cmd_src.splitlines()) < 6200, str(len(cmd_src.splitlines())))

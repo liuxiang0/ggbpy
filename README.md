@@ -136,6 +136,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第三十三批（2026-10-03 · commands.py 收尾：嵌套求值器外置 + 导入块压缩）**：
+  - **`kernel/nested.py`（92 行）**：嵌套命令求值器（`_DetachedConstruction` 影子构造 + `_eval_nested`）外置，导入即向 `cmd_util` 注入求值钩子；依赖 `registry`（命令表）/`cmd_util`/`parser`/`elements`，**不依赖 commands**，依赖方向清晰
+  - **命名助手随注册表**：`_result_kind`/`_label_kind`（自动标签类型判定）移入 `registry.py`（与四张表同居一处，也解开 nested 对 commands 的依赖）
+  - **re-export 导入块压缩**：24 处多行名单折成单行/自动换行（纯格式，语义不变），`commands.py` **1472 → 1156 行**（本会话拆分前 7867 → **−85%**）
+  - `commands.py` 现在只剩：调度器（`process_line` 167 行 + 解析辅助）、少量共享助手（`_make_function`/`_complex_build`/`_number`/`_list_defn`/`_make_ineq_*`）、各命令组 re-export；顶层 def ≤ 14 个
+  - 检测：模块边界 212 → **222**（nested 8 项 + 调度器规模 2 项）
 - **第三十二批（2026-10-03 · 剩余命令抽净 + 注册表拆分，commands.py 退化为调度器）**：
   - **剩余 22 条命令抽成 6 组**：`proofs.py`（共点/共圆/全等/Prove）· `centers.py`（外心/垂心/旁心）· `fits.py`（指数/对数/多项式/幂/正弦拟合、PMCC、协方差椭球）· `iteration.py`（Iteration/IterationList/Locus）· `macros.py`（MacroCreate/MacroList）· `misc.py`（随机数/线框）
   - **`kernel/registry.py`（341 行）**：四张注册表集中一处（`COMMANDS` 169 / `ALIASES` 198 / `DISPLAY_NAMES` 73 / `RESULT_KINDS` 169），从 17 个命令组模块汇总实现；依赖方向 `命令组 → registry → 调度器`（新进程只导入 registry 不会拉起 commands，检测已断言）
@@ -214,7 +220,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 212 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1369 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 222 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1379 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

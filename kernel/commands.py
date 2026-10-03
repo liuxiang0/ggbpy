@@ -15,490 +15,176 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from . import schemas
 from .cmd_util import (  # 命令层共享工具（自本模块抽出）
-    _nested_depth,
-    label_of,
-    _label_of,
-    _mk,
-    _auto,
-    _resolve,
-    _lookup,
-    _tuple_parts_any,
-    _list_arg,
-    _point_arg,
-    _num_deps,
-    _num_list_items,
-    _num_series,
-    _elem_or_point,
-    _is_segment_el,
+    _nested_depth, label_of, _label_of, _mk, _auto, _resolve, _lookup, _tuple_parts_any, _list_arg,
+    _point_arg, _num_deps, _num_list_items, _num_series, _elem_or_point, _is_segment_el
 )
 from .cmd_util import set_nested_evaluator
 # 微积分/符号计算命令已抽到 kernel/calculus.py；re-export 保持调用方兼容
 from .calculus import (  # noqa: F401
-    _fmt,
-    _feval,
-    _roots_1d,
-    _cmd_of,
-    _cmd_derivative,
-    _cmd_integral,
-    _cmd_root,
-    _root_state,
-    _cmd_extremum,
-    _cmd_rectsum,
-    _int_values,
-    _cmd_isprime,
-    _cmd_divisors,
-    _cmd_factorslist,
-    _parse_sympy,
-    _fit_expr,
-    _cmd_fitexpr,
-    _cmd_sequence,
-    _cmd_normaldist,
-    _cmd_solveineq,
-    _fmt_sol,
-    _fmt_sol_num,
+    _fmt, _feval, _roots_1d, _cmd_of, _cmd_derivative, _cmd_integral, _cmd_root, _root_state,
+    _cmd_extremum, _cmd_rectsum, _int_values, _cmd_isprime, _cmd_divisors, _cmd_factorslist,
+    _parse_sympy, _fit_expr, _cmd_fitexpr, _cmd_sequence, _cmd_normaldist, _cmd_solveineq, _fmt_sol,
+    _fmt_sol_num
 )
 
 # 杂项命令（随机数/线框显示，P2 结构拆分）。（P2 结构拆分：命令组抽出）
-from .misc import (  # noqa: F401
-    _cmd_randombetween,
-    _cmd_randomize,
-    _cmd_setwire,
-)
+from .misc import _cmd_randombetween, _cmd_randomize, _cmd_setwire  # noqa: F401
 
 # 自定义宏命令（MacroCreate/MacroList，P2 结构拆分）。（P2 结构拆分：命令组抽出）
-from .macros import (  # noqa: F401
-    _cmd_macrocreate,
-    _cmd_macrolist,
-)
+from .macros import _cmd_macrocreate, _cmd_macrolist  # noqa: F401
 
 # 迭代与轨迹命令（Iteration/IterationList/Locus，P2 结构拆分）。（P2 结构拆分：命令组抽出）
 from .iteration import (  # noqa: F401
-    _iter_setup,
-    _cmd_iteration,
-    _cmd_iterationlist,
-    _cmd_locus,
-    _locus_state,
+    _iter_setup, _cmd_iteration, _cmd_iterationlist, _cmd_locus, _locus_state
 )
 
 # 拟合与相关命令（指数/对数/多项式/幂/正弦拟合、PMCC、协方差椭球，P2 结构拆分）。（P2 结构拆分：命令组抽出）
 from .fits import (  # noqa: F401
-    _cmd_cov_ellipsoid,
-    _cov_ellipsoid_state,
-    _cmd_pmcc,
-    _cmd_fitpoly,
-    _fit_cmd,
-    _cmd_fitexp,
-    _cmd_fitlog,
-    _cmd_fitpow,
-    _cmd_fitsin,
+    _cmd_cov_ellipsoid, _cov_ellipsoid_state, _cmd_pmcc, _cmd_fitpoly, _fit_cmd, _cmd_fitexp,
+    _cmd_fitlog, _cmd_fitpow, _cmd_fitsin
 )
 
 # 三角形四心命令（外心/垂心/旁心，P2 结构拆分）。（P2 结构拆分：命令组抽出）
 from .centers import (  # noqa: F401
-    _tri_points,
-    _cmd_orthocenter,
-    _orthocenter_state,
-    _cmd_circumcenter,
-    _circumcenter_state,
-    _cmd_excenter,
-    _excenter_state,
+    _tri_points, _cmd_orthocenter, _orthocenter_state, _cmd_circumcenter, _circumcenter_state,
+    _cmd_excenter, _excenter_state
 )
 
 # 布尔判定与证明命令（共点/共圆/全等/Prove，P2 结构拆分）。（P2 结构拆分：命令组抽出）
-from .proofs import (  # noqa: F401
-    _cmd_areconcyclic,
-    _cmd_arecongruent,
-    _cmd_areconcurrent,
-    _cmd_prove,
-)
+from .proofs import _cmd_areconcyclic, _cmd_arecongruent, _cmd_areconcurrent, _cmd_prove  # noqa: F401
 
 # 度量命令（距离/长度/周长/半周长/半径/斜率/角度，P2 结构拆分：从 commands.py 抽出）。（P2 结构拆分：命令组抽出）
 from .measures import (  # noqa: F401
-    _cmd_distance,
-    _pt_linear_dist,
-    _cmd_slope,
-    _slope_state,
-    _cmd_angle,
-    _angle2_state,
-    _angle_state,
-    _polygon_perimeter,
-    _section_perimeter,
-    _cmd_perimeter,
-    _cmd_circumference,
-    _ellipse_circumference,
-    _cmd_radius,
-    _cmd_semiperimeter,
-    _cmd_length,
+    _cmd_distance, _pt_linear_dist, _cmd_slope, _slope_state, _cmd_angle, _angle2_state, _angle_state,
+    _polygon_perimeter, _section_perimeter, _cmd_perimeter, _cmd_circumference, _ellipse_circumference,
+    _cmd_radius, _cmd_semiperimeter, _cmd_length
 )
 
 # 矩阵与复数命令（矩阵/行列式/转置/逆/点积/复数运算，P2 结构拆分：从 commands.py 抽出）。（P2 结构拆分：命令组抽出）
 from .linalg import (  # noqa: F401
-    _vec2_arg,
-    _vec_arg_objs,
-    _cmd_dot,
-    _cmd_conj,
-    _cmd_re,
-    _cmd_im,
-    _cmd_arg,
-    _arg_deg,
-    _parse_matrix_arg,
-    _cmd_matrix,
-    _cmd_det,
-    _det_state,
-    _cmd_transpose,
-    _transpose_state,
-    _cmd_inverse,
-    _inverse_state,
+    _vec2_arg, _vec_arg_objs, _cmd_dot, _cmd_conj, _cmd_re, _cmd_im, _cmd_arg, _arg_deg,
+    _parse_matrix_arg, _cmd_matrix, _cmd_det, _det_state, _cmd_transpose, _transpose_state,
+    _cmd_inverse, _inverse_state
 )
 
 # 圆锥曲线命令（椭圆/双曲线/抛物线/五点圆锥/焦点/直径/极线/隐式/参数曲线，P2 结构拆分：从 commands.py 抽出）。（P2 结构拆分：命令组抽出）
 from .conics import (  # noqa: F401
-    _cmd_diameter,
-    _curve_compute,
-    _cmd_parametric,
-    _cmd_polar,
-    _cmd_implicit,
-    _mk_conic,
-    _conic_from_canonical,
-    _cmd_ellipse,
-    _cmd_hyperbola,
-    _cmd_parabola,
-    _cmd_conic5,
-    _cmd_focus,
+    _cmd_diameter, _curve_compute, _cmd_parametric, _cmd_polar, _cmd_implicit, _mk_conic,
+    _conic_from_canonical, _cmd_ellipse, _cmd_hyperbola, _cmd_parabola, _cmd_conic5, _cmd_focus
 )
 
 # 导入导出命令（OBJ/STL/glTF 导入导出、图片与文本，P2 结构拆分：从 commands.py 抽出）。（P2 结构拆分：命令组抽出）
 from .io_cmds import (  # noqa: F401
-    _tuple_parts,
-    _cmd_image,
-    _txt_num,
-    _dyn_text_segments,
-    _ref_text,
-    _dyn_text_compute,
-    _cmd_text,
+    _tuple_parts, _cmd_image, _txt_num, _dyn_text_segments, _ref_text, _dyn_text_compute, _cmd_text
 )
 
 # 数值与统计命令（求和/均值/方差/排序/四分位/组合数/取整等，P2 结构拆分：从 commands.py 抽出）。（P2 结构拆分：命令组抽出）
 from .numeric import (  # noqa: F401
-    _cmd_npr,
-    _cmd_ncr,
-    _cmd_gcd,
-    _cmd_lcm,
-    _resolve_complex,
-    _cmd_complex_abs,
-    _cmd_sum,
-    _cmd_mean,
-    _cmd_median,
-    _cmd_mode,
-    _cmd_variance,
-    _cmd_stdev,
-    _cmd_min,
-    _cmd_max,
-    _cmd_sort,
-    _cmd_normal,
-    _cmd_q1,
-    _cmd_q3,
-    _cmd_iqr,
+    _cmd_npr, _cmd_ncr, _cmd_gcd, _cmd_lcm, _resolve_complex, _cmd_complex_abs, _cmd_sum, _cmd_mean,
+    _cmd_median, _cmd_mode, _cmd_variance, _cmd_stdev, _cmd_min, _cmd_max, _cmd_sort, _cmd_normal,
+    _cmd_q1, _cmd_q3, _cmd_iqr
 )
 
 # 编辑与样式命令（改值/改色/改名/重定义/删除/显隐，P2 结构拆分：从 commands.py 抽出）。（P2 结构拆分：命令组抽出）
 from .editing import _COLOR_NAMES  # noqa: F401
 from .editing import (  # noqa: F401
-    _COLOR_NAMES,
-    _cmd_slider,
-    _cmd_setcoords,
-    _cmd_setvalue,
-    _cmd_setlocked,
-    _parse_color,
-    _cmd_delete,
-    _cmd_rename,
-    _cmd_redefine,
-    _cmd_setcolor,
-    _cmd_setvisible,
-    _cmd_macrodelete,
+    _COLOR_NAMES, _cmd_slider, _cmd_setcoords, _cmd_setvalue, _cmd_setlocked, _parse_color, _cmd_delete,
+    _cmd_rename, _cmd_redefine, _cmd_setcolor, _cmd_setvisible, _cmd_macrodelete
 )
 
 # 仿射变换命令（反射/旋转/平移/位似/反演，P2 结构拆分：从 commands.py 抽出）。（P2 结构拆分：命令组抽出）
 from .transforms import DEG  # noqa: F401
 from .transforms import (  # noqa: F401
-    DEG,
-    _cmd_translate,
-    _cmd_rotate,
-    _cmd_reflect,
-    _transform_mk,
-    _inv_map,
-    _inv_circle_params,
-    _inv_linear_state,
-    _inv_circle_conic_state,
-    _inv_line_conic_state,
-    _source_chains,
-    _inv_sampled_state,
-    _invert_implicit_state,
-    _mk_implicit,
-    _mk_param_curve,
-    _compose_inv,
-    _seg_pole,
-    _cmd_invert,
-    _cmd_dilate,
+    DEG, _cmd_translate, _cmd_rotate, _cmd_reflect, _transform_mk, _inv_map, _inv_circle_params,
+    _inv_linear_state, _inv_circle_conic_state, _inv_line_conic_state, _source_chains,
+    _inv_sampled_state, _invert_implicit_state, _mk_implicit, _mk_param_curve, _compose_inv, _seg_pole,
+    _cmd_invert, _cmd_dilate
 )
 
 # 二维图元命令（点/线/圆/多边形族，P2 结构拆分：从 commands.py 抽出）。（P2 结构拆分：命令组抽出）
 from .primitives import _PRED_VIEW  # noqa: F401
 from .primitives import (  # noqa: F401
-    _resolve_vector,
-    _resolve_vector3,
-    _intersect_lines,
-    _dist,
-    _line_circle,
-    _circle_circle,
-    _circumcircle,
-    _cmd_midpoint,
-    _cmd_line,
-    _line3d_state,
-    _parallel_state,
-    _cmd_segment,
-    _seg3d_state,
-    _cmd_ray,
-    _cmd_circle,
-    _circle_state,
-    _circ_state,
-    _cmd_polygon,
-    _cmd_rigidpolygon,
-    _cmd_polyline,
-    _cmd_intersect,
-    _cmd_isoline,
-    _isoline_state,
-    _ix_fn_fn,
-    _ix_fn_lin,
-    _ix_linlin,
-    _check_seg_ray,
-    _on_segment,
-    _ix_lincir,
-    _ix_circir,
-    _ix_conic_conic,
-    _cmd_vector,
-    _mk_free,
-    _line_y_x,
-    _cmd_tangent,
-    _tangent_state,
-    _cmd_perpendicularline,
-    _perp_state,
-    _cmd_foot,
-    _foot_state,
-    _cmd_perpbis,
-    _perpbis_state,
-    _perpbis_state2,
-    _cmd_regularpolygon,
-    _cmd_anglebisector,
-    _bisector_state,
-    _cmd_incenter,
-    _incenter_state,
-    _cmd_incircle,
-    _incircle_state,
-    _cmd_centroid,
-    _centroid_state,
-    _cmd_randpointin,
-    _randpointin_state,
-    _cmd_fitline,
-    _conic_coeffs,
-    _cmd_tangent_conic,
-    _tangent_conic_state_i,
-    _tangent_arc_state,
-    _tangent_conic_state,
-    _ix_lin_conic,
-    _pred_dir,
-    _pred_scale,
-    _numeric_verdict,
-    _prove_cmd,
-    _cmd_areparallel,
-    _cmd_areperpendicular,
-    _cmd_arecollinear,
-    _cmd_pointoncircle,
-    _cmd_pointonpath,
-    _pop_state,
-    _poc_state,
-    _cmd_arc,
-    _cmd_semicircle,
-    _semicircle_state,
-    _cmd_sector,
-    _arc_state,
+    _resolve_vector, _resolve_vector3, _intersect_lines, _dist, _line_circle, _circle_circle,
+    _circumcircle, _cmd_midpoint, _cmd_line, _line3d_state, _parallel_state, _cmd_segment, _seg3d_state,
+    _cmd_ray, _cmd_circle, _circle_state, _circ_state, _cmd_polygon, _cmd_rigidpolygon, _cmd_polyline,
+    _cmd_intersect, _cmd_isoline, _isoline_state, _ix_fn_fn, _ix_fn_lin, _ix_linlin, _check_seg_ray,
+    _on_segment, _ix_lincir, _ix_circir, _ix_conic_conic, _cmd_vector, _mk_free, _line_y_x,
+    _cmd_tangent, _tangent_state, _cmd_perpendicularline, _perp_state, _cmd_foot, _foot_state,
+    _cmd_perpbis, _perpbis_state, _perpbis_state2, _cmd_regularpolygon, _cmd_anglebisector,
+    _bisector_state, _cmd_incenter, _incenter_state, _cmd_incircle, _incircle_state, _cmd_centroid,
+    _centroid_state, _cmd_randpointin, _randpointin_state, _cmd_fitline, _conic_coeffs,
+    _cmd_tangent_conic, _tangent_conic_state_i, _tangent_arc_state, _tangent_conic_state, _ix_lin_conic,
+    _pred_dir, _pred_scale, _numeric_verdict, _prove_cmd, _cmd_areparallel, _cmd_areperpendicular,
+    _cmd_arecollinear, _cmd_pointoncircle, _cmd_pointonpath, _pop_state, _poc_state, _cmd_arc,
+    _cmd_semicircle, _semicircle_state, _cmd_sector, _arc_state
 )
 
 # 三维命令（P2 结构拆分（P2 结构拆分）
 from .commands3d import (  # noqa: F401
-    _cmd_bbox,
-    _bbox_state,
-    _cmd_covariance,
-    _cmd_convexhull,
-    _convexhull_state,
-    _surface_eval,
-    _cmd_surfacepoint,
-    _surfacepoint_state,
-    _cmd_surfaceproject,
-    _surfaceproject_state,
-    _cmd_fitsphere,
-    _polygon_area,
-    _cmd_area,
-    _cmd_volume,
-    _cmd_surface,
-    _surface_compute,
-    _cmd_mesh,
-    _cmd_surface_param,
-    _surface_param_compute,
-    _cmd_implicit_surface,
-    _implicit_surface_compute,
-    _cmd_fitplane,
-    _cmd_sphere,
-    _cmd_plane,
-    _plane_state,
-    _cmd_cube,
-    _poly3_points,
-    _poly_register,
-    _number_arg,
-    _vector3_arg,
-    _infinite_cone_state,
-    _cmd_cone,
-    _cmd_cylinder,
-    _cmd_prism,
-    _cmd_pyramid,
-    _cmd_tetrahedron,
-    _cmd_octahedron,
-    _cmd_hexahedron,
-    _cmd_icosahedron,
-    _cmd_dodecahedron,
+    _cmd_bbox, _bbox_state, _cmd_covariance, _cmd_convexhull, _convexhull_state, _surface_eval,
+    _cmd_surfacepoint, _surfacepoint_state, _cmd_surfaceproject, _surfaceproject_state, _cmd_fitsphere,
+    _polygon_area, _cmd_area, _cmd_volume, _cmd_surface, _surface_compute, _cmd_mesh,
+    _cmd_surface_param, _surface_param_compute, _cmd_implicit_surface, _implicit_surface_compute,
+    _cmd_fitplane, _cmd_sphere, _cmd_plane, _plane_state, _cmd_cube, _poly3_points, _poly_register,
+    _number_arg, _vector3_arg, _infinite_cone_state, _cmd_cone, _cmd_cylinder, _cmd_prism, _cmd_pyramid,
+    _cmd_tetrahedron, _cmd_octahedron, _cmd_hexahedron, _cmd_icosahedron, _cmd_dodecahedron
 )
 
 # 统计图命令（P2 结构拆分（P2 结构拆分）
 from .charts import (  # noqa: F401
-    _cmd_piechart,
-    _cmd_histogram,
-    _cmd_boxplot,
-    _cmd_barchart,
-    _cmd_linechart,
-    _cmd_scatterplot,
-    _cmd_dotplot,
-    _cmd_barchart3d,
-    _cmd_scatterplot3d,
-    _cmd_surfacechart3d,
-    _anon_list,
+    _cmd_piechart, _cmd_histogram, _cmd_boxplot, _cmd_barchart, _cmd_linechart, _cmd_scatterplot,
+    _cmd_dotplot, _cmd_barchart3d, _cmd_scatterplot3d, _cmd_surfacechart3d, _anon_list
 )
 from .cmd_util import _NESTED_CALL_RE, _NESTED_MAX_DEPTH  # noqa: F401
 
 # 四张注册表已抽到 kernel/registry.py（P2 结构拆分）
 from .registry import ALIASES, COMMANDS, DISPLAY_NAMES, RESULT_KINDS  # noqa: F401
+from .registry import _label_kind, _result_kind  # noqa: F401（命名助手随注册表）
+from .nested import _DetachedConstruction, _eval_nested  # noqa: F401（嵌套命令求值器）
 from .elements import (
     EPSILON, Geo3D, GeoAngle, GeoArc, GeoBarChart, GeoBoolean, GeoChart2D, GeoCircle, GeoConic,
-    GeoDotPlot, GeoLineChart, GeoScatterPlot,
-    GeoBoxPlot, GeoComplex, GeoCurve, GeoError, GeoFunction, GeoImage, GeoImplicit, GeoInequality, GeoLine, GeoList,
-    GeoLocus, GeoMatrix, GeoNumber, GeoPolar, GeoPoint, GeoPolygon, GeoPolyline,
-    GeoPie, GeoRay, GeoResult, GeoSegment, GeoSumRect, GeoText, GeoVector,
+    GeoDotPlot, GeoLineChart, GeoScatterPlot, GeoBoxPlot, GeoComplex, GeoCurve, GeoError, GeoFunction,
+    GeoImage, GeoImplicit, GeoInequality, GeoLine, GeoList, GeoLocus, GeoMatrix, GeoNumber, GeoPolar,
+    GeoPoint, GeoPolygon, GeoPolyline, GeoPie, GeoRay, GeoResult, GeoSegment, GeoSumRect, GeoText,
+    GeoVector
 )
 from .parser import _split_commas, eval_number, parse_line
 
 # 3D 几何算法已抽到 kernel/geometry3d.py（P2 结构拆分）；此处 re-export 保持调用方兼容
 from .geometry3d import (  # noqa: F401
-    _tag3d,
-    _z_of,
-    _has_z,
-    _dist3,
-    _solve2,
-    _line_ends,
-    _circle3d_basis,
-    _ray_triangle,
-    _frame_from_axis,
-    _normalize_mesh,
-    _newell_normal,
-    _mesh_volume,
-    _mesh_area,
-    _solid_volume,
-    _solid_area,
-    _is_solid_el,
-    _solid_planes,
-    _clip_polyhedron,
-    _ix_plane_plane,
-    _ix_line_plane,
-    _ix_line3d_plane,
-    _ix_solid_plane,
-    _ix_sphere_sphere,
-    _ix_sphere_circle3d,
-    _ix_circle3d_circle3d,
-    _ix_circle3d_plane,
-    _ix_circle3d_solid,
-    _ix_sphere_solid,
-    _ix_sphere_plane,
-    _ix_solid_solid,
-    _ix_solid_line,
-    _ix_sphere_line,
-    _poly_state,
+    _tag3d, _z_of, _has_z, _dist3, _solve2, _line_ends, _circle3d_basis, _ray_triangle,
+    _frame_from_axis, _normalize_mesh, _newell_normal, _mesh_volume, _mesh_area, _solid_volume,
+    _solid_area, _is_solid_el, _solid_planes, _clip_polyhedron, _ix_plane_plane, _ix_line_plane,
+    _ix_line3d_plane, _ix_solid_plane, _ix_sphere_sphere, _ix_sphere_circle3d, _ix_circle3d_circle3d,
+    _ix_circle3d_plane, _ix_circle3d_solid, _ix_sphere_solid, _ix_sphere_plane, _ix_solid_solid,
+    _ix_solid_line, _ix_sphere_line, _poly_state
 )
 
 # 立体构造数学已抽到 kernel/solids.py（P2 结构拆分）；re-export 保持调用方兼容
 from .solids import _PHI as _solids_PHI  # noqa: F401
 from .solids import (  # noqa: F401
-    _sphere_check,
-    _sphere_state,
-    _sphere_state_r,
-    _sphere_state_fixed,
-    _cube_seg_pts,
-    _cube_from_edge,
-    _cube_from_poly,
-    _cube_build,
-    _cube_state,
-    _cube_state2,
-    _ortho_frame,
-    _with_analytic,
-    _cone_mesh_axis,
-    _cone_from_circle_state,
-    _cone_apex_center_radius_state,
-    _cone_state,
-    _cyl_mesh_axis,
-    _cylinder_from_circle_state,
-    _cylinder_centers_radius_state,
-    _cylinder_state,
-    _prism_state,
-    _pyramid_state,
-    _tetrahedron_state,
-    _regular_polyhedron,
-    _octahedron_state,
-    _hexahedron_state,
-    _icosahedron_state,
-    _dodecahedron_state,
+    _sphere_check, _sphere_state, _sphere_state_r, _sphere_state_fixed, _cube_seg_pts, _cube_from_edge,
+    _cube_from_poly, _cube_build, _cube_state, _cube_state2, _ortho_frame, _with_analytic,
+    _cone_mesh_axis, _cone_from_circle_state, _cone_apex_center_radius_state, _cone_state,
+    _cyl_mesh_axis, _cylinder_from_circle_state, _cylinder_centers_radius_state, _cylinder_state,
+    _prism_state, _pyramid_state, _tetrahedron_state, _regular_polyhedron, _octahedron_state,
+    _hexahedron_state, _icosahedron_state, _dodecahedron_state
 )
 
 # 二维几何基元与变换已抽到 kernel/geo2d.py（P2 结构拆分）；re-export 保持调用方兼容
 from .geo2d import (  # noqa: F401
-    _linear,
-    _line_through,
-    _reflect_point_line,
-    _reflect_point_point,
-    _rotate,
-    _line_state,
-    _dilate_pt,
-    _transform_fn,
-    _reflect_lin,
-    _reflect_lin_xy,
-    _reflected_line,
-    _reflected_point_line,
-    _rotated_line,
-    _fn_state,
-    _conic_t,
-    _dilated_line,
+    _linear, _line_through, _reflect_point_line, _reflect_point_point, _rotate, _line_state, _dilate_pt,
+    _transform_fn, _reflect_lin, _reflect_lin_xy, _reflected_line, _reflected_point_line, _rotated_line,
+    _fn_state, _conic_t, _dilated_line
 )
 
 # 统计/拟合已抽到 kernel/stats.py（P2 结构拆分）；re-export 保持调用方兼容
 from .stats import (  # noqa: F401
-    _median,
-    _mode,
-    _variance,
-    _fit_silent_fit,
-    _fitline_state,
-    _barchart_state,
-    _fitsphere_state,
-    _fitplane_state,
+    _median, _mode, _variance, _fit_silent_fit, _fitline_state, _barchart_state, _fitsphere_state,
+    _fitplane_state
 )
 from .stats import (  # noqa: F401
-    _bars3d_mesh, _dotplot_state, _linechart_state, _scatter3d_mesh, _scatter_state,
-    _surface3d_mesh,
+    _bars3d_mesh, _dotplot_state, _linechart_state, _scatter3d_mesh, _scatter_state, _surface3d_mesh
 )
 from .stats import _REF_DOT, _REF_X  # noqa: F401
 from .tolerance import EPSILON, TIGHT, COORD, ZERO_SQ, LOOSE, COARSE, NEGLIGIBLE, ROOT_TOL, OPT_XATOL, OPT_FATOL  # 统一数值容差（见 kernel/tolerance.py）
@@ -509,76 +195,6 @@ from .tolerance import EPSILON, TIGHT, COORD, ZERO_SQ, LOOSE, COARSE, NEGLIGIBLE
 # 嵌套命令最大层数（防御深层递归/自引用）
 
 
-class _DetachedConstruction:
-    """嵌套命令求值用的影子构造。
-
-    依赖仍从父构造的 elements 查找，但新元素**不注册**（匿名辅助对象：
-    不进对象列表 / 撤销快照 / 序列化），只作为依赖挂在父元素的 deps 上。
-    父元素的 defn 保留用户原始写法（如 `k=Cone[Circle[O,2],3]`），
-    因此撤销、.ggk/.ggb 往返重放时会重新求值出同样的匿名依赖。
-    """
-
-    def __init__(self, cons, depth: int) -> None:
-        self._cons = cons
-        self.elements = cons.elements       # 共享查找表（只读使用）
-        self.created: List = []
-        self._seq = 0
-        self._nested_depth = depth
-
-    def add(self, el):
-        self.created.append(el)
-        if not getattr(el, "free", False):
-            el.compute()
-        return el
-
-    def auto_label(self, kind):
-        self._seq += 1
-        return "_n%d_%s" % (self._seq, kind)
-
-    def _recompute(self, el):
-        return self._cons._recompute(el)
-
-    def get(self, label):
-        return self._cons.get(label)
-
-    def push_history(self):
-        pass
-
-
-def _eval_nested(cons, text: str):
-    """就地求值一个嵌套命令调用，返回匿名辅助元素（不注册）。"""
-    t = text.strip()
-    m = _NESTED_CALL_RE.match(t)
-    if m is None:
-        raise GeoError("无法解析嵌套命令: " + t)
-    depth = _nested_depth(cons)
-    if depth >= _NESTED_MAX_DEPTH:
-        raise GeoError("嵌套命令层数过深（最多 %d 层）: %s" % (_NESTED_MAX_DEPTH, t))
-    name, inner = m.group(1), m.group(2)
-    lname = name.lower()
-    lname = ALIASES.get(lname, lname)          # 中文别名归一化
-    handler = COMMANDS.get(lname)
-    if handler is None:
-        raise GeoError("嵌套命令中不支持命令 " + name + "：请先用一条独立语句创建该对象，再用其标签作为参数")
-    args = [a for a in _split_commas(inner) if a != ""]
-    shadow = _DetachedConstruction(cons, depth + 1)
-    label = shadow.auto_label(_label_kind(cons, lname, args))
-    defn = label + "=" + t
-    if lname in ("intersect", "extremum", "focus", "tangent"):
-        created = handler(shadow, defn, args, None)
-    else:
-        created = handler(shadow, defn, args)
-    els = created if isinstance(created, list) else [created]
-    els = [e for e in els if e is not None]
-    if not els:
-        raise GeoError("嵌套命令未产生结果: " + t)
-    res = els[0]
-    if getattr(res, "error", None):
-        raise GeoError("嵌套命令失败 " + t + "：" + str(res.error))
-    return res
-
-
-set_nested_evaluator(_eval_nested)   # 供 cmd_util._lookup 就地求值嵌套命令
 
 
 # ---------------------------------------------------------------------------
@@ -1367,42 +983,6 @@ def _sol_lo(part: str) -> float:
 
 # ---------------------------------------------------------------------------
 # 结果类型提示（自动标签用）
-# ---------------------------------------------------------------------------
-
-
-
-def _result_kind(name: str) -> str:
-    """命令的默认结果类型（自动标签、类型提示用）。表见模块级 RESULT_KINDS（单一来源，可检测）。"""
-    return RESULT_KINDS.get(name, "point")
-
-
-def _label_kind(cons, lname: str, args) -> str:
-    """自动标签用的「命名类型」。
-
-    与结果类型基本一致，唯一例外是反演（Invert）：它可能产生点，也可能是圆/直线/
-    曲线/多边形等图形。点反演仍按点命名（A,B,C…），其余反演像用独立的 inv1,inv2…
-    前缀（小写开头，见 Construction.auto_label）——避免图形被命名成"下一个点"。
-    """
-    # 三维统计图：虽然结果类型是 geo3d，但用独立的命名前缀（bc3_/sc3_/sf3_）便于识别
-    _chart3d = {"barchart3d": "chart3dbar", "scatterplot3d": "chart3dscatter",
-                "surfacechart3d": "chart3dsurface"}
-    if lname in _chart3d:
-        return _chart3d[lname]
-    if lname != "invert":
-        return _result_kind(lname)
-    try:
-        el = cons.elements.get(args[0].strip()) if args else None
-        if el is None and args:
-            el = _lookup(cons, args[0])          # 支持嵌套命令参数
-        if el is not None and getattr(el, "kind", "") == "point":
-            return "point"
-    except Exception:
-        pass
-    return "invert"
-
-
-# ---------------------------------------------------------------------------
-# 命令表与主入口
 # ---------------------------------------------------------------------------
 
 

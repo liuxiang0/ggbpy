@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from .cmd_util import _lookup
+
 from .calculus import _cmd_derivative, _cmd_divisors, _cmd_extremum, _cmd_factorslist, _cmd_fitexpr, _cmd_integral, _cmd_isprime, _cmd_normaldist, _cmd_rectsum, _cmd_root, _cmd_sequence, _cmd_solveineq
 from .centers import _cmd_circumcenter, _cmd_excenter, _cmd_orthocenter
 from .charts import _cmd_barchart, _cmd_barchart3d, _cmd_boxplot, _cmd_dotplot, _cmd_histogram, _cmd_linechart, _cmd_piechart, _cmd_scatterplot, _cmd_scatterplot3d, _cmd_surfacechart3d
@@ -339,3 +341,38 @@ COMMANDS = {
     "conj": _cmd_conj, "conjugate": _cmd_conj,
     "re": _cmd_re, "im": _cmd_im, "arg": _cmd_arg, "abs": _cmd_complex_abs,
 }
+
+
+def _result_kind(name: str) -> str:
+    """命令的默认结果类型（自动标签、类型提示用）。表见模块级 RESULT_KINDS（单一来源，可检测）。"""
+    return RESULT_KINDS.get(name, "point")
+
+
+def _label_kind(cons, lname: str, args) -> str:
+    """自动标签用的「命名类型」。
+
+    与结果类型基本一致，唯一例外是反演（Invert）：它可能产生点，也可能是圆/直线/
+    曲线/多边形等图形。点反演仍按点命名（A,B,C…），其余反演像用独立的 inv1,inv2…
+    前缀（小写开头，见 Construction.auto_label）——避免图形被命名成"下一个点"。
+    """
+    # 三维统计图：虽然结果类型是 geo3d，但用独立的命名前缀（bc3_/sc3_/sf3_）便于识别
+    _chart3d = {"barchart3d": "chart3dbar", "scatterplot3d": "chart3dscatter",
+                "surfacechart3d": "chart3dsurface"}
+    if lname in _chart3d:
+        return _chart3d[lname]
+    if lname != "invert":
+        return _result_kind(lname)
+    try:
+        el = cons.elements.get(args[0].strip()) if args else None
+        if el is None and args:
+            el = _lookup(cons, args[0])          # 支持嵌套命令参数
+        if el is not None and getattr(el, "kind", "") == "point":
+            return "point"
+    except Exception:
+        pass
+    return "invert"
+
+
+# ---------------------------------------------------------------------------
+# 命令表与主入口
+# ---------------------------------------------------------------------------
