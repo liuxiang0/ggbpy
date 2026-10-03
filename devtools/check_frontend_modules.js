@@ -164,8 +164,11 @@ function checkFile(file) {
 }
 
 const args = process.argv.slice(2);
-const files = args.length ? args : ['keyboard.js', 'exam.js', 'panels.js', 'draw2d.js']
-  .map(f => path.join(__dirname, '..', 'server', 'static', f));
+const STATIC = path.join(__dirname, '..', 'server', 'static');
+// 默认检查所有模块文件（排除 app.js 主程序与纯数据文件）→ 新模块自动纳入
+const EXCLUDE = new Set(['app.js', 'data.js', 'i18n.js']);
+const files = args.length ? args : fs.readdirSync(STATIC).filter(f => f.endsWith('.js') && !EXCLUDE.has(f))
+  .sort().map(f => path.join(STATIC, f));
 let bad = 0;
 for (const f of files) {
   if (!fs.existsSync(f)) { console.log('跳过（不存在）: ' + f); continue; }

@@ -136,6 +136,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第三十七批（2026-10-03 · 前端统计图渲染外置）**：
+  - **`static/charts.js`（约 260 行）**：六类二维统计图绘制与命中框（`drawBarChart`/`drawBoxPlot`/`drawPieChart`/`drawLineChart`/`drawScatterPlot`/`drawDotPlot` + `chartBoxes`/`chartOff`/`chartBoxPut`/`chartAt`/`usableCanvasRect`）外置为 `window.GGB_CHARTS.create(env)`；`sxp/syp` 作为 draw2d 的**注入助手**（不搬迁），`chartBoxes` 以对象引用共享（模块内做属性写入，无需 env.set）
+  - **app.js 5394 → 5222 行**（前端累计 **5979 → 5222**，−757 行）；加载顺序 `i18n → data → keyboard → exam → panels → draw2d → charts → app`
+  - **JS 守卫改为动态扫描** `static/*.js`（排除 app.js/data.js/i18n.js）→ 新模块自动纳入，现覆盖 5 个模块
+  - 浏览器验证：统计图相关断言全过（五种图拖拽命中盒、饼图扇区、折线/散点/点图颜色、整图拖动位移=鼠标位移、撤销回退、悬停仅显名称）
+  - 检测：模块边界 242 → **247**
 - **第三十六批（2026-10-03 · 前端 draw2d 拆分 + JS 作用域守卫）**：
   - **`static/draw2d.js`（约 190 行）**：二维画布绘制基元（`drawGrid`/`strokeSeg`/`strokePoly`/`drawArrow`/`sxp`/`syp`/`wxp`/`wyp`/`niceStep`）外置为 `window.GGB_D2.create(env)`；`app.js` 5394 行（前端累计 5979 → 5394），加载顺序 `i18n → data → keyboard → exam → panels → draw2d → app`
   - **`devtools/extract_frontend_group.py`（常驻工具）**：前端函数组「耦合分析 → 生成模块 → 改 app.js/index.html」一键完成；与内核 `extract_group.py` 对应
@@ -239,7 +245,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 242 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1399 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 247 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1404 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

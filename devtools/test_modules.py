@@ -426,6 +426,22 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B5. 前端：统计图渲染模块（static/charts.js） ===")
+ch_path = ROOT / "server" / "static" / "charts.js"
+ch_src = ch_path.read_text(encoding="utf-8") if ch_path.exists() else ""
+check("charts.js 存在", ch_path.exists(), "")
+check("app.js 通过 window.GGB_CHARTS 装配（原绘图体已移走）",
+      "window.GGB_CHARTS" in app_src and "ctx.arc(pcx, pcy" not in app_src
+      and "function drawPieChart() { return _charts" in app_src, "")
+check("index.html 在 app.js 之前加载 charts.js",
+      index_src.index("/static/charts.js") < index_src.index("/static/app.js"), "")
+check("charts.js 含六类统计图绘制",
+      all(("function %s(" % f) in ch_src for f in ("drawBarChart", "drawBoxPlot", "drawPieChart",
+                                                    "drawLineChart", "drawScatterPlot", "drawDotPlot")), "")
+check("charts.js 未夺走 draw2d 的转发助手（sxp/syp 为注入）",
+      "var sxp = env.sxp;" in ch_src and "var syp = env.syp;" in ch_src
+      and "function sxp() { return _draw2d" in app_src, "")
+
 print("\n=== B4. 前端：绘制基元模块（static/draw2d.js）+ JS 作用域守卫 ===")
 d2_path = ROOT / "server" / "static" / "draw2d.js"
 d2_src = d2_path.read_text(encoding="utf-8") if d2_path.exists() else ""
@@ -440,8 +456,8 @@ check("draw2d 未夺走 panels 的转发助手（fmtNum 仍是 panels 包装）"
       and "var fmtNum = env.fmtNum;" in d2_src, "")
 # JS 作用域守卫：四个模块全部标识符可解析
 _sub = subprocess.run(["node", "devtools/check_frontend_modules.js"], cwd=str(ROOT), capture_output=True, text=True)
-check("前端模块 JS 作用域守卫（全部标识符可解析）",
-      _sub.returncode == 0 and _sub.stdout.count("OK") == 4, _sub.stdout.strip().replace("\n", " | ")[:80])
+check("前端模块 JS 作用域守卫（全部标识符可解析，动态扫描 static/*.js）",
+      _sub.returncode == 0 and _sub.stdout.count("OK") >= 5, _sub.stdout.strip().replace("\n", " | ")[:80])
 # 守卫自检：删掉 drawGrid 的 cssH 注入必须被抓到
 _mut = re.sub(r"var C = env\.get\('C'\), cssH = env\.get\('cssH'\),", "var C = env.get('C'),", d2_src, count=1)
 if _mut != d2_src:
