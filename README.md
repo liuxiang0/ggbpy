@@ -136,6 +136,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第二十八批（2026-10-03 · 解开命令层循环依赖 + 微积分命令抽出）**：
+  - **`kernel/cmd_util.py`（命令层共享工具，约 200 行）**：14 个参数解析/元素构造助手（`_resolve`/`_lookup`/`_list_arg`/`_point_arg`/`_mk`/`_auto`/`_num_deps`/`_num_series`/`label_of`…）+ 嵌套命令常量（`_NESTED_CALL_RE`/`_NESTED_MAX_DEPTH`）迁出；**用钩子解开循环依赖** —— `_lookup` 遇到嵌套命令时调用 `set_nested_evaluator()` 注入的 `commands._eval_nested`，本模块不依赖命令注册表
+  - **`kernel/calculus.py`（22 函数 / 611 行）**：微积分与符号计算命令（Derivative/Integral/Root/Extremum/黎曼和/序列与数论/正态分布/SolveIneq/FitExpr 及解法格式化助手）整体抽出，只依赖 `elements`/`tolerance`/`parser`/`cmd_util`；`commands.py` 通过 re-export 与命令表继续引用
+  - **规模收益**：`commands.py` **6250 → 5548 行**（−702，拆分前 7867 行 → 累计 −29%）
+  - **守卫升级（AST 级）**：新增「抽出模块内所有 `name(...)` 调用必须已定义/导入/内建」检查（全树收集导入以兼容惰性导入）—— 本轮它先于人工发现漏导入风险，实际抓到 `eval_number`/`label_of`/`re` 三处漏项；同时把带类型注解的赋值识别为定义
+  - 检测：模块边界 63 → **87**（cmd_util 10 / calculus 7 / AST 守卫 7）
 - **第二十七批（2026-10-03 · 第十八批剩余拆分：结构收敛 + 前端面板）**：
   - **元素 data 载荷集中定义（`kernel/schemas.py`）**：REVIEW 指出 `data` 约定散落各处（内核二十余处内联 objtype 字典），现统一为具名 builder（`line3d`/`segment3d`/`plane`/`sphere`/`circle3d`/`section`/`curve3d`/`polyhedron`/`surface`/`cube`/`chart3d`，支持 `**extra` 追加 lo/hi、points、grid、expr、param、center、axes、ranges、fit 等键）；`commands.py`/`geometry3d.py`/`solids.py`/`stats.py` 共 **26 处**改为调用 builder，**键顺序与载荷完全不变**；`test_modules.py` 新增守卫：kernel 内再出现内联 objtype 字面量即失败
   - **前端数学键盘面板外置（`static/keyboard.js`）**：47 个按键的 HTML 仍在 `index.html`，行为抽为 `window.GGB_KB`（展开/收起、插入/退格/清空/Enter、目标输入框 `#cas-cmd` 优先）；`app.js` **5797 → 5745 行**，加载顺序 `i18n.js → data.js → keyboard.js → app.js`
@@ -186,7 +192,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 63 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1220 断言
+bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 87 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 64 = 1244 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

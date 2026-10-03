@@ -14,6 +14,50 @@ import re
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import schemas
+from .cmd_util import (  # 命令层共享工具（自本模块抽出）
+    _nested_depth,
+    label_of,
+    _label_of,
+    _mk,
+    _auto,
+    _resolve,
+    _lookup,
+    _tuple_parts_any,
+    _list_arg,
+    _point_arg,
+    _num_deps,
+    _num_list_items,
+    _num_series,
+    _elem_or_point,
+    _is_segment_el,
+)
+from .cmd_util import set_nested_evaluator
+# 微积分/符号计算命令已抽到 kernel/calculus.py；re-export 保持调用方兼容
+from .calculus import (  # noqa: F401
+    _fmt,
+    _feval,
+    _roots_1d,
+    _cmd_of,
+    _cmd_derivative,
+    _cmd_integral,
+    _cmd_root,
+    _root_state,
+    _cmd_extremum,
+    _cmd_rectsum,
+    _int_values,
+    _cmd_isprime,
+    _cmd_divisors,
+    _cmd_factorslist,
+    _parse_sympy,
+    _fit_expr,
+    _cmd_fitexpr,
+    _cmd_sequence,
+    _cmd_normaldist,
+    _cmd_solveineq,
+    _fmt_sol,
+    _fmt_sol_num,
+)
+from .cmd_util import _NESTED_CALL_RE, _NESTED_MAX_DEPTH  # noqa: F401
 from .elements import (
     EPSILON, Geo3D, GeoAngle, GeoArc, GeoBarChart, GeoBoolean, GeoChart2D, GeoCircle, GeoConic,
     GeoDotPlot, GeoLineChart, GeoScatterPlot,
@@ -134,9 +178,8 @@ from .tolerance import EPSILON, TIGHT, COORD, ZERO_SQ, LOOSE, COARSE, NEGLIGIBLE
 DEG = math.pi / 180.0
 
 # 形如 "Circle[O,2]" / "Plane[A,B,C]" 的嵌套命令调用（不含赋值号）
-_NESTED_CALL_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*\[(.*)\]$", re.S)
+# _NESTED_CALL_RE / _NESTED_MAX_DEPTH 已移至 kernel/cmd_util.py（此处 re-export）
 # 嵌套命令最大层数（防御深层递归/自引用）
-_NESTED_MAX_DEPTH = 4
 
 
 class _DetachedConstruction:
@@ -175,10 +218,6 @@ class _DetachedConstruction:
         pass
 
 
-def _nested_depth(cons) -> int:
-    return int(getattr(cons, "_nested_depth", 0))
-
-
 def _eval_nested(cons, text: str):
     """就地求值一个嵌套命令调用，返回匿名辅助元素（不注册）。"""
     t = text.strip()
@@ -212,50 +251,12 @@ def _eval_nested(cons, text: str):
     return res
 
 
-def _lookup(cons, s: str):
-    """按标签查元素；参数是嵌套命令时即时求值（匿名辅助，不注册）。查不到返回 None。"""
-    key = s.strip()
-    el = cons.elements.get(key)
-    if el is not None:
-        return el
-    if _NESTED_CALL_RE.match(key):
-        return _eval_nested(cons, key)
-    return None
+set_nested_evaluator(_eval_nested)   # 供 cmd_util._lookup 就地求值嵌套命令
 
 
 # ---------------------------------------------------------------------------
 # 解析辅助
 # ---------------------------------------------------------------------------
-
-def _resolve(cons, s: str, kinds: Optional[Tuple[str, ...]] = None):
-    """把参数字符串解析为元素；kinds 非空时校验类型。"""
-    s = s.strip()
-    el = _lookup(cons, s)
-    if el is None:
-        raise GeoError("找不到对象 " + s)
-    if kinds and el.kind not in kinds:
-        raise GeoError(s + " 的类型是 " + el.kind + "，这里需要 " + "/".join(kinds))
-    return el
-
-
-def _point_arg(cons, s: str):
-    """命令参数中的点：可以是标签，也可以是 (x,y) 字面量（自动创建隐藏辅助点）。"""
-    s = s.strip()
-    el = _lookup(cons, s)
-    if el is not None:
-        if el.kind != "point":
-            raise GeoError(s + " 不是点")
-        return el
-    if s.startswith("("):
-        parts = _tuple_parts_any(s)
-        vals = [eval_number(cons, p) for p in parts]
-        z = vals[2] if len(vals) == 3 else None
-        # 匿名辅助点：不注册进构造（不可见、不参与撤销/序列化），仅作依赖
-        el = GeoPoint("_h", s, vals[0], vals[1], True, z)
-        el.visible = False
-        return el
-    raise GeoError("找不到点 " + s)
-
 
 def _resolve_vector(cons, s: str) -> Tuple[float, float]:
     """参数可以是向量元素或 (a,b) 元组，返回 (dx, dy)。"""
@@ -293,18 +294,6 @@ def _tuple_parts(s: str) -> List[str]:
     parts = inner.split(",")
     if len(parts) != 2:
         raise GeoError("元组需要恰好两个分量: " + s)
-    return [p.strip() for p in parts]
-
-
-def _tuple_parts_any(s: str) -> List[str]:
-    """任意分量数的元组（2 或 3 个分量）。"""
-    s = s.strip()
-    if not (s.startswith("(") and s.endswith(")")):
-        raise GeoError("需要 (a,b) 形式: " + s)
-    inner = s[1:-1]
-    parts = inner.split(",")
-    if len(parts) not in (2, 3):
-        raise GeoError("元组需要两个或三个分量: " + s)
     return [p.strip() for p in parts]
 
 
@@ -378,24 +367,6 @@ def _circumcircle(p1, p2, p3) -> Optional[Tuple[float, float, float]]:
 # ---------------------------------------------------------------------------
 # 创建派生元素的公共闭包工厂
 # ---------------------------------------------------------------------------
-
-def _mk(cons, cls, kind_for_label, defn, deps, fn):
-    label = defn.split("=")[0].split(":")[0].strip()
-    if not label or label[0].isdigit():
-        raise GeoError("内部错误: 派生对象缺标签")
-    el = cls(label, defn)
-    el.free = False
-    el.set_deps(deps, fn)
-    return cons.add(el)
-
-
-def _auto(cons, cls, kind, defn, deps, fn):
-    label = cons.auto_label(kind)
-    el = cls(label, defn)
-    el.free = False
-    el.set_deps(deps, fn)
-    return cons.add(el)
-
 
 # ---------------------------------------------------------------------------
 # 各命令实现（返回新建元素）
@@ -1095,13 +1066,6 @@ def _ix_fn_lin(cons, defn, f, lin, idx):
     return created
 
 
-def _label_of(defn: str) -> str:
-    idx = defn.find("=")
-    if idx == -1:
-        idx = defn.find(":")
-    return defn[:idx].strip() if idx != -1 else defn.strip()
-
-
 def _ix_linlin(o1, o2):
     a1, b1, c1 = _linear(o1)
     a2, b2, c2 = _linear(o2)
@@ -1382,11 +1346,6 @@ def _mk_free(cons, cls, label, defn, *vals):
     return cons.add(el)
 
 
-def _fmt(v: float) -> str:
-    s = ("%.6f" % v).rstrip("0").rstrip(".")
-    return s if s not in ("", "-0") else "0"
-
-
 # ---------------------------------------------------------------------------
 # 函数（SymPy 解析）
 # ---------------------------------------------------------------------------
@@ -1441,64 +1400,6 @@ def _function_refs(cons, body: str) -> List:
 # 数值求根（函数求交 / Root / Extremum 共用）
 # ---------------------------------------------------------------------------
 
-def _feval(f, xi: float):
-    """函数 f 在 xi 处的数值。"""
-    return f._eval1(xi)
-
-
-def _roots_1d(expr, x, xmin: float = -60.0, xmax: float = 60.0, n: int = 900):
-    """求 expr(x)=0 在区间内的全部实根（符号优先，数值兜底）。返回排序后的 x 列表。"""
-    import sympy
-    roots: List[float] = []
-    # 符号解（多项式等）
-    try:
-        sol = sympy.solve(expr, x)
-        for s in sol:
-            v = complex(sympy.N(s))
-            if abs(v.imag) < COORD and xmin - COARSE <= v.real <= xmax + COARSE:
-                roots.append(float(v.real))
-    except Exception:
-        pass
-    if roots:
-        roots = sorted(set(round(r, 9) for r in roots))
-        return roots
-    # 数值扫描 + 二分
-    import numpy as np
-    try:
-        lam = sympy.lambdify(x, expr, "numpy")
-        xs = np.linspace(xmin, xmax, n)
-        ys = lam(xs)
-    except Exception:
-        return []
-    for i in range(n - 1):
-        y1, y2 = ys[i], ys[i + 1]
-        if not (np.isfinite(y1) and np.isfinite(y2)):
-            continue
-        if y1 == 0.0:
-            roots.append(float(xs[i]))
-        elif y1 * y2 < 0.0:
-            a, b = float(xs[i]), float(xs[i + 1])
-            fa = y1
-            for _ in range(60):
-                mid = (a + b) / 2.0
-                fm = float(lam(mid))
-                if not np.isfinite(fm):
-                    break
-                if fa * fm <= 0.0:
-                    b, fb = mid, fm
-                else:
-                    a, fa = mid, fm
-                if abs(b - a) < ROOT_TOL:
-                    break
-            roots.append((a + b) / 2.0)
-    # 去重
-    dedup: List[float] = []
-    for r in sorted(roots):
-        if not dedup or abs(r - dedup[-1]) > LOOSE:
-            dedup.append(r)
-    return dedup
-
-
 def _line_y_x(lin, x: float):
     """直线在 x 处的 y（垂直线返回 None）。"""
     a, b, c = _linear(lin)
@@ -1515,70 +1416,9 @@ def _fn_line_diff(f, lin, x):
     return f.expr - (-(a * x + c) / b)
 
 
-def _cmd_of(defn: str) -> str:
-    """从 defn（label=cmd）中取出 cmd 部分。"""
-    idx = defn.find("=")
-    if idx == -1:
-        idx = defn.find(":")
-    return defn[idx + 1:].strip() if idx != -1 else defn
-
-
 # ---------------------------------------------------------------------------
 # P1 命令：Derivative / Integral / Tangent / Root / Extremum
 # ---------------------------------------------------------------------------
-
-def _cmd_derivative(cons, defn, args):
-    if len(args) not in (1, 2):
-        raise GeoError("Derivative 需要 函数 和 可选的阶数")
-    f = _resolve(cons, args[0], ("function",))
-    n = 1
-    if len(args) == 2:
-        n = int(eval_number(cons, args[1]))
-        if n < 1:
-            raise GeoError("导数阶数必须 >= 1")
-    return _mk(cons, GeoFunction, "function", defn, [f],
-               lambda d: {"expr": __import__("sympy").diff(d[0].expr, d[0].xsym, n)})
-
-
-def _cmd_integral(cons, defn, args):
-    if len(args) == 1:
-        f = _resolve(cons, args[0], ("function",))
-        return _mk(cons, GeoFunction, "function", defn, [f],
-                   lambda d: {"expr": __import__("sympy").integrate(d[0].expr, d[0].xsym)})
-    if len(args) == 3:
-        f = _resolve(cons, args[0], ("function",))
-        dyn = []
-        a_fixed = b_fixed = None
-        a_el = _lookup(cons, args[1])
-        b_el = _lookup(cons, args[2])
-        if a_el is not None and a_el.kind == "number":
-            dyn.append(a_el)
-        else:
-            a_fixed = eval_number(cons, args[1])
-        if b_el is not None and b_el.kind == "number":
-            dyn.append(b_el)
-        else:
-            b_fixed = eval_number(cons, args[2])
-        deps = [f] + dyn
-
-        def fn(d):
-            import sympy
-            fn0 = d[0]
-            x = fn0.xsym
-            i = 1
-            a = a_fixed if a_fixed is not None else d[i].value if i < len(d) else a_fixed
-            if a_fixed is None:
-                a = d[i].value
-                i += 1
-            b = b_fixed if b_fixed is not None else d[i].value
-            try:
-                v = sympy.integrate(fn0.expr, (x, a, b))
-                return {"value": float(sympy.N(v))}
-            except Exception:
-                raise GeoError("定积分无法计算")
-        return _mk(cons, GeoNumber, "number", defn, deps, fn)
-    raise GeoError("Integral 需要 函数 或 函数+上下限")
-
 
 def _cmd_tangent(cons, defn, args, idx=None):
     if len(args) != 2:
@@ -1622,94 +1462,6 @@ def _tangent_state(f, x0: float):
     if not (math.isfinite(y0) and math.isfinite(m)):
         raise GeoError("切点处函数不可求值")
     return _line_state(-m, 1.0, -(y0 - m * x0))
-
-
-def _cmd_root(cons, defn, args):
-    f = _resolve(cons, args[0], ("function",))
-    if len(args) == 1:
-        # 全部根中最小的一个
-        return _mk(cons, GeoPoint, "point", defn, [f], lambda d: _root_state(d[0], None, None))
-    if len(args) == 2:
-        a = eval_number(cons, args[1])
-        return _mk(cons, GeoPoint, "point", defn, [f], lambda d: _root_state(d[0], a, None))
-    if len(args) == 3:
-        a = eval_number(cons, args[1])
-        b = eval_number(cons, args[2])
-        return _mk(cons, GeoPoint, "point", defn, [f], lambda d: _root_state(d[0], a, b))
-    raise GeoError("Root 需要 函数 或 函数+起点 或 函数+区间")
-
-
-def _root_state(f, a, b):
-    import sympy
-    x = f.xsym
-    roots = _roots_1d(f.expr, x)
-    if a is not None and b is not None:
-        cand = [r for r in roots if a - COORD <= r <= b + COORD]
-        if not cand:
-            raise GeoError("区间内没有根")
-        r = cand[0]
-    elif a is not None:
-        if not roots:
-            raise GeoError("没有根")
-        r = min(roots, key=lambda t: abs(t - a))
-    else:
-        if not roots:
-            raise GeoError("没有根")
-        r = roots[0]
-    y = _feval(f, r)
-    if y is None:
-        raise GeoError("根处函数未定义")
-    return {"x": r, "y": y}
-
-
-def _cmd_extremum(cons, defn, args, idx=None):
-    if len(args) != 3:
-        raise GeoError("Extremum 需要 函数 和 区间端点")
-    f = _resolve(cons, args[0], ("function",))
-    a = eval_number(cons, args[1])
-    b = eval_number(cons, args[2])
-
-    def build(i: int) -> GeoPoint:
-        el = GeoPoint("", defn)
-        el.free = False
-        el._i = i
-
-        def compute(deps):
-            import sympy
-            fn0 = deps[0]
-            x = fn0.xsym
-            diff = sympy.diff(fn0.expr, x)
-            roots = [r for r in _roots_1d(diff, x, a, b) if a - COORD <= r <= b + COORD]
-            if el._i >= len(roots):
-                raise GeoError("极值点数量不足")
-            r = roots[el._i]
-            y = _feval(fn0, r)
-            if y is None:
-                raise GeoError("极值点处函数未定义")
-            return {"x": r, "y": y}
-        el.set_deps([f], compute)
-        return el
-
-    import sympy
-    roots = [r for r in _roots_1d(sympy.diff(f.expr, f.xsym), f.xsym, a, b) if a - COORD <= r <= b + COORD]
-    if not roots:
-        raise GeoError("区间内没有极值点")
-    if idx is not None:
-        el = build(idx)
-        el.label = _label_of(defn)
-        el.defn = defn + "#" + str(idx)
-        return cons.add(el)
-    label = _label_of(defn)
-    cmd = _cmd_of(defn)
-    created = []
-    for i in range(len(roots)):
-        li = label if i == 0 else label + str(i)
-        d = li + "=" + cmd + "#" + str(i)
-        el = build(i)
-        el.label = li
-        el.defn = d
-        created.append(cons.add(el))
-    return created
 
 
 # ---------------------------------------------------------------------------
@@ -2244,112 +1996,6 @@ def _cmd_pmcc(cons, defn, args):
 # 教学批次3：黎曼和（LeftSum/RightSum/MidpointSum/LowerSum/UpperSum/RectangleSum/TrapezoidalSum）与饼图
 # ---------------------------------------------------------------------------
 
-def _cmd_rectsum(cons, defn, args, variant):
-    """矩形/梯形逼近：参数 函数, a, b, n（n 可为滑块引用）[, 采样 left/right/mid/0..1]。variant 见命令。"""
-    if len(args) not in (4, 5):
-        raise GeoError("黎曼和需要 函数, 下限, 上限, 分割数 n（可选 采样位置 left/right/mid/0..1）")
-    f = _resolve(cons, args[0], ("function",))
-    a = eval_number(cons, args[1])
-    b = eval_number(cons, args[2])
-    if b <= a:
-        raise GeoError("上限必须大于下限")
-    deps = [f]
-    n_el = None
-    n_txt = args[3].strip()
-    if n_txt in cons.elements and cons.elements[n_txt].kind == "number":
-        n_el = cons.elements[n_txt]
-        deps.append(n_el)
-        n_val = 1
-    else:
-        n_val = int(eval_number(cons, n_txt))
-        if n_val < 1 or n_val > 1000:
-            raise GeoError("分割数 n 需在 1..1000")
-    pos = None
-    if len(args) == 5:
-        p = args[4].strip()
-        if p == "left":
-            pos = 0.0
-        elif p == "right":
-            pos = 1.0
-        elif p == "mid":
-            pos = 0.5
-        else:
-            pos = float(eval_number(cons, p))
-            if not (0.0 <= pos <= 1.0):
-                raise GeoError("采样位置需在 0..1（或 left/right/mid）")
-    if variant == "rect":
-        mode = "left"
-        use_pos = None
-        if len(args) == 5 and pos is not None:
-            if abs(pos - 0.5) < COORD:
-                mode = "mid"
-            elif abs(pos - 1.0) < COORD:
-                mode = "right"
-            elif abs(pos) < COORD:
-                mode = "left"
-            else:
-                mode = "pos"
-                use_pos = pos
-    else:
-        mode = variant
-        use_pos = None
-    el = GeoSumRect(label_of(defn), defn)
-    el.free = False
-    el.mode = mode
-
-    def fn(d):
-        import numpy as np
-        n = int(round(d[1].value)) if n_el is not None else n_val
-        n = max(1, min(1000, n))
-        w = (b - a) / n
-
-        def ev(x):
-            return d[0]._eval1(x)
-        rects = []
-        total = 0.0
-        for i in range(n):
-            x0 = a + i * w
-            x1 = x0 + w
-            if variant == "trap":
-                y0 = ev(x0)
-                y1 = ev(x1)
-                if y0 is None or y1 is None:
-                    continue
-                rects.append([x0, x1, y0, y1])
-                total += w * (y0 + y1) / 2.0
-            elif variant in ("lower", "upper"):
-                ys = [ev(float(x)) for x in np.linspace(x0, x1, 9)]
-                ys = [v for v in ys if v is not None]
-                if not ys:
-                    continue
-                y = min(ys) if variant == "lower" else max(ys)
-                rects.append([x0, x1, y])
-                total += w * y
-            else:
-                if mode == "left":
-                    xi = x0
-                elif mode == "right":
-                    xi = x1
-                elif mode == "mid":
-                    xi = (x0 + x1) / 2.0
-                else:
-                    xi = x0 + (x1 - x0) * use_pos
-                y = ev(xi)
-                if y is None:
-                    continue
-                rects.append([x0, x1, y])
-                total += w * y
-        el.rects = rects
-        el.value = float(total)
-        el.n = n
-        el.a, el.b = a, b
-        return {}
-
-    el.set_deps(deps, fn)
-    el.compute()
-    return cons.add(el)
-
-
 def _cmd_piechart(cons, defn, args):
     """PieChart[数值列表]：扇形统计图（列表可内联 {..} 或标签）。"""
     if len(args) != 1:
@@ -2443,21 +2089,6 @@ def _cmd_iterationlist(cons, defn, args):
     return cons.add(el)
 
 
-def _int_values(cons, args):
-    """数论输入：支持多值或 {列表} → 整数列表。"""
-    items = []
-    for a in args:
-        s = a.strip()
-        if s.startswith("{"):
-            L = _list_arg(cons, a)
-            items.extend(int(round(float(v))) for v in L.items)
-        elif s in cons.elements and cons.elements[s].kind == "list":
-            items.extend(int(round(float(v))) for v in cons.elements[s].items)
-        else:
-            items.append(int(round(eval_number(cons, a))))
-    return items
-
-
 def _cmd_gcd(cons, defn, args):
     vals = _int_values(cons, args)
     if not vals:
@@ -2486,44 +2117,6 @@ def _cmd_lcm(cons, defn, args):
     el = GeoNumber(label_of(defn), defn, float(l))
     el.free = False
     return cons.add(el)
-
-
-def _cmd_isprime(cons, defn, args):
-    vals = _int_values(cons, args)
-    if len(vals) != 1:
-        raise GeoError("IsPrime 需要一个整数")
-    import sympy
-    el = GeoBoolean(label_of(defn), defn)
-    el.free = False
-    el.value = bool(sympy.isprime(vals[0]))
-    el.detail = ""
-    return cons.add(el)
-
-
-def _cmd_divisors(cons, defn, args):
-    vals = _int_values(cons, args)
-    if len(vals) != 1 or vals[0] < 1:
-        raise GeoError("Divisors 需要正整数")
-    import sympy
-    ds = sorted(sympy.divisors(vals[0]))
-    el = GeoList(label_of(defn), defn, [float(v) for v in ds], "number")
-    el.free = False
-    return cons.add(el)
-
-
-def _cmd_factorslist(cons, defn, args):
-    """FactorsList[n]：质因数（含重数）列表，如 420 → {2,2,3,5,7}。"""
-    vals = _int_values(cons, args)
-    if len(vals) != 1 or vals[0] < 2:
-        raise GeoError("FactorsList 需要 ≥2 的整数")
-    import sympy
-    out = []
-    for p, e in sorted(sympy.factorint(vals[0]).items()):
-        out.extend([float(p)] * e)
-    el = GeoList(label_of(defn), defn, out, "number")
-    el.free = False
-    return cons.add(el)
-
 
 
 def _cmd_randpointin(cons, defn, args):
@@ -2707,12 +2300,6 @@ def _curve_compute(xb: str, yb: str, pname: str, kind: str):
     return fn
 
 
-def _num_deps(cons, defn):
-    """defn 中引用的 number 对象（滑块等）→ deps。"""
-    return [e for lab, e in cons.elements.items()
-            if e.kind == "number" and re.search(r"\b" + re.escape(lab) + r"\b", defn)]
-
-
 def _cmd_parametric(cons, defn, args):
     """Parametric[x(t), y(t), t, tmin, tmax]（t 可省略，默认 t）。"""
     if len(args) == 5:
@@ -2763,25 +2350,6 @@ def _cmd_implicit(cons, defn, args):
 # P3：不等式 / 列表 / 统计 / 圆锥曲线 / 3D
 # ---------------------------------------------------------------------------
 
-def _parse_sympy(body, symbols, cons=None):
-    """sympy 解析（^ 与隐式乘法），可引用绘图区数值对象。"""
-    import sympy
-    ld = dict(symbols)
-    ld.update({"e": sympy.E, "pi": sympy.pi, "π": sympy.pi,
-               "ln": sympy.log, "log": sympy.log, "log10": lambda a: sympy.log(a, 10),
-               "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "exp": sympy.exp,
-               "sqrt": sympy.sqrt, "abs": sympy.Abs})
-    if cons is not None:
-        for lab, el in cons.elements.items():
-            if el.kind == "number":
-                ld[lab] = sympy.Float(el.value)
-    return sympy.parsing.sympy_parser.parse_expr(
-        body, local_dict=ld,
-        transformations=(sympy.parsing.sympy_parser.standard_transformations
-                         + (sympy.parsing.sympy_parser.implicit_multiplication_application,
-                            sympy.parsing.sympy_parser.convert_xor)))
-
-
 def _make_ineq_y(cons, label, op, body):
     import sympy
     x = sympy.Symbol("x")
@@ -2830,37 +2398,6 @@ def _list_defn(items, itemkind):
     if itemkind == "point3d":
         return "{" + ", ".join("(" + _fmt(a) + "," + _fmt(b) + "," + _fmt(c) + ")" for a, b, c in items) + "}"
     return "{" + ", ".join(_fmt(v) for v in items) + "}"
-
-
-def _list_arg(cons, s):
-    s = s.strip()
-    el = _lookup(cons, s)
-    if el is None and s.startswith("{"):
-        # 内联列表 → 匿名列表（不注册，仅作依赖）
-        from .parser import _split_brace, tokenize
-        parts = _split_brace(tokenize(s))
-        if parts and parts[0].startswith("("):
-            items = []
-            kind3 = None
-            for p in parts:
-                tp = _tuple_parts_any(p)
-                k = "point3d" if len(tp) == 3 else "point"
-                if kind3 is None:
-                    kind3 = k
-                elif kind3 != k:
-                    raise GeoError("列表元素分量数需一致（要么全是 (x,y)，要么全是 (x,y,z)）")
-                items.append(tuple(eval_number(cons, q) for q in tp))
-            el = GeoList("_hl", s, items, kind3)
-        else:
-            items = [eval_number(cons, p) for p in parts]
-            el = GeoList("_hl", s, items, "number")
-        el.visible = False
-        return el
-    if el is None:
-        raise GeoError("找不到对象 " + s)
-    if el.kind != "list":
-        raise GeoError(s + " 不是列表")
-    return el
 
 
 def _cmd_sum(cons, defn, args):
@@ -2930,77 +2467,6 @@ def _cmd_fitline(cons, defn, args):
     return _mk(cons, GeoLine, "line", defn, [L], lambda d: _fitline_state(d[0].items))
 
 
-def _fit_expr(cons, defn, body):
-    """Desmos 风格回归：y~a*x+b。数据 = 绘图区所有自由点，最小二乘拟合。"""
-    import sympy
-    m = re.match(r"^\s*y\s*~\s*(.+)$", body)
-    if not m:
-        raise GeoError("回归需形如 y~a*x+b")
-    expr_str = m.group(1)
-    x = sympy.Symbol("x")
-    # 独立解析：回归参数（a,b,c…）必须是自由符号，不把已有数值对象当常量
-    expr = sympy.parsing.sympy_parser.parse_expr(
-        expr_str, local_dict={"x": x},
-        transformations=(sympy.parsing.sympy_parser.standard_transformations
-                         + (sympy.parsing.sympy_parser.implicit_multiplication_application,
-                            sympy.parsing.sympy_parser.convert_xor)))
-    params = sorted(expr.free_symbols - {x}, key=str)
-    if not params:
-        raise GeoError("回归表达式中未发现参数（如 a, b）")
-    data = [(e.x, e.y) for lab, e in cons.elements.items()
-            if e.kind == "point" and e.free and not lab.startswith("_")]
-    if len(data) < 2:
-        raise GeoError("至少需要两个自由点作为拟合数据（先创建点，如 A=(1,2) B=(2,4)）")
-    import numpy as np
-    try:
-        import scipy.optimize as opt
-    except Exception:
-        raise GeoError("缺少 scipy，无法拟合")
-    f_num = sympy.lambdify((x,) + tuple(params), expr, "numpy")
-    xs = np.array([p[0] for p in data])
-    ys = np.array([p[1] for p in data])
-
-    def resid(pvals):
-        return f_num(xs, *pvals) - ys
-
-    best = None
-    for guess in ([1.0] * len(params), [0.0] * len(params)):
-        try:
-            res = opt.least_squares(resid, guess)
-            if best is None or res.cost < best.cost:
-                best = res
-        except Exception:
-            continue
-    if best is None:
-        raise GeoError("拟合失败")
-    vals = dict(zip(params, best.x))
-    expr_sub = expr.subs(vals)
-    label = label_of(defn) if defn and ("=" in defn or ":" in defn) else ""
-    if not label:
-        label = cons.auto_label("function")
-    fdefn = label + "(x)=" + sympy.sstr(expr_sub)
-    f_el = GeoFunction(label, fdefn)
-    try:
-        f_el.configure(cons, sympy.sstr(expr_sub), [])
-    except Exception:
-        raise GeoError("无法解析拟合表达式: " + expr_str)
-    f_el.fit_msg = "拟合 " + expr_str + "：" + ", ".join(
-        "%s=%s" % (pname, _fmt(float(vals[pname]))) for pname in params)
-    created = [cons.add(f_el)]
-    for pname in params:
-        plab = str(pname)
-        if plab in cons.elements:
-            continue
-        created.append(cons.add(GeoNumber(plab, plab + "=" + _fmt(float(vals[pname])), float(vals[pname]))))
-    return created
-
-
-def _cmd_fitexpr(cons, defn, args):
-    """FitExp[y~a*x+b]：命令形式的回归拟合。"""
-    if len(args) != 1:
-        raise GeoError("FitExpr 需要如 y~a*x+b 的表达式（数据取当前所有自由点）")
-    return _fit_expr(cons, defn, args[0])
-
 def _cmd_fitpoly(cons, defn, args):
     L = _list_arg(cons, args[0])
     if L.itemkind != "point":
@@ -3022,13 +2488,6 @@ def _cmd_fitpoly(cons, defn, args):
         return {"expr": sympy.expand(poly), "xsym": x, "body": "", "_lamb": None}
     el.set_deps([L], fn)
     return cons.add(el)
-
-
-def label_of(defn):
-    idx = defn.find("=")
-    if idx == -1:
-        idx = defn.find(":")
-    return defn[:idx].strip()
 
 
 # ---- 圆锥曲线 ----
@@ -3708,21 +3167,6 @@ def _plane_state(a, b, c):
     return schemas.plane(nx, ny, nz, dd, ax, ay, az, ux, uy, uz, vx, vy, vz)
 
 
-def _is_segment_el(el) -> bool:
-    return el.kind == "segment" or (el.kind == "geo3d" and getattr(el, "objtype", "") == "segment")
-
-
-def _elem_or_point(cons, s: str):
-    """参数解析：优先按已有元素标签；否则尝试 (x,y) / (x,y,z) 字面量点。"""
-    txt = s.strip()
-    el = _lookup(cons, txt)
-    if el is not None:
-        return el
-    if txt.startswith("("):
-        return _point_arg(cons, txt)
-    raise GeoError("找不到对象 " + txt)
-
-
 def _cmd_cube(cons, defn, args):
     """Cube[A,B] / Cube[A,B,C] / Cube[线段] / Cube[线段, 方向点] / Cube[正方形]。
 
@@ -4179,40 +3623,6 @@ def _cmd_prove(cons, defn, args):
     new_el.value = res.value
     new_el.detail = res.detail
     return cons.add(new_el)
-
-
-def _cmd_sequence(cons, defn, args):
-    """Sequence[expr, var, a, b] → 数值列表（可带步长）。"""
-    if len(args) not in (4, 5):
-        raise GeoError("Sequence 需要 表达式、变量、起点、终点（可选步长）")
-    expr_s, var_s, a_s, b_s = args[0], args[1], args[2], args[3]
-    step = eval_number(cons, args[4]) if len(args) == 5 else 1.0
-    a = eval_number(cons, a_s)
-    b = eval_number(cons, b_s)
-    if step == 0:
-        raise GeoError("步长不能为 0")
-    import sympy
-    import numpy as np
-    var = sympy.Symbol(var_s)
-    e = _parse_sympy(expr_s, {var_s: var}, cons)
-    lam = sympy.lambdify(var, e, "numpy")
-    vals = []
-    point_mode = False
-    i = a
-    while i <= b + COORD:
-        try:
-            v = np.asarray(lam(i), dtype=float)
-        except Exception:
-            raise GeoError("序列元素无法求值")
-        if v.ndim == 1 and v.shape[0] == 2:
-            point_mode = True
-            vals.append((float(v[0]), float(v[1])))
-        else:
-            vals.append(float(v))
-        i += step
-    el = GeoList(label_of(defn), defn, vals, "point" if point_mode else "number")
-    el.free = False
-    return cons.add(el)
 
 
 def _fit_cmd(cons, defn, args, kind):
@@ -4761,28 +4171,6 @@ def _cmd_normal(cons, defn, args):
     return _mk(cons, GeoNumber, "number", defn, deps, fn)
 
 
-def _cmd_normaldist(cons, defn, args):
-    """NormalDist[μ, σ] → 正态密度函数（可绘图/积分）。"""
-    if len(args) != 2:
-        raise GeoError("NormalDist 需要 均值、标准差")
-    mu = eval_number(cons, args[0])
-    sigma = eval_number(cons, args[1])
-    if sigma <= 0:
-        raise GeoError("标准差必须 > 0")
-    import sympy
-    el = GeoFunction(label_of(defn), defn)
-    el.free = False
-    x = sympy.Symbol("x")
-
-    def fn(d):
-        return {"expr": 1 / (sigma * sympy.sqrt(2 * sympy.pi)) * sympy.exp(-(x - mu) ** 2 / (2 * sigma ** 2)),
-                "xsym": x, "body": "", "_lamb": None}
-    el.set_deps([], fn)
-    el.compute()
-    return cons.add(el)
-
-
-
 def _cmd_histogram(cons, defn, args):
     """Histogram[数据列表] / Histogram[数据列表, 组数] → 分组频数直方图。数据可为 {..} 内联、列表标签或多值。"""
     nbin = None
@@ -4824,17 +4212,6 @@ def _cmd_histogram(cons, defn, args):
     el.set_deps(deps, fn)
     el.compute()
     return cons.add(el)
-
-
-def _num_list_items(cons, args):
-    first = args[0].strip()
-    if first.startswith("{") or first.startswith("[") or first in cons.elements:
-        L = _list_arg(cons, args[0])
-        if L.itemkind != "number":
-            raise GeoError("需要数值列表")
-        return list(L.items), [L]
-    items = [eval_number(cons, a) for a in args]
-    return items, []
 
 
 def _cmd_q1(cons, defn, args):
@@ -4914,19 +4291,6 @@ def _cmd_barchart(cons, defn, args):
     el.free = False
     el.set_deps(deps, lambda d: _barchart_state(d[0] if d else _anon_list(items)))
     return cons.add(el)
-
-
-def _num_series(cons, args):
-    """解析数值序列：{..} 内联 / 数值列表标签 / 多个数值。返回 (values, deps)。"""
-    if len(args) == 1:
-        raw = args[0].strip()
-        cand = _lookup(cons, raw)
-        if raw.startswith("{") or (cand is not None and cand.kind == "list"):
-            L = _list_arg(cons, raw)
-            if L.itemkind not in ("number", "angle"):
-                raise GeoError("需要数值列表")
-            return [float(v) for v in L.items], [L]
-    return [eval_number(cons, a) for a in args], []
 
 
 def _cmd_linechart(cons, defn, args):
@@ -5502,69 +4866,6 @@ def _arc_state(a, b, c, sector):
     return {"sector": sector, "cx": c.x, "cy": c.y, "r": r, "ang1": ang1, "ang2": ang2}
 
 
-def _cmd_solveineq(cons, defn, args):
-    """SolveIneq[expr, 变量] → 解集（文本）。支持 x^2<4、x>2 等。"""
-    if len(args) not in (1, 2):
-        raise GeoError("SolveIneq 需要 不等式（可选变量）")
-    import sympy
-    from sympy.core.relational import Relational
-    expr_s = args[0]
-    var_s = args[1] if len(args) == 2 else "x"
-    var = sympy.Symbol(var_s)
-    expr = _parse_sympy(expr_s, {var_s: var}, cons)
-    if not isinstance(expr, Relational):
-        raise GeoError("SolveIneq 需要一个不等式，如 x^2<4")
-    try:
-        sol = sympy.reduce_inequalities(expr, var)
-    except Exception as e:
-        raise GeoError("无法求解该不等式: " + repr(e))
-    el = GeoResult(label_of(defn), defn)
-    el.free = False
-    el.text = _fmt_sol(sol, var)
-    return cons.add(el)
-
-
-def _fmt_sol(sol, x) -> str:
-    """解集 → 区间表示：(-2 < x) & (x < 2) → (-2, 2)；x > 2 → (2, +∞)。"""
-    import sympy
-    from sympy.core.relational import Relational
-    if isinstance(sol, sympy.Or):
-        parts = [_fmt_sol(a, x) for a in sol.args]
-        parts.sort(key=_sol_lo)
-        return " ∪ ".join(parts)
-    if isinstance(sol, sympy.And):
-        ineqs = list(sol.args)
-    elif isinstance(sol, Relational):
-        ineqs = [sol]
-    else:
-        return str(sol).replace("**", "^")
-    lo, hi = -sympy.oo, sympy.oo
-    lo_open = hi_open = True
-    for r in ineqs:
-        if not isinstance(r, Relational):
-            continue
-        op = r.rel_op
-        if r.lhs == x:
-            val = r.rhs
-            if op in ("<", "<="):
-                hi = sympy.Min(hi, val)
-                hi_open = (op == "<")
-            else:
-                lo = sympy.Max(lo, val)
-                lo_open = (op == ">")
-        elif r.rhs == x:
-            val = r.lhs
-            if op in ("<", "<="):
-                lo = sympy.Max(lo, val)
-                lo_open = (op == "<")
-            else:
-                hi = sympy.Min(hi, val)
-                hi_open = (op == ">")
-    lo_v = "-∞" if lo == -sympy.oo else _fmt_sol_num(lo)
-    hi_v = "+∞" if hi == sympy.oo else _fmt_sol_num(hi)
-    return ("(" if lo_open else "[") + lo_v + ", " + hi_v + (")" if hi_open else "]")
-
-
 def _sol_lo(part: str) -> float:
     """排序键：区间下界。"""
     import re
@@ -5575,15 +4876,6 @@ def _sol_lo(part: str) -> float:
         except ValueError:
             pass
     return -1e18   # -∞ 排最前
-
-
-def _fmt_sol_num(v) -> str:
-    try:
-        f = float(sympy.N(v))
-        s = ("%.4g" % f)
-        return s
-    except Exception:
-        return str(v).replace("**", "^")
 
 
 def _cmd_setlocked(cons, defn, args):

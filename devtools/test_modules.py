@@ -91,7 +91,8 @@ def undefined_refs(path):
     """
     txt = (ROOT / path).read_text(encoding="utf-8")
     defined = set(re.findall(r"def (\w+)\(", txt))
-    assigned = set(re.findall(r"^(_?[A-Za-z]\w*)\s*=", txt, re.M))
+    # 含类型注解的赋值也算定义（如 `_nested_evaluator: Optional[Callable] = None`）
+    assigned = set(re.findall(r"^(_?[A-Za-z]\w*)\s*(?::[^=\n]+)?=", txt, re.M))
     imported_names = set()
     for line in txt.splitlines():                       # 逐行解析，避免跨行贪婪匹配
         m_from = re.match(r"\s*from\s+[\w.]+\s+import\s+(.+?)\s*$", line)
@@ -110,7 +111,8 @@ def undefined_refs(path):
     return miss
 
 
-for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py"):
+for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
+            "kernel/cmd_util.py"):
     miss = undefined_refs(mod)
     check(mod + " 无未定义引用（函数与常量跨模块防漏）", not miss, "缺: " + str(miss[:8]))
 
@@ -190,6 +192,87 @@ else:
           "无分类且无按钮=%s；仅顶栏=%s" % (orphan, d3["extra"][:6]))
 # 软预算：data.js 外置后 5542 行，统计图绘制（六类 + 拖动命中盒）加入后 ~5697 行
 check("app.js 行数受控（< 5800）", len(app_src.splitlines()) < 5800, str(len(app_src.splitlines())))
+
+def ast_undefined_calls(path):
+    """AST 静态检查：模块内所有 `name(...)` 调用必须已定义（顶层/嵌套/局部赋值）、导入或内建。
+
+    比正则版守卫更严：可发现「搬迁后漏导入非下划线助手/标准库」这类错误
+    （曾漏 `eval_number`、`label_of`、`re` 各一次）。
+    """
+    import ast as _ast
+    import builtins as _bi
+    tree = _ast.parse((ROOT / path).read_text(encoding="utf-8"))
+    top = set()
+    for n in tree.body:
+        if isinstance(n, (_ast.FunctionDef, _ast.ClassDef)):
+            top.add(n.name)
+        if isinstance(n, _ast.Assign):
+            for t in n.targets:
+                for x in _ast.walk(t):
+                    if isinstance(x, _ast.Name):
+                        top.add(x.id)
+        if isinstance(n, _ast.AnnAssign) and isinstance(n.target, _ast.Name):
+            top.add(n.target.id)
+    # 导入可能出现在函数体内（本仓库用惰性导入打破循环依赖）→ 全树收集
+    for n in _ast.walk(tree):
+        if isinstance(n, (_ast.Import, _ast.ImportFrom)):
+            for a in n.names:
+                top.add(a.asname or a.name.split(".")[0])
+    local = set()
+    for node in _ast.walk(tree):
+        if isinstance(node, (_ast.FunctionDef, _ast.ClassDef)):
+            local.add(node.name)
+        elif isinstance(node, _ast.arg):
+            local.add(node.arg)
+        elif isinstance(node, _ast.Name) and isinstance(node.ctx, (_ast.Store, _ast.Del)):
+            local.add(node.id)
+    called = {n.func.id for n in _ast.walk(tree)
+              if isinstance(n, _ast.Call) and isinstance(n.func, _ast.Name)}
+    return sorted(called - top - local - set(dir(_bi)))
+
+
+print("\n=== A8. calculus 模块（微积分/符号计算命令） ===")
+calc_src = (ROOT / "kernel" / "calculus.py").read_text(encoding="utf-8")
+check("calculus 不 import 命令层（无循环导入）", "from .commands" not in calc_src, "")
+check("calculus 不引用命令注册表",
+      not re.search(r"\b(COMMANDS|ALIASES|RESULT_KINDS|DISPLAY_NAMES)\b", calc_src), "")
+import kernel.calculus as CALC  # noqa: E402
+
+check("calculus 搬迁函数 ≥ 20（微积分/数论/拟合）", len(CALC.__all__) >= 20, "n=%d" % len(CALC.__all__))
+check("calculus 与 commands re-export 同一对象",
+      all(getattr(C, n, None) is getattr(CALC, n, None) for n in CALC.__all__), "")
+check("calulus 依赖白名单（elements/tolerance/parser/cmd_util）",
+      set(re.findall(r"^from \.(\w+) import", calc_src, re.M)) <= {"elements", "tolerance", "parser", "cmd_util"},
+      str(sorted(set(re.findall(r"^from \.(\w+) import", calc_src, re.M)))))
+check("calculus.py 规模合理（300–900 行）", 300 <= len(calc_src.splitlines()) <= 900,
+      str(len(calc_src.splitlines())))
+check("commands.py 因 calculus 拆分继续下降（< 5700）", len(cmd_src.splitlines()) < 5700,
+      str(len(cmd_src.splitlines())))
+
+print("\n=== A7. AST 级守卫：抽出模块不得漏导入 ===")
+for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",
+            "kernel/cmd_util.py", "kernel/calculus.py", "kernel/schemas.py"):
+    miss = ast_undefined_calls(mod)
+    check(mod + " 所有调用均已定义/导入（AST 检查）", not miss, str(miss[:6]))
+
+print("\n=== A6. cmd_util 共享命令层（参数解析/元素构造） ===")
+cu_src = (ROOT / "kernel" / "cmd_util.py").read_text(encoding="utf-8") if (ROOT / "kernel" / "cmd_util.py").exists() else ""
+check("cmd_util.py 存在", bool(cu_src), "")
+check("cmd_util 不 import 命令层（无循环导入）", "from .commands" not in cu_src, "")
+check("cmd_util 不引用命令注册表（COMMANDS/ALIASES/RESULT_KINDS）",
+      not re.search(r"\b(COMMANDS|ALIASES|RESULT_KINDS|DISPLAY_NAMES)\b", cu_src), "")
+import kernel.cmd_util as CU  # noqa: E402
+
+check("cmd_util 搬迁助手 ≥ 12 个", len(CU.__all__) >= 14, "n=%d" % len(CU.__all__))
+check("commands 与 cmd_util re-export 同一对象",
+      all(getattr(C, n, None) is getattr(CU, n, None) for n in CU.__all__), "")
+check("嵌套常量随迁且 re-export 一致",
+      C._NESTED_CALL_RE is CU._NESTED_CALL_RE and C._NESTED_MAX_DEPTH == CU._NESTED_MAX_DEPTH, "")
+check("commands 注入嵌套求值钩子（set_nested_evaluator(_eval_nested)）",
+      "set_nested_evaluator(_eval_nested)" in cmd_src, "")
+check("cmd_util.py 规模合理（120–340 行）", 120 <= len(cu_src.splitlines()) <= 340,
+      str(len(cu_src.splitlines())))
+check("commands.py 因拆分继续下降（< 6200）", len(cmd_src.splitlines()) < 6200, str(len(cmd_src.splitlines())))
 
 print("\n=== A5. schemas 模块（元素 data 载荷集中定义） ===")
 schemas_src = (ROOT / "kernel" / "schemas.py").read_text(encoding="utf-8")
