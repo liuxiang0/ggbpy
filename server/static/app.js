@@ -195,6 +195,8 @@
   // 面板渲染已抽到 static/panels.js（P2 前端拆分）；此处提供状态访问 + 同名薄包装
   function _panelStateGet(k) {
     switch (k) {
+      case 'drag3dObj': return drag3dObj;
+      case 'objShift3d': return objShift3d;
       case 'CHART_TOOL_CMD': return CHART_TOOL_CMD;
       case 'COORD': return COORD;
       case 'hintEl': return hintEl;
@@ -366,6 +368,12 @@
   function snapHitLabel() { return _tools2d.snapHitLabel.apply(null, arguments); }
   function toolPointAt() { return _tools2d.toolPointAt.apply(null, arguments); }
   function toolCanvasClick() { return _tools2d.toolCanvasClick.apply(null, arguments); }
+
+  // 三维对象位移与拖动（P2 前端拆分） 已抽到 static/drag3d.js（P2 前端拆分）；同名薄包装保持调用点不变
+  var _drag3d = window.GGB_DRAG3.create({ get: _panelStateGet, api: api, drawAxes3d: drawAxes3d, drawElement: drawElement, drawGrid: drawGrid, drawMiniAxes3d: drawMiniAxes3d, drawOverlay: drawOverlay, drawSelectionOverlay: drawSelectionOverlay, findEl3d: findEl3d, fmtNum: fmtNum, is3DEl: is3DEl, load3d: load3d, populateEditBar: populateEditBar, render: render, render3d: render3d, renderList: renderList, renderList3d: renderList3d, setMsg: setMsg, sxp: sxp, syp: syp, tipText: tipText, translateMsg: translateMsg, updateUndoBtns: updateUndoBtns, usableCanvasRect: usableCanvasRect });
+  function localShift3dEl() { return _drag3d.localShift3dEl.apply(null, arguments); }
+  function flushObjShift3d() { return _drag3d.flushObjShift3d.apply(null, arguments); }
+  function shiftLocal() { return _drag3d.shiftLocal.apply(null, arguments); }
 
   function setMsg(msg, isErr) {
     msgEl.textContent = translateMsg(msg);
@@ -1551,45 +1559,7 @@
   // 阻止 3D 画布右键弹出浏览器菜单
   cv3d.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
   // 本地乐观平移（拖动期间即时反馈；服务器返回后 load3d 校正）
-  function localShift3dEl(label, dx, dy, dz) {
-    var e = findEl3d(label);
-    if (!e) return;
-    if (e.kind === 'point') { e.x += dx; e.y += dy; e.z = (e.z || 0) + dz; return; }
-    var dt = e.data || {};
-    if (e.objtype === 'cube' || e.objtype === 'polyhedron') {
-      var vs = dt.verts || [];
-      for (var i = 0; i < vs.length; i++) { vs[i][0] += dx; vs[i][1] += dy; vs[i][2] = (vs[i][2] || 0) + dz; }
-    } else if (e.objtype === 'segment' || e.objtype === 'line2d' || e.objtype === 'line3d') {
-      dt.x1 += dx; dt.y1 += dy; dt.z1 = (dt.z1 || 0) + dz;
-      dt.x2 += dx; dt.y2 += dy; dt.z2 = (dt.z2 || 0) + dz;
-    } else if (e.objtype === 'plane') {
-      dt.ax += dx; dt.ay += dy; dt.az = (dt.az || 0) + dz;
-    } else if (e.objtype === 'sphere') {
-      dt.cx += dx; dt.cy += dy; dt.cz = (dt.cz || 0) + dz;
-    } else if (e.objtype === 'polygon2d' || e.objtype === 'polyline2d') {
-      var ps = dt.pts || [];
-      for (var j = 0; j < ps.length; j++) { ps[j][0] += dx; ps[j][1] += dy; ps[j][2] = (ps[j][2] || 0) + dz; }
-    }
-  }
   // 累积位移合并提交（避免异步竞态）
-  function flushObjShift3d() {
-    if (objShift3d.pending) return;
-    if (!objShift3d.dx && !objShift3d.dy && !objShift3d.dz) return;
-    if (!drag3dObj) return;
-    var label = drag3dObj.label;
-    var ox = objShift3d.dx, oy = objShift3d.dy, oz = objShift3d.dz;
-    objShift3d.dx = 0; objShift3d.dy = 0; objShift3d.dz = 0;
-    var push = !objShift3d.pushed;
-    objShift3d.pushed = true;
-    objShift3d.pending = true;
-    api('POST', '/api/shift', { label: label, dx: ox, dy: oy, dz: oz, push: push,
-        xmin: view.xmin, xmax: view.xmax, ymin: view.ymin, ymax: view.ymax }, function (d) {
-      objShift3d.pending = false;
-      if (d && d.ok) load3d();
-      else if (d && d.message) setMsg(d.message, true);
-      if (drag3dObj && (objShift3d.dx || objShift3d.dy || objShift3d.dz)) flushObjShift3d();
-    });
-  }
 
   cv3d.addEventListener('pointermove', function (ev) {
     if (dragZHandle) {
@@ -2825,21 +2795,6 @@
   var toolBusy = false, toolPointQueue = [];
   // 吸附命中：命中已有点返回其 label，空白返回 null
   // 选中对象整体拖动：本地乐观平移
-  function shiftLocal(label, dx, dy) {
-    for (var i = 0; i < elements.length; i++) {
-      var e = elements[i];
-      if (e.label !== label) continue;
-      if (e.kind === 'point') { e.x += dx; e.y += dy; }
-      else if (e.kind === 'segment') { e.x1 += dx; e.y1 += dy; e.x2 += dx; e.y2 += dy; }
-      else if (e.kind === 'circle') { e.cx += dx; e.cy += dy; }
-      else if (e.kind === 'line') { e.c -= e.a * dx + e.b * dy; }
-      else if (e.kind === 'polygon') { for (var k = 0; k < e.pts.length; k++) { e.pts[k][0] += dx; e.pts[k][1] += dy; } }
-      else if (e.kind === 'arc') { e.cx += dx; e.cy += dy; }
-      else if (e.kind === 'text') { e.x += dx; e.y += dy; }
-      else if (e.kind === 'vector') { e.sx += dx; e.sy += dy; }
-    }
-    render();
-  }
 
   // 屏幕坐标射线法：点是否在多边形内
 

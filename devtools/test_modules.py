@@ -444,6 +444,22 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B14. 前端：三维对象位移/拖动（static/drag3d.js） ===")
+d3_path = ROOT / "server" / "static" / "drag3d.js"
+d3_src = d3_path.read_text(encoding="utf-8") if d3_path.exists() else ""
+check("drag3d.js 存在", d3_path.exists(), "")
+check("app.js 通过 window.GGB_DRAG3 装配（原实现体已移走，仅剩薄包装）",
+      "window.GGB_DRAG3" in app_src and "function flushObjShift3d() { return _drag3d" in app_src, "")
+check("index.html 在 app.js 之前加载 drag3d.js",
+      index_src.index("/static/drag3d.js") < index_src.index("/static/app.js"), "")
+check("drag3d 覆盖位移落地/局部平移/状态判空",
+      all(("function %s(" % f) in d3_src for f in ("flushObjShift3d", "localShift3dEl", "shiftLocal")), "")
+# 判定「是否整体替换 objShift3d」：捕获赋值右侧再判断（避免正则回溯造成假阴性/假阳性）
+_d3_writes = [w.strip() for w in re.findall(r"(?<![\w.$])objShift3d\s*=(?!=)\s*([^\n;]*)", d3_src)]
+check("drag3d 原地修改共享状态对象（objShift3d.dx/dy/dz 归零），不整体替换",
+      "objShift3d.dx = 0" in d3_src and all(w.startswith("env.get") for w in _d3_writes),
+      str(_d3_writes[:2]))
+
 print("\n=== B13. 前端：二维工具交互层（static/tools2d.js） ===")
 t2_path = ROOT / "server" / "static" / "tools2d.js"
 t2_src = t2_path.read_text(encoding="utf-8") if t2_path.exists() else ""

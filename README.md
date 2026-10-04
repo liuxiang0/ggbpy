@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第四十九批（2026-10-04 · 三维对象位移/拖动外置：drag3d.js）**：
+  - **`static/drag3d.js`（125 行）**：三维对象位移与拖动落地（`flushObjShift3d` 位移提交 / `localShift3dEl` 局部平移 / `shiftLocal`）外置为 `window.GGB_DRAG3.create(env)`；`app.js` **3312 → 3267 行**（前端累计 **5979 → 3267，−45%**）
+  - **状态形态**：只读 `drag3dObj`/`elements`/`view`；`objShift3d` 为**共享对象**（模块原地修改 `dx/dy/dz` 归零，不整体替换 → 无需 setter）
+  - **注入助手 15 个**（`fmtNum`/`findEl3d`/`renderList*`/`populateEditBar`/`sxp`/`syp`/`drawGrid`/`usableCanvasRect`/`is3DEl`/`drawAxes3d`/`drawMiniAxes3d`/`translateMsg`/`drawElement` 等）
+  - 检测：模块边界 298 → **303**（含「共享对象原地修改而非整体替换」断言）
 - **第四十八批（2026-10-04 · 二维工具交互层外置：tools2d.js，app.js 破 3500 行）**：
   - **`static/tools2d.js`（673 行）**：2D 工具交互层整体外置（`toolCanvasClick` 493 行 / `toolPointAt` / `snapHitLabel` / `resetTool` / `chartDataPrompt` 等 49 函数闭包）为 `window.GGB_T2D.create(env)`；`app.js` **3851 → 3312 行**（前端累计 **5979 → 3312，−45%**）
   - **发现并修复「过期快照」缺陷（重要）**：app.js 会**整体替换**状态（`elements = d.elements`），模块在函数入口 `var elements = env.get('elements')` 捕获的是**旧数组** → `toolPointAt` 异步回调里找不到新建点 → **图片工具第二步失效**（浏览器矩阵 F 段 2 项失败）。修法：回调内**晚读** `env.get('elements')`；并确认同类只有该处（其余 7 处候选为同步代码，属启发式误报）
@@ -306,7 +311,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 298 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1471 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 303 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1476 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
