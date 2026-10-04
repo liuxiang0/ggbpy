@@ -332,6 +332,12 @@ import kernel.registry as REG  # noqa: E402
 
 check("registry 不 import 命令层（单向依赖，无环）",
       not re.search(r"^\s*(?:from \.commands import|import kernel\.commands)", reg_src, re.M), "")
+check("registry 四张表由 SPECS 单一来源派生（新增命令只改一处）",
+      "SPECS:" in reg_src and "_derive(SPECS)" in reg_src
+      and "\nCOMMANDS = {" not in reg_src and "\nALIASES = {" not in reg_src
+      and "\nRESULT_KINDS = {" not in reg_src, "")
+check("registry 不再有孤儿显示名",
+      not [k for k in REG.DISPLAY_NAMES if k not in REG.COMMANDS], "")
 check("registry 四张表齐全且规模合理",
       len(REG.COMMANDS) >= 160 and len(REG.ALIASES) >= 180
       and len(REG.DISPLAY_NAMES) >= 60 and len(REG.RESULT_KINDS) >= 160,

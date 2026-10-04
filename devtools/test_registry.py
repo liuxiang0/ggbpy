@@ -97,6 +97,10 @@ for c in cmds:
 check("显示名唯一", not dups, str(dups[:5]))
 
 # 7) 中文别名不应与英文命令同名（避免歧义）
+# REVIEW #6：显示名必须挂在真实命令上（重构单一来源时曾发现 5 个不可达孤儿）
+orphan_disp = sorted(k for k in C.DISPLAY_NAMES if k not in cmds)
+check("DISPLAY_NAMES 的键都是真实命令（无孤儿显示名）", not orphan_disp, str(orphan_disp[:6]))
+
 zh_dup = sorted(k for k in C.ALIASES if k in C.DISPLAY_NAMES)
 check("中文别名不与显示名冲突", not zh_dup, str(zh_dup[:8]))
 

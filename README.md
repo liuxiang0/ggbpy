@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第五十三批（2026-10-04 · REVIEW #6：命令注册单一来源 + 复验 H/#4/#8）**：
+  - **`SPECS` 单一来源**：`registry.py` 改为「一行一条命令规格（命令名/实现/显示名/结果类型/别名）」→ 由 `_derive(SPECS)` 派生 `COMMANDS`/`ALIASES`/`DISPLAY_NAMES`/`RESULT_KINDS`。**新增命令只改一处**（此前要改 4 张表，漏一处即退化）；派生结果与原四张表**逐一相等**（脚本先校验再落盘），`registry.py` 378 → **265 行**
+  - **顺带清掉 5 个不可达孤儿显示名**（`partialfractions`/`solveode`/`nsolve`/`isfinite`/`surfacearea`：既非命令也非别名，唯一消费者按 `COMMANDS` 迭代 → 死数据），并新增守卫「`DISPLAY_NAMES` 的键必须是真实命令」
+  - **今日复验 REVIEW 其余项**：**H**（`.ggb` 内嵌网格数据 ✓ 已有 `ggbpyData` 内嵌+往返断言；SVG 3D 投影 ✓ `/api/export/svg?view3d=1`）· **#4**（3D 状态增量同步 ✓ `?since=`）· **#8**（`image_store`/`mesh_store` 已委托通用 `blob_store`）→ 均已实现并有回归覆盖
+  - 检测：注册表 8 → **9**，模块边界 326 → **328**
 - **第五十二批（2026-10-04 · REVIEW 第 10 条：网格边表派生单一实现）**：
   - **去重**：`_convexhull_state`（`commands3d.py`）与 `_ix_solid_solid`（`geometry3d.py`）各自内联的「面表 → 去重无向边表」循环统一改为调用 **`mesh_store.edges_of(faces)`**；`geometry3d` 新增对 `mesh_store` 的依赖（`mesh_store` 仅依赖标准库，无环）
   - **行为等价**：`edges_of` 语义与两处内联一致（去重、含环绕边），并额外跳过 `a == b` 退化边；`_ix_solid_solid` 的「交集退化」检查保留
@@ -326,7 +331,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 326 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1499 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 328 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1502 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
