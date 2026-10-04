@@ -444,6 +444,23 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B12. 前端：二维元素绘制层（static/render2d.js） ===")
+r2_path = ROOT / "server" / "static" / "render2d.js"
+r2_src = r2_path.read_text(encoding="utf-8") if r2_path.exists() else ""
+check("render2d.js 存在", r2_path.exists(), "")
+check("app.js 通过 window.GGB_R2D 装配（原绘制体已移走，仅剩薄包装）",
+      "window.GGB_R2D" in app_src and "ctx.lineTo(poly[i].x, poly[i].y)" not in app_src
+      and "function drawElement() { return _render2d" in app_src, "")
+check("index.html 在 app.js 之前加载 render2d.js",
+      index_src.index("/static/render2d.js") < index_src.index("/static/app.js"), "")
+check("render2d 覆盖元素/圆锥曲线/不等式/叠加层/图片",
+      all(("function %s(" % f) in r2_src for f in ("drawElement", "drawConic", "drawInequality",
+                                                   "drawOverlay", "drawSelectionOverlay",
+                                                   "drawImageEl", "getImage", "conicPathPts")), "")
+check("render2d 复用既有模块助手（sxp/syp/drawGrid/图表绘制等为注入）",
+      "var sxp = env.sxp;" in r2_src and "var drawGrid = env.drawGrid;" in r2_src
+      and "var drawBarChart = env.drawBarChart;" in r2_src, "")
+
 print("\n=== B11. 前端：三维工具交互模块（static/tools3d.js，3D 工具族） ===")
 t3_path = ROOT / "server" / "static" / "tools3d.js"
 t3_src = t3_path.read_text(encoding="utf-8") if t3_path.exists() else ""

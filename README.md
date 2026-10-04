@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第四十七批（2026-10-04 · 二维元素绘制层外置：render2d.js，app.js 破 4000 行）**：
+  - **`static/render2d.js`（648 行）**：二维绘制层整体外置（`drawElement` 195 行 / `drawOverlay` / `drawSelectionOverlay` / `drawConic` / `drawInequality` / `drawImageEl` / `getImage` / `conicPathPts` / `colorOf` 等 30 函数闭包）为 `window.GGB_R2D.create(env)`；`app.js` **4396 → 3851 行**（前端累计 **5979 → 3851，−36%**）
+  - **分层策略（先量后拆）**：`toolCanvasClick` 的闭包达 **63 函数 / 1541 行**且混着两类关注点 → 拆成两步：本批先抽**绘制层**（30 函数 / 723 行），下一批再抽**工具交互层**（`tools2d`，闭包将显著缩小）
+  - **注入面**：只读状态 12 个（`C`/`COARSE`/`activeTool`/`cssH`/`cssW`/`ctx`/`imgCache`/`scale`/`selected`/`showAxes`/`toolSel`/`view`）+ 16 个转发助手（`sxp`/`syp`/`drawGrid`/`strokeSeg`/`drawArrow`/`usableCanvasRect`/六类统计图绘制/`is3DEl` 等），**零写入**
+  - 检测：模块边界 287 → **292**；2D 前端 72、3D 浏览器 142 全过
 - **第四十六批（2026-10-04 · 三维工具交互外置：tools3d.js，app.js 破 4500 行）**：
   - **`static/tools3d.js`（370 行）**：三维工具族整体外置（`pt3d`/`seg3d`/`line3d`/`plane3d`/`sphere3d`/`cube3d`/`cone3d`/`cylinder3d`/`SOLID3_CMD` 通用多面体 + `cubeCreate3`/`tool3dPointAt` 等 23 函数闭包），形态 `window.GGB_T3D.create(env)`；`app.js` **4667 → 4396 行**（前端累计 5979 → 4396，−26%）
   - **抽取工具修两处（都是本轮真实踩坑）**：① `_panelStateSet` 已是多行函数 → 改为「定位函数体结束前插入分支」；② **外部仍被引用的闭包成员必须保留在原处并注入**（`hitPoint3d` 被画布鼠标处理器调用、`setMsg` 有 87 处调用）→ 规则「非种子成员若被移动集之外的代码引用 → 注入而非搬迁」，否则调用点悬空（`hitPoint3d is not a function`）
@@ -296,7 +301,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 287 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1460 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 292 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1465 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
