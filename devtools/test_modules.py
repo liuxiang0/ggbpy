@@ -382,6 +382,14 @@ check("commands.py 已接近纯调度器（< 1200 行）", len(cmd_src.splitline
 check("commands.py 仅剩调度与共享助手（顶层 def ≤ 14 个）",
       len(re.findall(r"^def ", cmd_src, re.M)) <= 14, str(len(re.findall(r"^def ", cmd_src, re.M))))
 
+print("\n=== A14. 重计算协作让出（REVIEW P0-2：不长时间独占 GIL） ===")
+_c3 = (ROOT / "kernel" / "commands3d.py").read_text(encoding="utf-8")
+check("marching 循环含协作让出（GGBPY_YIELD_MS，0 可关闭）",
+      "GGBPY_YIELD_MS" in _c3 and "_time.sleep(0)" in _c3 and "_yield_ms > 0 and _time.time() >= _next_yield" in _c3, "")
+check("让出周期可配且默认 5ms", 'os.environ.get("GGBPY_YIELD_MS", "5")' in _c3, "")
+check("阻塞压测工具在库（devtools/bench_blocking.py）",
+      (ROOT / "devtools" / "bench_blocking.py").exists(), "")
+
 print("\n=== A13. 几何工具去重（REVIEW 第 10 条：网格边表派生单一实现） ===")
 _dup_edge = []
 for _p in sorted((ROOT / "kernel").glob("*.py")):

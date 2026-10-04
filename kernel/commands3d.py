@@ -472,6 +472,11 @@ def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
         _budget = float(_os.environ.get("GGBPY_IMPLICIT_BUDGET", "8.0"))
     except (ValueError, TypeError):  # 环境变量非法（非数字）：回退默认预算 8.0
         _budget = 8.0
+    # 协作让出周期（毫秒；0 = 关闭，便于 A/B 压测或极端吞吐场景）
+    try:
+        _yield_ms = max(0.0, float(_os.environ.get("GGBPY_YIELD_MS", "5"))) / 1000.0
+    except (ValueError, TypeError):  # 环境变量非法：回退默认 5 ms
+        _yield_ms = 0.005
 
     # 立方体 6 个四面体（沿主对角线 0-7 的 Kuhn 分解）
     TETRA = [(0, 1, 3, 7), (0, 3, 2, 7), (0, 2, 6, 7), (0, 6, 4, 7), (0, 4, 5, 7), (0, 5, 1, 7)]
@@ -511,12 +516,19 @@ def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
             return np.array([gx[i], gy[j], gz[k]])
 
         faces = []
+        # 协作让出（REVIEW P0-2）：marching 是纯 Python 三重循环，会长时间独占 GIL，
+        # 使其它会话的轻请求排队（压测见 devtools/bench_blocking.py）。每 ~5 ms 主动让出一次，
+        # 代价极小（<2%），但排队延迟从「数百毫秒」降到「数十毫秒」量级。
+        _next_yield = _time.time() + (_yield_ms or 3600.0)
         for i in range(n):
             if _time.time() - _t0 > _budget:
                 raise GeoError("隐式曲面计算量过大（超过 %.0f 秒）：请降低分辨率 n（当前 %d）或缩小范围"
                                % (_budget, n))
             for j in range(n):
                 for k in range(n):
+                    if _yield_ms > 0 and _time.time() >= _next_yield:
+                        _time.sleep(0)
+                        _next_yield = _time.time() + _yield_ms
                     corners = {}
                     for di in (0, 1):
                         for dj in (0, 1):

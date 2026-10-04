@@ -70,6 +70,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - `devtools/test_2d_matrix.py`（内核 167 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
 - `devtools/test_2d_api.py`（44 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
 - `devtools/verify_2d_ui_matrix.js`（72 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
+- `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
 
 ### 3D 视图
 
@@ -155,6 +156,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第五十五批（2026-10-04 · REVIEW P0-2 第 1+2 步：量化阻塞 + 协作让出）**：
+  - **量化工具 `devtools/bench_blocking.py`**：会话 H 跑重命令、另一会话 P 并发打轻请求，测其排队延迟（跨会话测量是刻意的 —— 若跨会话也排队即证明全局阻塞）；**已改为「每次唯一表达式」以避开计算记忆命中**（首版踩坑：同一表达式第二次跑 1925 → 320 ms，A/B 失真）
+  - **实测（同机空闲 n=48，各 3 次）**：重算期间跨会话探测 **p50 27.1 ms / max 42.4 ms**（空闲基线 0.6 ms），**0 失败** → 阻塞存在但为**间歇性**（numpy 段会释放 GIL），非全程冻结
+  - **修复（协作让出）**：marching 纯 Python 三重循环内每 **~5 ms** `time.sleep(0)` 让出 GIL，新增开关 `GGBPY_YIELD_MS`（0=关闭）；实测 **p50 27.1 → 21.7 ms（−20%）**、**max 42.4 → 31.9 ms（−25%）**，重算耗时中位 1143 → 1153 ms（+0.9%，噪声内）
+  - 新增守卫（模块检测 A14 段 3 断言）：marching 含让出、周期可配默认 5 ms、压测工具在库
+  - 检测：模块边界 328 → **331**
 - **第五十四批（2026-10-04 · REVIEW #13：补齐 2D 侧「限制与边界」文档 + 文档守卫）**：
   - **README 新增两节**（与 3D 侧对称，位置在 `### 3D 视图` 之前）：`#### 2D 限制（由检测矩阵锁定当前行为）`（10 条要点）与 `#### 2D 检测矩阵（可重复执行）`（三个入口）
   - **内容全部以代码/检测为据**（不臆造）：撤销栈 `UNDO_LIMIT = 200` · 计算记忆 96 条/约 60 万坐标且随机命令不参与 · 嵌套命令最多 4 层 · 统计图 7 类与其数据校验报错 · `Locus` 采样（检测断言 >5 点）· 符号求解边界 · 工具面板 **12 个分类** + 选中再点取消 + 统计图 10 按钮 · `.ggk` v4 / `.ggb` 内嵌 `ggbpyData` · zh/en 各 **203 条**词条 · 有意为之的边界（`Perimeter` 只收多边形/圆等）
@@ -351,11 +358,15 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **曲面三类均已支持**：显式 `Surface[z=f(x,y)]`、参数 `SurfaceParam[x(s,t),…]`、隐式 `ImplicitSurface[f(x,y,z)=0]`（marching **tetrahedra**，属线性插值近似：网格越细越准，粗网格下面积误差约 0.1%–8%）；曲面网格用于显示/面积/导出，`Volume` 无定义（明确报错）
 - **网格导入只做几何**：OBJ/STL 导入保留顶点与面（顶点去重、面索引重排），忽略材质/UV/法向行与颜色；非闭合网格仍可显示/导出，但 `Volume` 结果无物理意义
 - `Perimeter` 仍只接受多边形/圆（不接受立体；立体的周长无定义）
+- **重计算不长时间独占**（REVIEW P0-2）：隐式曲面的 marching 是纯 Python 三重循环，会长时间持有 GIL
+  使其它会话的轻请求排队。循环内每 **~5 ms 协作让出**一次（`GGBPY_YIELD_MS`，0=关闭）；
+  实测（`devtools/bench_blocking.py`，同机空闲、n=48、各 3 次）：跨会话探测延迟 **p50 27.1 → 21.7 ms（−20%）**、
+  **max 42.4 → 31.9 ms（−25%）**，而重算耗时基本不变（中位 1143 → 1153 ms，+0.9% 在噪声内）
 
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 328 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 12 = 1506 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 331 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 12 = 1509 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
