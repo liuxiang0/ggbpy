@@ -730,6 +730,29 @@ if err_3d is None:
     check("SurfaceChart3D 列数不足报错", msg_bad3.startswith("错误") and "列" in msg_bad3, msg_bad3[:40])
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+section("Z. 计算记忆 LRU 与撤销成本模型（REVIEW P0-3）")
+
+import kernel.memo as _memo  # noqa: E402
+from kernel.construction import UNDO_LIMIT as _UNDO_LIMIT  # noqa: E402
+
+_old_max = _memo._MAX_ENTRIES
+try:
+    _memo.clear()
+    _memo._MAX_ENTRIES = 2
+    _memo.put(("t", 1), {"v": 1})
+    _memo.put(("t", 2), {"v": 2})
+    _memo.get(("t", 1))                 # 触碰最久未用 → 应在淘汰中存活
+    _memo.put(("t", 3), {"v": 3})       # 超上限 → 淘汰最久未用（应为 t2）
+    _kept = (_memo.get(("t", 1)) is not None, _memo.get(("t", 2)) is not None)
+    check("记忆按 LRU 淘汰（最近使用的条目不被淘汰）", _kept[0] and not _kept[1], str(_kept))
+finally:
+    _memo._MAX_ENTRIES = _old_max
+    _memo.clear()
+check("记忆统计含 hits/misses/entries/coords", set(_memo.stats()) >= {"entries", "coords", "hits", "misses"},
+      str(sorted(_memo.stats())))
+check("撤销栈上限常量存在且被引用", _UNDO_LIMIT == 200 and hasattr(Construction, "snapshot"), str(_UNDO_LIMIT))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

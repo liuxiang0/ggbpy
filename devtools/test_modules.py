@@ -389,6 +389,11 @@ check("marching 循环含协作让出（GGBPY_YIELD_MS，0 可关闭）",
 check("让出周期可配且默认 5ms", 'os.environ.get("GGBPY_YIELD_MS", "5")' in _c3, "")
 check("阻塞压测工具在库（devtools/bench_blocking.py）",
       (ROOT / "devtools" / "bench_blocking.py").exists(), "")
+_memo_src = (ROOT / "kernel" / "memo.py").read_text(encoding="utf-8")
+check("计算记忆命中时刷新 LRU（get 内 move_to_end，防重元素被误淘汰）",
+      "def get(" in _memo_src and "_STORE.move_to_end(key)" in _memo_src, "")
+check("撤销/重做压测工具在库（devtools/bench_undo.py）",
+      (ROOT / "devtools" / "bench_undo.py").exists(), "")
 
 print("\n=== A13. 几何工具去重（REVIEW 第 10 条：网格边表派生单一实现） ===")
 _dup_edge = []
