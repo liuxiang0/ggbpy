@@ -444,6 +444,26 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B13. 前端：二维工具交互层（static/tools2d.js） ===")
+t2_path = ROOT / "server" / "static" / "tools2d.js"
+t2_src = t2_path.read_text(encoding="utf-8") if t2_path.exists() else ""
+check("tools2d.js 存在", t2_path.exists(), "")
+check("app.js 通过 window.GGB_T2D 装配（原实现体已移走，仅剩薄包装）",
+      "window.GGB_T2D" in app_src and "Click a point or segment" not in app_src
+      and "function toolCanvasClick() { return _tools2d" in app_src, "")
+check("index.html 在 app.js 之前加载 tools2d.js",
+      index_src.index("/static/tools2d.js") < index_src.index("/static/app.js"), "")
+check("tools2d 覆盖 2D 工具族（点/线段/位似/图片/距离/斜率/角度/图表工具）",
+      all(k in t2_src for k in ("toolCanvasClick", "toolPointAt", "snapHitLabel", "resetTool",
+                                "chartDataPrompt")), "")
+# 晚读规则：app.js 会整体替换 elements（elements = d.elements），异步回调里必须重新读取，
+# 否则用的是入口捕获的旧数组 —— 曾导致图片工具第二步失效（新点找不到）
+check("tools2d 异步回调内晚读 replaceable 状态（postInput 回调不用入口捕获的 elements）",
+      "var elsNow = env.get('elements');" in t2_src
+      and "for (var j = 0; j < elements.length; j++) {" not in t2_src, "")
+check("tools2d 图片流程仍按两步基点创建（Image[…] + 完成后清 pendingImage）",
+      "postInput('Image['" in t2_src and "env.set('pendingImage', null)" in t2_src, "")
+
 print("\n=== B12. 前端：二维元素绘制层（static/render2d.js） ===")
 r2_path = ROOT / "server" / "static" / "render2d.js"
 r2_src = r2_path.read_text(encoding="utf-8") if r2_path.exists() else ""

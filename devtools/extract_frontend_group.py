@@ -119,13 +119,16 @@ def build(module, api, seeds, doc, apply_changes):
     add_cases = "".join("      case '%s': return %s;\n" % (v, v) for v in all_state if v not in existing)
     app = app[:m.end()] + add_cases + app[m.end():]
     # 状态写入（若有）
-    if writes:
-        # _panelStateSet 现在可能是多行函数：定位函数体起止，在结束前插入分支
+    # 写入集合以**生成后的模块源码**为准（分析器的写入探测可能漏检嵌套闭包里的赋值）
+    module_src = (ROOT / "server" / "static" / (module + ".js")).read_text(encoding="utf-8")
+    writes_from_src = sorted(set(re.findall(r"set\('([A-Za-z_$][\w$]*)'", module_src)))
+    if writes_from_src:
         start = app.index("  function _panelStateSet(k, v) {")
-        close = app.index("\n  }", start) + 1
-        new_branches = "".join("\n    if (k === '%s') { %s = v; return; }" % (w, w)
-                              for w in writes if ("k === '%s'" % w) not in app[start:close])
-        app = app[:close] + new_branches + app[close:]
+        close = app.index("  }", start)          # 该函数以缩进 2 的 '}' 结束
+        new_branches = "".join("    if (k === '%s') { %s = v; return; }\n" % (w, w)
+                              for w in writes_from_src if ("k === '%s'" % w) not in app[start:close])
+        if new_branches:
+            app = app[:close] + new_branches + "  }" + app[close + len("  }"):]
     anchor = "  function setMsg(msg, isErr) {"
     assert app.count(anchor) == 1
     inject_helpers = "".join(", %s: %s" % (f, f) for f in injected)

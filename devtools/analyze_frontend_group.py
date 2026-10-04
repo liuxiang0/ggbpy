@@ -90,6 +90,33 @@ def calls(body: str):
     return set(re.findall(r"(?<![\w.$])([A-Za-z_$][\w$]*)\s*\(", body))
 
 
+def bare_refs(body: str, top_fns, top_vars):
+    """函数体里「按引用」出现的顶层函数/变量名（如 setTimeout(loadState, 180)）。
+
+    只认 `name(` 会漏掉把函数当回调传递的依赖 —— 曾导致 tools2d 抽取后
+    `loadState` 未被注入，运行时报未定义。
+    """
+    clean = strip_literals(body)
+    used = {m.group(2) for m in re.finditer(r"(^|[^.\w$])([A-Za-z_$][\w$]*)", clean)}
+    declared = set()
+    m0 = re.search(r"^\s*function \w+\(([^)]*)\)", body, re.M)
+    if m0:
+        for p in m0.group(1).split(","):
+            t = p.strip().split("=")[0].strip()
+            if t:
+                declared.add(t)
+    for m in re.finditer(r"\b(?:var|let|const)\s+([^;\n]+)", clean):
+        for part in m.group(1).split(","):
+            t = re.match(r"\s*([A-Za-z_$][\w$]*)", part)
+            if t:
+                declared.add(t.group(1))
+    for m in re.finditer(r"\bfunction\s+([A-Za-z_$][\w$]*)", clean):
+        declared.add(m.group(1))
+    for m in re.finditer(r"\bcatch\s*\(\s*([A-Za-z_$][\w$]*)", clean):
+        declared.add(m.group(1))
+    return {x for x in used if (x in top_fns or x in top_vars) and x not in declared}
+
+
 def analyze(seeds):
     lines, top_fns, top_vars = load()
     got, q = set(), list(seeds)
@@ -99,7 +126,9 @@ def analyze(seeds):
             continue
         got.add(n)
         i, j = span(lines, n)
-        for c in calls("".join(lines[i:j])):
+        body = "".join(lines[i:j])
+        deps = set(calls(body)) | bare_refs(body, top_fns, top_vars)
+        for c in deps:
             if c in top_fns and c not in got:
                 q.append(c)
     per = {}

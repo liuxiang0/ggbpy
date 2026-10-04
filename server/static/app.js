@@ -157,10 +157,6 @@
   function wxp(sx) { return view.xmin + sx / scale; }
   function wyp(sy) { return view.ymin + (cssH - sy) / scale; }
 
-  function viewParams() {
-    return '?xmin=' + view.xmin.toFixed(4) + '&xmax=' + view.xmax.toFixed(4) +
-           '&ymin=' + view.ymin.toFixed(4) + '&ymax=' + view.ymax.toFixed(4);
-  }
 
   // ---------- 数据 ----------
   function loadState() {
@@ -199,6 +195,14 @@
   // 面板渲染已抽到 static/panels.js（P2 前端拆分）；此处提供状态访问 + 同名薄包装
   function _panelStateGet(k) {
     switch (k) {
+      case 'CHART_TOOL_CMD': return CHART_TOOL_CMD;
+      case 'COORD': return COORD;
+      case 'hintEl': return hintEl;
+      case 'pendingImage': return pendingImage;
+      case 'shiftKeyPressed': return shiftKeyPressed;
+      case 'snapOn': return snapOn;
+      case 'toolBusy': return toolBusy;
+      case 'toolPointQueue': return toolPointQueue;
       case 'imgCache': return imgCache;
       case 'MSG_MAP_EN': return MSG_MAP_EN;
       case 'RE_MAP_EN': return RE_MAP_EN;
@@ -263,7 +267,12 @@
     if (k === 'dbgLastFaces') { dbgLastFaces = v; return; }
     if (k === 'dbgLastSegs') { dbgLastSegs = v; return; }
 
-    if (k === 'toolSel3d') { toolSel3d = v; return; }  }
+    if (k === 'toolSel3d') { toolSel3d = v; return; }    if (k === 'elements') { elements = v; return; }
+    if (k === 'pendingImage') { pendingImage = v; return; }
+    if (k === 'scale') { scale = v; return; }
+    if (k === 'toolBusy') { toolBusy = v; return; }
+    if (k === 'toolSel') { toolSel = v; return; }
+  }
   var _panels = window.GGB_PANELS.create({ get: _panelStateGet, set: _panelStateSet });
   function t() { return _panels.t.apply(null, arguments); }
   function esc() { return _panels.esc.apply(null, arguments); }
@@ -348,6 +357,15 @@
   function conicPathPts() { return _render2d.conicPathPts.apply(null, arguments); }
   function drawConic() { return _render2d.drawConic.apply(null, arguments); }
   function drawInequality() { return _render2d.drawInequality.apply(null, arguments); }
+
+  // 二维工具点击交互（P2 前端拆分：2D 工具族） 已抽到 static/tools2d.js（P2 前端拆分）；同名薄包装保持调用点不变
+  var _tools2d = window.GGB_T2D.create({ get: _panelStateGet, set: _panelStateSet, api: api, cancelTool: cancelTool, chartToolPrompt: chartToolPrompt, conicPathPts: conicPathPts, distToSeg: distToSeg, drawAxes3d: drawAxes3d, drawElement: drawElement, drawGrid: drawGrid, drawMiniAxes3d: drawMiniAxes3d, drawOverlay: drawOverlay, drawSelectionOverlay: drawSelectionOverlay, finishPolygon: finishPolygon, finishPolyline: finishPolyline, fmtNum: fmtNum, fmtW: fmtW, hitAnyPoint: hitAnyPoint, hitObject: hitObject, is3DEl: is3DEl, load3d: load3d, loadState: loadState, niceStep: niceStep, pointInPoly: pointInPoly, populateEditBar: populateEditBar, populateEditBar3d: populateEditBar3d, postInput: postInput, render: render, render3d: render3d, renderList: renderList, renderList3d: renderList3d, setMsg: setMsg, setToolStatus: setToolStatus, snapPoint: snapPoint, sxp: sxp, syp: syp, t: t, tipText: tipText, toolHintText: toolHintText, translateMsg: translateMsg, updateToolButtons: updateToolButtons, updateUndoBtns: updateUndoBtns, usableCanvasRect: usableCanvasRect, wxp: wxp, wyp: wyp });
+  function viewParams() { return _tools2d.viewParams.apply(null, arguments); }
+  function chartDataPrompt() { return _tools2d.chartDataPrompt.apply(null, arguments); }
+  function resetTool() { return _tools2d.resetTool.apply(null, arguments); }
+  function snapHitLabel() { return _tools2d.snapHitLabel.apply(null, arguments); }
+  function toolPointAt() { return _tools2d.toolPointAt.apply(null, arguments); }
+  function toolCanvasClick() { return _tools2d.toolCanvasClick.apply(null, arguments); }
 
   function setMsg(msg, isErr) {
     msgEl.textContent = translateMsg(msg);
@@ -536,13 +554,6 @@
     linechart: 'LineChart', dotplot: 'DotPlot', barchart3d: 'BarChart3D'
   };
 
-  function chartDataPrompt(title, def) {
-    var txt = prompt(title, def || '');
-    if (txt === null || !txt.trim()) return null;
-    var parts = txt.split(/[,，\s]+/).map(function (v) { return v.trim(); }).filter(Boolean);
-    if (!parts.length || parts.some(function (v) { return isNaN(parseFloat(v)); })) return '';
-    return parts;
-  }
 
   function chartToolPrompt(tool) {
     var zhTitle = {
@@ -2715,13 +2726,6 @@
     hintEl.textContent = t('hint');
   }
   // 重置当前工具（创建成功后保持激活，支持连续操作；Esc/再点按钮退出）
-  function resetTool() {
-    toolSel = [];
-    pendingImage = null;
-    updateToolButtons();
-    setToolStatus();
-    hintEl.textContent = toolHintText();
-  }
   function closeOtherPanels(exceptId) {
     var ids = ['cas-panel', 'exam-panel', 'tools-panel', 'script-panel'];
     for (var pi = 0; pi < ids.length; pi++) {
@@ -2820,56 +2824,6 @@
   // 请求队列：连续快击时若上一次建点未返回，排队处理，保证点标签与顺序稳定。
   var toolBusy = false, toolPointQueue = [];
   // 吸附命中：命中已有点返回其 label，空白返回 null
-  function snapHitLabel(wx, wy) {
-    for (var shi = 0; shi < elements.length; shi++) {
-      var she = elements[shi];
-      if (she.kind !== 'point' || she.visible === false) continue;
-      if (Math.abs(she.x - wx) < COORD && Math.abs(she.y - wy) < COORD) return she.label;
-    }
-    return null;
-  }
-  function toolPointAt(sx, sy, cb) {
-    if (toolBusy) {
-      toolPointQueue.push([sx, sy, cb]);
-      return;
-    }
-    var lbl = hitAnyPoint(sx, sy);
-    if (lbl) { cb(lbl); return; }
-    var wx = wxp(sx), wy = wyp(sy);
-    if (snapOn || shiftKeyPressed) {
-      var snapped = snapPoint(wx, wy, niceStep(), sx, sy);
-      wx = snapped[0]; wy = snapped[1];
-      // 吸附后落点若与某个已有点重合 → 复用该点（避免网格点处新建重叠点）
-      var rl = snapHitLabel(wx, wy);
-      if (rl) { cb(rl); return; }
-    }
-    var prev = {};
-    for (var i = 0; i < elements.length; i++) prev[elements[i].label] = true;
-    toolBusy = true;
-    postInput('(' + fmtW(wx) + ',' + fmtW(wy) + ')', function (ok) {
-      toolBusy = false;
-      if (!ok) { resetTool(); }
-      else {
-        for (var j = 0; j < elements.length; j++) {
-          if (elements[j].kind === 'point' && !prev[elements[j].label]) { cb(elements[j].label); return; }
-        }
-        // 极快点击（down→up 无间隔）时元素列表可能尚未合并到本地：图片工具不能因此丢掉
-        // 已选好的图片，否则用户需要重新选文件；其余工具仍走完整重置。
-        if (activeTool === 'image' && pendingImage) {
-          toolSel = [];
-          updateToolButtons();
-          setToolStatus();
-        } else {
-          resetTool();
-        }
-      }
-      // 处理排队的下一次点击
-      if (toolPointQueue.length) {
-        var nx = toolPointQueue.shift();
-        toolPointAt(nx[0], nx[1], nx[2]);
-      }
-    });
-  }
   // 选中对象整体拖动：本地乐观平移
   function shiftLocal(label, dx, dy) {
     for (var i = 0; i < elements.length; i++) {
@@ -3215,499 +3169,6 @@
   function finishPolyline() {
     if (toolSel.length < 2) return;
     postInput('Polyline[' + toolSel.join(',') + ']', function (ok) { if (ok) resetTool(); });
-  }
-  function toolCanvasClick(sx, sy) {
-    if (activeTool === 'point') {
-      toolPointAt(sx, sy, function () { resetTool(); });
-      return;
-    }
-    if (activeTool === 'segment' || activeTool === 'circle') {
-      toolPointAt(sx, sy, function (lbl) {
-        toolSel.push(lbl);
-        if (toolSel.length === 2) {
-          var cmd = activeTool === 'segment'
-            ? 'Segment[' + toolSel[0] + ',' + toolSel[1] + ']'
-            : 'Circle[' + toolSel[0] + ',' + toolSel[1] + ']';
-          postInput(cmd, function (ok) { if (ok) resetTool(); });
-        } else setToolStatus();
-      });
-      return;
-    }
-    if (activeTool === 'midpoint') {
-      // 点击线段 → 一步创建线段中点；否则收集两个点
-      var segHit = hitObject(sx, sy, ['segment']);
-      if (segHit) {
-        postInput('Midpoint[' + segHit + ']', function (ok) { if (ok) resetTool(); });
-        return;
-      }
-      var ml = hitObject(sx, sy, ['point']);
-      if (!ml) { setMsg(lang === 'en' ? 'Click a point or segment' : '请点击点或线段', true); return; }
-      toolSel.push(ml);
-      if (toolSel.length === 2) {
-        postInput('Midpoint[' + toolSel.join(',') + ']', function (ok) { if (ok) resetTool(); });
-      } else setToolStatus();
-      return;
-    }
-    if (activeTool === 'dist') {
-      // 点击线段 → 求其长度；否则收集 点+点/线/圆 → Distance
-      var dseg = hitObject(sx, sy, ['segment']);
-      if (dseg) { postInput('Length[' + dseg + ']', function (ok) { if (ok) resetTool(); }); return; }
-      var dpt = hitObject(sx, sy, ['point']);
-      if (!dpt) { setMsg(lang === 'en' ? 'Click a point or segment' : '请点击点或线段', true); return; }
-      if (toolSel.length === 0) { toolSel.push(dpt); setToolStatus(); return; }
-      var dO2 = hitObject(sx, sy, ['point', 'line', 'segment', 'ray', 'circle']);
-      if (!dO2) { setMsg(lang === 'en' ? 'Click a point, line or circle' : '请点击点/直线/圆', true); return; }
-      postInput('Distance[' + toolSel[0] + ',' + dO2 + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'slope') {
-      var slL = hitObject(sx, sy, ['line', 'segment', 'ray']);
-      if (!slL) { setMsg(lang === 'en' ? 'Click a line/segment/ray' : '请点击直线/线段/射线', true); return; }
-      postInput('Slope[' + slL + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'angle') {
-      toolCollectPoints(3, function (s) { return 'Angle[' + s.join(',') + ']'; }, sx, sy);
-      return;
-    }
-    if (activeTool === 'area' || activeTool === 'perimeter') {
-      var kindsA = activeTool === 'area' ? ['polygon', 'circle', 'conic'] : ['polygon', 'circle'];
-      var aHit = hitObject(sx, sy, kindsA);
-      if (!aHit) { setMsg(lang === 'en' ? 'Click a polygon/circle' : '请点击多边形或圆', true); return; }
-      var acmd = activeTool === 'area' ? 'Area[' : 'Perimeter[';
-      postInput(acmd + aHit + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    // 视图工具：放大/缩小/复位（不创建对象）
-    if (activeTool === 'zoomin' || activeTool === 'zoomout' || activeTool === 'home') {
-      if (activeTool === 'home') {
-        view.xmin = -8; view.xmax = 8; view.ymin = -8; view.ymax = 8; scale = 60;
-      } else {
-        var zf = activeTool === 'zoomin' ? 1.3 : 1 / 1.3;
-        var zwx = wxp(sx), zwy = wyp(sy);
-        scale *= zf;
-        scale = Math.max(2, Math.min(200000, scale));
-        view.xmin = zwx - sx / scale;
-        view.xmax = view.xmin + cssW / scale;
-        view.ymin = zwy - (cssH - sy) / scale;
-        view.ymax = view.ymin + cssH / scale;
-      }
-      render();
-      clearTimeout(canvas._zw);
-      canvas._zw = setTimeout(loadState, 180);
-      resetTool();
-      return;
-    }
-    if (activeTool === 'perp' || activeTool === 'parallel') {
-      if (toolSel.length === 0) {
-        var ll = hitObject(sx, sy, ['line', 'segment', 'ray']);
-        if (!ll) { setMsg(lang === 'en' ? 'Click a line or segment' : '请点击直线或线段', true); return; }
-        toolSel.push(ll);
-        setToolStatus();
-        return;
-      }
-      toolPointAt(sx, sy, function (ptLbl) {
-        var cmd = activeTool === 'perp'
-          ? 'PerpendicularLine[' + ptLbl + ',' + toolSel[0] + ']'
-          : 'Line[' + ptLbl + ',' + toolSel[0] + ']';
-        postInput(cmd, function (ok) { if (ok) resetTool(); });
-      });
-      return;
-    }
-    if (activeTool === 'tangent') {
-      if (toolSel.length === 0) {
-        var cl = hitObject(sx, sy, ['circle', 'conic', 'line', 'segment', 'arc', 'function']);
-        if (!cl) { setMsg(lang === 'en' ? 'Click a circle or curve' : '请点击圆或曲线', true); return; }
-        toolSel.push(cl);
-        setToolStatus();
-        return;
-      }
-      toolPointAt(sx, sy, function (ptLbl) {
-        postInput('Tangent[' + toolSel[0] + ',' + ptLbl + ']', function (ok) { if (ok) resetTool(); });
-      });
-      return;
-    }
-    if (activeTool === 'polygon' || activeTool === 'rigidpolygon') {
-      var firstLbl = toolSel.length ? toolSel[0] : null;
-      // 宽容差命中第一个顶点 → 自动闭合（已选 ≥2 点；18px 屏幕半径，方便回到起点收口）
-      if (firstLbl && toolSel.length >= 2) {
-        // 与预览/建点一致：吸附开启时先修正点击落点（网格吸附可能远离鼠标原始位置）
-        var plx = wxp(sx), ply = wyp(sy);
-        if (snapOn || shiftKeyPressed) {
-          var plsn = snapPoint(plx, ply, niceStep(), sx, sy);
-          plx = plsn[0]; ply = plsn[1];
-        }
-        for (var fpi = 0; fpi < elements.length; fpi++) {
-          var fpel = elements[fpi];
-          if (fpel.label !== firstLbl || fpel.kind !== 'point') continue;
-          var fdx = (fpel.x - plx) * scale, fdy = (fpel.y - ply) * scale;
-          if (fdx * fdx + fdy * fdy <= 18 * 18) { finishPolygon(); return; }
-          break;
-        }
-      }
-      var hitLbl = hitAnyPoint(sx, sy);
-      // 点击已选中的其他顶点 → 忽略（提示回起点闭合）
-      if (hitLbl && toolSel.indexOf(hitLbl) !== -1) {
-        setMsg(lang === 'en' ? 'Click the first point to close' : '点击第一个点闭合多边形', true);
-        return;
-      }
-      toolPointAt(sx, sy, function (lbl) {
-        if (toolSel.indexOf(lbl) !== -1) {
-          setMsg(lang === 'en' ? 'Click the first point to close' : '点击第一个点闭合多边形', true);
-          return;
-        }
-        toolSel.push(lbl);
-        updateToolButtons();
-        setToolStatus();
-      });
-      return;
-    }
-    // 通用多点收集工具（直线/半圆/圆弧/椭圆/双曲线）
-    function toolCollectPoints(n, makeCmd, sx2, sy2) {
-      toolPointAt(sx2, sy2, function (lbl) {
-        toolSel.push(lbl);
-        if (toolSel.length >= n) {
-          var cmd = makeCmd(toolSel);
-          postInput(cmd, function (ok) { if (ok) resetTool(); });
-        } else setToolStatus();
-      });
-    }
-    if (activeTool === 'conic5') {
-      // 五点圆锥曲线：前 4 点击点，第 5 击落点（过程中虚线预览随鼠标变化）
-      toolCollectPoints(5, function (s) { return 'Conic[' + s.join(',') + ']'; }, sx, sy);
-      return;
-    }
-    if (activeTool === 'ray' || activeTool === 'vector' || activeTool === 'perpbis') {
-      if (activeTool === 'perpbis' && toolSel.length === 0) {
-        var sl = hitObject(sx, sy, ['segment', 'line', 'ray']);
-        if (sl) { postInput('PerpendicularBisector[' + sl + ']', function (ok) { if (ok) resetTool(); }); return; }
-      }
-      toolCollectPoints(2, function (s) {
-        if (activeTool === 'ray') return 'Ray[' + s.join(',') + ']';
-        if (activeTool === 'vector') return 'Vector[' + s.join(',') + ']';
-        return 'PerpendicularBisector[' + s.join(',') + ']';
-      }, sx, sy);
-      return;
-    }
-    if (activeTool === 'anglebis') {
-      toolCollectPoints(3, function (s) { return 'AngleBisector[' + s.join(',') + ']'; }, sx, sy);
-      return;
-    }
-    if (activeTool === 'regpoly') {
-      toolPointAt(sx, sy, function (lbl) {
-        toolSel.push(lbl);
-        if (toolSel.length >= 2) {
-          var nTxt = prompt(lang === 'en' ? 'Number of sides (3-100):' : '边数（3-100）：');
-          if (nTxt === null || !nTxt.trim()) { resetTool(); return; }
-          var nv = parseInt(nTxt, 10);
-          if (!nv || nv < 3 || nv > 100) { setMsg(lang === 'en' ? 'Sides must be 3-100' : '边数需在 3~100', true); resetTool(); return; }
-          postInput('RegularPolygon[' + toolSel.join(',') + ',' + nv + ']', function (ok) { if (ok) resetTool(); });
-        } else setToolStatus();
-      });
-      return;
-    }
-    var TRANS_KINDS = ['point', 'segment', 'ray', 'circle', 'polygon', 'line', 'polyline', 'vector', 'conic'];
-    if (activeTool === 'foot') {
-      if (toolSel.length === 0) {
-        toolPointAt(sx, sy, function (l) { toolSel.push(l); setToolStatus(); });
-        return;
-      }
-      var fl = hitObject(sx, sy, ['line', 'segment', 'ray']);
-      if (!fl) { setMsg(lang === 'en' ? 'Click a line/segment/ray' : '请点击直线/线段/射线', true); return; }
-      postInput('Foot[' + toolSel[0] + ',' + fl + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'incenter' || activeTool === 'centroid' || activeTool === 'incircle') {
-      var poly = hitObject(sx, sy, ['polygon']);
-      if (!poly) { setMsg(lang === 'en' ? 'Click a triangle polygon' : '请点击三角形多边形', true); return; }
-      var ccmd = activeTool === 'incenter' ? 'Incenter[' + poly + ']'
-        : activeTool === 'centroid' ? 'Centroid[' + poly + ']' : 'Incircle[' + poly + ']';
-      postInput(ccmd, function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'reflect') {
-      if (toolSel.length === 0) {
-        var ro = hitObject(sx, sy, TRANS_KINDS);
-        if (!ro) { setMsg(lang === 'en' ? 'Click object to reflect' : '请点击要反射的对象', true); return; }
-        toolSel.push(ro); setToolStatus(); return;
-      }
-      var axis = hitObject(sx, sy, ['line', 'segment', 'ray']);
-      var center = hitAnyPoint(sx, sy);
-      var mirror = axis || center;
-      if (!mirror) { setMsg(lang === 'en' ? 'Click axis line or center point' : '请点击轴对称线或中心点', true); return; }
-      postInput('Reflect[' + toolSel[0] + ',' + mirror + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'rotate') {
-      if (toolSel.length === 0) {
-        var rlo = hitObject(sx, sy, TRANS_KINDS);
-        if (!rlo) { setMsg(lang === 'en' ? 'Click object to rotate' : '请点击要旋转的对象', true); return; }
-        toolSel.push(rlo); setToolStatus(); return;
-      }
-      toolPointAt(sx, sy, function (c) {
-        var angTxt = prompt(lang === 'en' ? 'Rotation angle (degrees):' : '旋转角度（度）：');
-        if (angTxt === null || angTxt.trim() === '') { resetTool(); return; }
-        var av = parseFloat(angTxt);
-        if (isNaN(av)) { setMsg(lang === 'en' ? 'Enter a number' : '请输入数字角度', true); resetTool(); return; }
-        postInput('Rotate[' + toolSel[0] + ',' + av + ',' + c + ']', function (ok) { if (ok) resetTool(); });
-      });
-      return;
-    }
-    if (activeTool === 'translate') {
-      if (toolSel.length === 0) {
-        var tlo = hitObject(sx, sy, TRANS_KINDS);
-        if (!tlo) { setMsg(lang === 'en' ? 'Click object to translate' : '请点击要平移的对象', true); return; }
-        toolSel.push(tlo); setToolStatus(); return;
-      }
-      if (toolSel.length === 1) {
-        // 优先：点击已有向量对象 → 直接平移
-        var vHit = hitObject(sx, sy, ['vector']);
-        if (vHit) {
-          postInput('Translate[' + toolSel[0] + ',' + vHit + ']', function (ok) { if (ok) resetTool(); });
-          return;
-        }
-        toolPointAt(sx, sy, function (p1) { toolSel.push(p1); setToolStatus(); });
-        return;
-      }
-      toolPointAt(sx, sy, function (p2) {
-        var p1 = toolSel[1], e1 = null, e2 = null;
-        for (var ti = 0; ti < elements.length; ti++) {
-          if (elements[ti].label === p1 && elements[ti].kind === 'point') e1 = elements[ti];
-          if (elements[ti].label === p2 && elements[ti].kind === 'point') e2 = elements[ti];
-        }
-        if (!e1 || !e2) { resetTool(); return; }
-        var tdx = e2.x - e1.x, tdy = e2.y - e1.y;
-        postInput('Translate[' + toolSel[0] + ',(' + fmtW(tdx) + ',' + fmtW(tdy) + ')]', function (ok) { if (ok) resetTool(); });
-      });
-      return;
-    }
-    if (activeTool === 'dilate') {
-      if (toolSel.length === 0) {
-        var dlo = hitObject(sx, sy, TRANS_KINDS);
-        if (!dlo) { setMsg(lang === 'en' ? 'Click object' : '请点击要位似的对象', true); return; }
-        toolSel.push(dlo); setToolStatus(); return;
-      }
-      toolPointAt(sx, sy, function (c) {
-        var kTxt = prompt(lang === 'en' ? 'Dilation ratio (k):' : '位似比例 k：');
-        if (kTxt === null || kTxt.trim() === '') { resetTool(); return; }
-        var kv = parseFloat(kTxt);
-        if (isNaN(kv)) { setMsg(lang === 'en' ? 'Enter a number' : '请输入数字比例', true); resetTool(); return; }
-        postInput('Dilate[' + toolSel[0] + ',' + kv + ',' + c + ']', function (ok) { if (ok) resetTool(); });
-      });
-      return;
-    }
-    if (activeTool === 'image') {
-      if (!pendingImage) { setMsg(lang === 'en' ? 'Choose an image file first' : '请先选择图片文件', true); cancelTool(); return; }
-      toolPointAt(sx, sy, function (lbl) {
-        toolSel.push(lbl);
-        if (toolSel.length < 2) { updateToolButtons(); setToolStatus(); return; }
-        var aLbl = toolSel[0], bLbl = toolSel[1];
-        if (aLbl === bLbl) { setMsg(lang === 'en' ? 'Base points must differ' : '两个基点不能相同', true); return; }
-        postInput('Image[' + aLbl + ',' + bLbl + ',' + pendingImage.id + ']', function () {
-          pendingImage = null;
-          cancelTool();   // 插入一张后结束工具（再插入需重新选文件）
-        });
-      });
-      return;
-    }
-    if (activeTool === 'invert') {
-      if (toolSel.length === 0) {
-        var invObj = hitObject(sx, sy, ['point', 'line', 'segment', 'ray', 'circle', 'polygon', 'polyline', 'arc', 'vector', 'conic', 'function', 'parametric', 'polar', 'implicit', 'locus']);
-        if (!invObj) { setMsg(lang === 'en' ? 'Click an object to invert' : '请点击要反演的对象', true); return; }
-        toolSel.push(invObj); setToolStatus(); return;
-      }
-      var invC = hitObject(sx, sy, ['circle']);
-      if (!invC) { setMsg(lang === 'en' ? 'Click the inversion circle' : '请点击反演圆', true); return; }
-      postInput('Invert[' + toolSel[0] + ',' + invC + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'pointoncircle') {
-      var pc = hitObject(sx, sy, ['circle']);
-      if (!pc) { setMsg(lang === 'en' ? 'Click a circle' : '请点击圆', true); return; }
-      postInput('PointOnCircle[' + pc + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'function') {
-      var fTxt = prompt(lang === 'en' ? 'Function expression (e.g. x^2+1, sin(x)):' : '函数表达式（如 x^2+1、sin(x)）：');
-      if (fTxt === null || !fTxt.trim()) { resetTool(); return; }
-      fTxt = fTxt.trim();
-      // 带完整定义（f(x)=...）则原样，否则补 (x)=expr 自动命名
-      var fcmd = /^\s*[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*=/.test(fTxt) ? fTxt : '(x)=' + fTxt;
-      postInput(fcmd, function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'slider') {
-      var sTxt = prompt(lang === 'en' ? 'min,max,step (e.g. 0,10,0.5):' : '最小值,最大值,增量（如 0,10,0.5）：', '0,10,0.1');
-      if (sTxt === null || !sTxt.trim()) { resetTool(); return; }
-      var sp = sTxt.split(','), slo = parseFloat(sp[0]), shi = parseFloat(sp[1] || '10'), sstep = parseFloat(sp[2]);
-      if (isNaN(slo) || isNaN(shi) || shi <= slo) { setMsg(lang === 'en' ? 'Invalid min/max' : '无效的最小/最大值', true); resetTool(); return; }
-      var scmd = 'Slider[' + slo + ',' + shi;
-      if (!isNaN(sstep) && sstep > 0) scmd += ',' + sstep;
-      scmd += ']';
-      postInput(scmd, function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'locus') {
-      if (toolSel.length === 0) {
-        var lq = hitAnyPoint(sx, sy);
-        if (!lq) { setMsg(lang === 'en' ? 'Click driven point' : '请点击被驱动点（轨迹点）', true); return; }
-        toolSel.push(lq); setToolStatus(); return;
-      }
-      var lp = hitAnyPoint(sx, sy);
-      if (!lp) { setMsg(lang === 'en' ? 'Click driver point' : '请点击驱动点（圆上点）', true); return; }
-      postInput('Locus[' + toolSel[0] + ',' + lp + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (CHART_TOOL_CMD[activeTool] || activeTool === 'histogram' || activeTool === 'scatterplot' ||
-        activeTool === 'scatterplot3d' || activeTool === 'surfacechart3d') {
-      chartToolPrompt(activeTool);
-      return;
-    }
-    if (activeTool === 'ineq') {
-      var iTxt = prompt(lang === 'en' ? 'Inequality (e.g. y<x^2, x^2+y^2<4):' : '不等式（如 y<x^2、x^2+y^2<4）：');
-      if (iTxt === null || !iTxt.trim()) { resetTool(); return; }
-      postInput(iTxt.trim(), function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'compass') {
-      toolPointAt(sx, sy, function (c) {
-        var rTxt = prompt(lang === 'en' ? 'Radius length:' : '半径长度：', '3');
-        if (rTxt === null || rTxt.trim() === '') { resetTool(); return; }
-        var rv = parseFloat(rTxt);
-        if (isNaN(rv) || rv <= 0) { setMsg(lang === 'en' ? 'Enter a positive radius' : '请输入正数半径', true); resetTool(); return; }
-        postInput('Circle[' + c + ',' + rv + ']', function (ok) { if (ok) resetTool(); });
-      });
-      return;
-    }
-    if (activeTool === 'pointonpath') {
-      var popObj = hitObject(sx, sy, ['line', 'segment', 'ray', 'circle', 'polygon', 'arc']);
-      if (!popObj) { setMsg(lang === 'en' ? 'Click a line/segment/ray/circle/polygon/arc' : '请点击线/线段/射线/圆/多边形/圆弧', true); return; }
-      postInput('PointOnPath[' + popObj + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'polyline') {
-      var plFirst = toolSel.length ? toolSel[0] : null;
-      // 宽容差命中起点 → 完成折线（18px；与预览一致：吸附开启时按吸附后落点判定）
-      if (plFirst && toolSel.length >= 2) {
-        var plwx = wxp(sx), plwy = wyp(sy);
-        if (snapOn || shiftKeyPressed) {
-          var plsp = snapPoint(plwx, plwy, niceStep(), sx, sy);
-          plwx = plsp[0]; plwy = plsp[1];
-        }
-        for (var pli2 = 0; pli2 < elements.length; pli2++) {
-          var pfel = elements[pli2];
-          if (pfel.label !== plFirst || pfel.kind !== 'point') continue;
-          var pdx = (pfel.x - plwx) * scale, pdy = (pfel.y - plwy) * scale;
-          if (pdx * pdx + pdy * pdy <= 18 * 18) { finishPolyline(); return; }
-          break;
-        }
-      }
-      var plHit = hitAnyPoint(sx, sy);
-      // 点击已选中的其他顶点 → 提示回起点
-      if (plHit && toolSel.indexOf(plHit) !== -1) {
-        setMsg(lang === 'en' ? 'Click the first point to finish' : '点击第一个点完成折线', true);
-        return;
-      }
-      // 点击已选中的其他顶点 → 提示回起点
-      if (plHit && toolSel.indexOf(plHit) !== -1) {
-        setMsg(lang === 'en' ? 'Click the first point to finish' : '点击第一个点完成折线', true);
-        return;
-      }
-      toolPointAt(sx, sy, function (l) {
-        if (toolSel.indexOf(l) !== -1) {
-          setMsg(lang === 'en' ? 'Click the first point to finish' : '点击第一个点完成折线', true);
-          return;
-        }
-        toolSel.push(l);
-        updateToolButtons();
-        setToolStatus();
-      });
-      return;
-    }
-    if (activeTool === 'circumcircle') {
-      // 直接点击三角形（内部/边）→ 一步得到外接圆；否则收集三点
-      var ccPoly = hitObject(sx, sy, ['polygon']);
-      if (ccPoly) {
-        postInput('Circumcircle[' + ccPoly + ']', function (ok) { if (ok) resetTool(); });
-        return;
-      }
-      toolCollectPoints(3, function (s) { return 'Circumcircle[' + s.join(',') + ']'; }, sx, sy);
-      return;
-    }
-    if (activeTool === 'line' || activeTool === 'semicircle') {
-      toolCollectPoints(2, function (s) {
-        return (activeTool === 'line' ? 'Line[' : 'Semicircle[') + s.join(',') + ']';
-      }, sx, sy);
-      return;
-    }
-    if (activeTool === 'arc' || activeTool === 'sector') {
-      // 点击顺序：圆心,起点,终点（arc→Arc[起点,终点,圆心]；sector→Sector[起点,终点,圆心]）
-      var seCmd = activeTool === 'arc' ? 'Arc' : 'Sector';
-      toolCollectPoints(3, function (s) { return seCmd + '[' + s[1] + ',' + s[2] + ',' + s[0] + ']'; }, sx, sy);
-      return;
-    }
-    if (activeTool === 'ellipse' || activeTool === 'hyperbola') {
-      toolCollectPoints(3, function (s) {
-        return (activeTool === 'ellipse' ? 'Ellipse[' : 'Hyperbola[') + s.join(',') + ']';
-      }, sx, sy);
-      return;
-    }
-    if (activeTool === 'parabola') {
-      if (toolSel.length === 0) {
-        toolPointAt(sx, sy, function (fLbl) {
-          toolSel.push(fLbl);
-          setToolStatus();
-        });
-        return;
-      }
-      var dLbl = hitObject(sx, sy, ['line', 'segment', 'ray']);
-      if (!dLbl) { setMsg(lang === 'en' ? 'Click the directrix (line/segment)' : '请点击准线（直线/线段）', true); return; }
-      postInput('Parabola[' + toolSel[0] + ',' + dLbl + ']', function (ok) { if (ok) resetTool(); });
-      return;
-    }
-    if (activeTool === 'intersect') {
-      var ixKinds = ['line', 'segment', 'ray', 'circle', 'conic', 'function', 'parametric', 'polar', 'implicit'];
-      if (toolSel.length === 0) {
-        var o1 = hitObject(sx, sy, ixKinds);
-        if (!o1) { setMsg(lang === 'en' ? 'Click a line/circle/curve/function' : '请点击线/圆/曲线/函数等对象', true); return; }
-        toolSel.push(o1);
-        setToolStatus();
-        return;
-      }
-      var o2 = hitObject(sx, sy, ixKinds);
-      if (!o2) { setMsg(lang === 'en' ? 'Click the second object' : '请点击第二个对象', true); return; }
-      createIntersections(toolSel[0], o2);
-      return;
-    }
-    // 循环创建全部交点（Intersect[o1,o2,1..N]，直到新元素带 error 或无新元素）
-    function createIntersections(a, b) {
-      var k = 1;
-      (function next() {
-        var prev = {};
-        for (var i = 0; i < elements.length; i++) prev[elements[i].label] = true;
-        api('POST', '/api/input', {
-          text: 'Intersect[' + a + ',' + b + ',' + k + ']',
-          xmin: view.xmin, xmax: view.xmax, ymin: view.ymin, ymax: view.ymax
-        }, function (d) {
-          if (!d) { resetTool(); return; }
-          if (d.elements) { elements = d.elements; render(); }
-          var bad = false;
-          for (var j = 0; j < elements.length; j++) {
-            if (!prev[elements[j].label] && elements[j].error) bad = true;
-          }
-          if (bad || !d.ok) { resetTool(); return; }
-          k++;
-          next();
-        });
-      })();
-    }
-    if (activeTool === 'text') {
-      toolPointAt(sx, sy, function (posLbl) {
-        var content = prompt(lang === 'en' ? 'Text content:' : '文本内容：');
-        if (content === null || !content.trim()) { resetTool(); return; }
-        postInput('Text["' + content.replace(/"/g, "'") + '",' + posLbl + ']', function (ok) { if (ok) resetTool(); });
-      });
-    }
   }
 
   // ---------- 命令脚本（批量执行） ----------

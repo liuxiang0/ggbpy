@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第四十八批（2026-10-04 · 二维工具交互层外置：tools2d.js，app.js 破 3500 行）**：
+  - **`static/tools2d.js`（673 行）**：2D 工具交互层整体外置（`toolCanvasClick` 493 行 / `toolPointAt` / `snapHitLabel` / `resetTool` / `chartDataPrompt` 等 49 函数闭包）为 `window.GGB_T2D.create(env)`；`app.js` **3851 → 3312 行**（前端累计 **5979 → 3312，−45%**）
+  - **发现并修复「过期快照」缺陷（重要）**：app.js 会**整体替换**状态（`elements = d.elements`），模块在函数入口 `var elements = env.get('elements')` 捕获的是**旧数组** → `toolPointAt` 异步回调里找不到新建点 → **图片工具第二步失效**（浏览器矩阵 F 段 2 项失败）。修法：回调内**晚读** `env.get('elements')`；并确认同类只有该处（其余 7 处候选为同步代码，属启发式误报）
+  - **抽取工具/分析器加固**：闭包遍历原先只认 `name(`，漏掉**按引用传递**的依赖（`setTimeout(loadState, 180)`）→ 抽取后运行时报 `loadState is not defined`；现按「裸标识符 ∩ 顶层函数/变量」补齐依赖 ✓
+  - 检测：模块边界 292 → **298**（含「异步回调内晚读」与「图片两步流程」断言）
 - **第四十七批（2026-10-04 · 二维元素绘制层外置：render2d.js，app.js 破 4000 行）**：
   - **`static/render2d.js`（648 行）**：二维绘制层整体外置（`drawElement` 195 行 / `drawOverlay` / `drawSelectionOverlay` / `drawConic` / `drawInequality` / `drawImageEl` / `getImage` / `conicPathPts` / `colorOf` 等 30 函数闭包）为 `window.GGB_R2D.create(env)`；`app.js` **4396 → 3851 行**（前端累计 **5979 → 3851，−36%**）
   - **分层策略（先量后拆）**：`toolCanvasClick` 的闭包达 **63 函数 / 1541 行**且混着两类关注点 → 拆成两步：本批先抽**绘制层**（30 函数 / 723 行），下一批再抽**工具交互层**（`tools2d`，闭包将显著缩小）
@@ -301,7 +306,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 292 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1465 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 298 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1471 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
