@@ -92,6 +92,11 @@ def main() -> int:
 
     print("\n=== D. 文档章节完整性（README 限制/边界章节，防漂移） ===")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    # 防误截断：曾有文档脚本把 README 写成空文件并提交（0 行），CI 未拦住
+    check("README 非空且规模正常（≥ 400 行，防误截断）", len(readme.splitlines()) >= 400,
+          "lines=%d bytes=%d" % (len(readme.splitlines()), len(readme.encode("utf-8"))))
+    check("README 含变更历史与快速开始（结构完整）",
+          "## 🚀 快速开始" in readme and "第五十六批" in readme, "")
     check("README 含「2D 限制」章节（与 3D 章节对称）", "#### 2D 限制" in readme, "")
     check("README 含「2D 检测矩阵」章节", "#### 2D 检测矩阵" in readme, "")
     if "#### 2D 限制" in readme:
@@ -101,6 +106,18 @@ def main() -> int:
               "n=%d" % len(bullets))
         check("2D 限制章节锚定关键上限（撤销 200 / 嵌套 4 层 / 203 词条 / 12 分类）",
               all(k in sec for k in ("UNDO_LIMIT = 200", "4 层", "203", "12 个分类")), "")
+
+    print("\n=== E. 回顾文档闭环状态（REVIEW_12_BATCHES.md §0） ===")
+    rev = (ROOT / "REVIEW_12_BATCHES.md").read_text(encoding="utf-8")
+    check("REVIEW 文档非空且含原始回顾文本",
+          len(rev.splitlines()) >= 100 and "## 1. 一页数字" in rev, "lines=%d" % len(rev.splitlines()))
+    check("REVIEW 含 §0 闭环状态章节", "## 0. 闭环状态" in rev, "")
+    check("§0 覆盖架构债逐条状态（✅/⚠️/⛔ 标记 ≥10 条）",
+          sum(rev.count(m) for m in ("✅", "⚠️", "⛔")) >= 10,
+          str(sum(rev.count(m) for m in ("✅", "⚠️", "⛔"))))
+    check("§0 含「判定不需要」并给出依据", "判定「不需要做」" in rev and "差量撤销快照" in rev, "")
+    check("§0 给出可复现复核入口（三个工具）",
+          all(k in rev for k in ("run_all_detection.sh", "bench_blocking.py", "bench_undo.py")), "")
 
     print("\n" + "=" * 56)
     print("代码质量策略检测：%d 项断言，%d 失败" % (ok + fail, fail))
