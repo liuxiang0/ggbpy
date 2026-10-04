@@ -46,6 +46,11 @@
 - **CAS 算子接线为构造命令**：`Solve` `NSolve` `Limit` `PartialFractions` `Substitute` `SolveODE`（CAS 面板早已实现，但只在那里可用）
   + `SurfaceArea` + `IsFinite` —— 每条在 `SPECS` 只加一行（§6-F「命令注册单一来源」的直接红利），全部 DAG 可重算
 
+### §0 之外的补强（2026-10-04 第六十批）
+
+- **二维剖分**：`Delaunay`（scipy Qhull）+ `Voronoi`（**无 scipy 依赖**，半平面裁剪 → 元胞均有界）；
+  返回多边形列表，支持点列表/多边形/变参点三种入参（后两者随拖动重算）
+
 ### 判定「不需要做」（有测量或原回顾依据）
 
 - **差量撤销快照**：快照仅 58 B/对象、满栈 2.2 MB，不是瓶颈；真正瓶颈是重元素重算，已由 LRU 记忆保护

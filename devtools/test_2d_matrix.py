@@ -839,6 +839,85 @@ check("新命令随依赖重算（SetValue[n,0]：IsFinite→False / Substitute�
       _before == (True, 16.0, 4.0, [-4.0, 4.0]) and _after == (False, 0.0, 0.0, [0.0]),
       "before=%s after=%s" % (_before, _after))
 
+# ---------------------------------------------------------------------------
+section("Z3. 二维剖分（Delaunay 三角剖分 / Voronoi 泰森多边形）")
+
+
+def _poly_area(pp):
+    acc = 0.0
+    for k in range(len(pp)):
+        k2 = (k + 1) % len(pp)
+        acc += pp[k][0] * pp[k2][1] - pp[k2][0] * pp[k][1]
+    return abs(acc) / 2.0
+
+
+_t = Construction()
+_t.process("Pts={(0,0),(4,0),(4,4),(0,4),(2,2)}")
+_t.process("DT=Delaunay[Pts]")
+_dt = _t.elements.get("DT")
+check("Delaunay[内联点列表] → 4 个三角形，且总面积等于正方形面积",
+      _dt is not None and _dt.kind == "list" and _dt.itemkind == "polygon" and len(_dt.items) == 4
+      and all(len(pp) == 3 for pp in _dt.items) and abs(sum(_poly_area(pp) for pp in _dt.items) - 16.0) < 1e-6,
+      "n=%s area=%.6f" % (len(_dt.items) if _dt else None,
+                          sum(_poly_area(pp) for pp in _dt.items) if _dt else -1))
+
+_t.process("VT=Voronoi[Pts]")
+_vt = _t.elements.get("VT")
+check("Voronoi[内联点列表] → 5 个元胞，且面积和等于外扩包围盒面积（元胞有界）",
+      _vt is not None and len(_vt.items) == 5
+      and abs(sum(_poly_area(pp) for pp in _vt.items) - 5.2 * 5.2) < 1e-6,
+      "n=%s area=%.4f" % (len(_vt.items) if _vt else None,
+                          sum(_poly_area(pp) for pp in _vt.items) if _vt else -1))
+
+_t.process("DT2=三角剖分[Pts]")
+check("中文别名「三角剖分」可用", _t.elements.get("DT2") is not None and len(_t.elements["DT2"].items) == 4, "")
+_t.process("VT2=泰森多边形[Pts]")
+check("中文别名「泰森多边形」可用", _t.elements.get("VT2") is not None and len(_t.elements["VT2"].items) == 5, "")
+
+# 动态形态：变参点元素 + 拖动重算
+_t2 = Construction()
+for _i, (_x, _y) in enumerate(((0, 0), (4, 0), (4, 4), (0, 4))):
+    _t2.process("Q%d=(%d,%d)" % (_i, _x, _y))
+_t2.process("D2=Delaunay[Q0,Q1,Q2,Q3]")
+_before = [list(map(list, pp)) for pp in _t2.elements["D2"].items]
+_t2.process("SetCoords[Q2, 6, 4]")
+_after = [list(map(list, pp)) for pp in _t2.elements["D2"].items]
+check("Delaunay[变参点] 随 SetCoords 重算（三角形集合改变）", _before != _after,
+      "before=%s after=%s" % (_before[:1], _after[:1]))
+
+# 多边形入参（动态）
+_t3 = Construction()
+_t3.process("A3b=(0,0)")
+_t3.process("B3b=(4,0)")
+_t3.process("C3b=(4,4)")
+_t3.process("D3b=(0,4)")
+_t3.process("Poly=P1olygon[A3b,B3b,C3b,D3b]") if False else _t3.process("Poly=Polygon[A3b,B3b,C3b,D3b]")
+_t3.process("DP=Delaunay[Poly]")
+_t3.process("VP=Voronoi[Poly]")
+check("接受多边形入参（Delaunay 2 三角形 / Voronoi 4 元胞）",
+      _t3.elements.get("DP") is not None and len(_t3.elements["DP"].items) == 2
+      and _t3.elements.get("VP") is not None and len(_t3.elements["VP"].items) == 4,
+      "dt=%s vt=%s" % (len(_t3.elements["DP"].items) if _t3.elements.get("DP") else None,
+                       len(_t3.elements["VP"].items) if _t3.elements.get("VP") else None))
+
+# 退化与边界
+_t4 = Construction()
+_t4.process("Col={(0,0),(1,1),(2,2)}")
+_t4.process("DC=Delaunay[Col]")
+check("共线点 → 元素带明确 error（不给出错误图形）",
+      (_t4.elements.get("DC") is not None) and "退化" in (getattr(_t4.elements["DC"], "error", "") or ""),
+      str(getattr(_t4.elements.get("DC"), "error", None))[:36])
+
+_t4.process("Dup={(0,0),(0,0),(1,1)}")
+_t4.process("VD=Voronoi[Dup]")
+check("Voronoi 重复点 → 元素带明确 error",
+      (_t4.elements.get("VD") is not None) and "重合" in (getattr(_t4.elements["VD"], "error", "") or ""),
+      str(getattr(_t4.elements.get("VD"), "error", None))[:30])
+
+_msg_t = _t4.process("DT9=Delaunay[(0,0),(1,1)]")
+check("Delaunay 点数不足 → 命令报错（不创建元素）",
+      _t4.elements.get("DT9") is None and "至少" in (_msg_t or ""), (_msg_t or "")[:30])
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

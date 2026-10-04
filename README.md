@@ -49,6 +49,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   `Substitute[表达式|函数, 变量, 值]` → 数值或函数 · `SolveODE[微分方程]` → 通解文本 ·
   `IsFinite[数值|表达式]` → 布尔（`1/0`/`∞`/`0/0` 均为 False）· `SurfaceArea[立体|曲面]` → 表面积（球/锥/柱解析，网格按三角形求和）
   中文别名：求解方程 / 数值解 / 极限 / 部分分式 / 代入 / 微分方程 / 是否有限 / 表面积
+- **二维剖分**：`Delaunay[点列表|多边形|点…]` → 三角剖分（scipy Qhull）· `Voronoi[点列表|多边形|点…]` → 泰森多边形
+  （**不依赖 scipy**：元胞 = 外扩包围盒 ∩ 垂直平分半平面裁剪 → **每个元胞都是有界凸多边形**）。
+  两者都返回**多边形列表**（对象列表显示为 `{N 个多边形}`、画布半透明填充 + 描边）；
+  入参支持三种形态：内联点列表（值快照）、**多边形**（随顶点变化重算）、**变参点元素**（随拖动重算）
+  中文别名：三角剖分 / 德劳内 / 泰森多边形 / 沃罗诺伊
 
 ### CAS 符号计算（右侧面板）
 - CAS 面板内置**命令面板**（11 个命令按钮，点击插入模板、光标自动停在括号内）；`#N` 可点击引用前序单元；`a:=5` 创建数值、`f(x):=x^2` 创建函数（结果可 `:=` 联动到绘图区）；命令：`Expand` `Factor` `Simplify` `Solve` `NSolve` `Limit` `Derivative` `Integral` `SolveODE` `PartialFractions` `Substitute`；帮助面板 `?` 中也有入口
@@ -66,7 +71,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **嵌套命令**：参数里的 `Cmd[...]` 最多 **4 层**（`_NESTED_MAX_DEPTH`，超出明确报错）；嵌套产生的匿名辅助元素不进对象列表 / 撤销 / 序列化
 - **轨迹**：`Locus[依赖点, 圆上动点]` 采样生成轨迹点（检测断言 >5 点），随驱动参数采样
 - **符号求解边界**：`Root` / `Extremum` 需有效区间（上限 > 下限）；`SolveIneq`、`Implicit` 输入不合法时给明确错误而非静默失败
-- **新命令的边界（刻意为之）**：`Solve` 只返回**实数**解（复数解给文本 `{x = -I, x = I}`，无解给空列表）· `NSolve` 在默认区间 `[-60, 60]` 内找实根，找不到即报错 ·
+- **新命令的边界（刻意为之）**：`Solve` 只返回**实数**解（复数解给文本 `{x = -I, x = I}`，无解给空列表）
+- **剖分的边界**：`Delaunay` 至少 3 点、共线/重合点集报「点集退化」（scipy Qhull）；`Voronoi` 至少 2 点、**重合点明确报错**、
+  元胞用点集外扩 15% 的包围盒裁剪（因此**无界元胞问题被规避**，面积和 = 包围盒面积）；两者都只接受二维点/多边形· `NSolve` 在默认区间 `[-60, 60]` 内找实根，找不到即报错 ·
   `Limit` 结果为 ∞/不存在时**明确报错**（不返回假数值）· `SolveODE` 只给 **sympy dsolve 通解文本**（含常数 `c1`，暂不支持初值条件 → 函数）·
   `SurfaceArea` 只接受 3D 立体/曲面（二维用 `Area`；无限圆锥没有有限表面积）
 - **作图工具入口**：工具面板 **12 个分类**（点 / 线 / 圆 / 多边形 / 圆锥曲线 / 变换 / 度量 / 计算 / 统计图 / 滑块 / 3D / 视图）；**工具选中后再点一次即取消**；统计图分类含 10 个按钮（2D 七类 + 3D 三类）
@@ -76,9 +83,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 #### 2D 检测矩阵（可重复执行）
 
-- `devtools/test_2d_matrix.py`（内核 184 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
-- `devtools/test_2d_api.py`（48 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
-- `devtools/verify_2d_ui_matrix.js`（72 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
+- `devtools/test_2d_matrix.py`（内核 193 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
+- `devtools/test_2d_api.py`（51 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
+- `devtools/verify_2d_ui_matrix.js`（75 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
 - `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
 - `devtools/bench_undo.py`（性能）：撤销/重做压测（快照字节数、snapshot/restore 耗时、记忆冷/热对照、LRU）
 
@@ -166,6 +173,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第六十批（2026-10-04 · 新功能：二维剖分 Delaunay / Voronoi）**：
+  - **新增 2 个命令**（COMMANDS 177 → **179**）：`Delaunay[点列表|多边形|点…]`（scipy Qhull）· `Voronoi[点列表|多边形|点…]`（**不依赖 scipy**：Sutherland–Hodgman 半平面裁剪 ✓ 元胞均有界凸多边形，**规避了无界元胞问题**）
+  - **返回「多边形列表」**：`itemkind="polygon"`（对象列表显示 `{N 个多边形}`，画布半透明填充 + 描边）；为此给 `GeoList.draw()` 增加 polygon 分支、给 `render2d.js` 增加多边形列表绘制
+  - **三种入参形态（后两种是动态的）**：内联点列表（值快照）· **多边形**（取顶点，随顶点变化重算）· **变参点元素**（随拖动重算）；实测 `SetCoords[Q2,6,4]` 后三角形集合改变、移动多边形顶点后 Voronoi 元胞同步更新
+  - **退化处理**：`Delaunay` 至少 3 点、共线/重合 → 明确 error；`Voronoi` 至少 2 点、重合点 → 明确 error；裁剪产生的重复顶点自动去除
+  - 检测：2D 内核 184 → **193**（含总面积=16.000、元胞面积和=包围盒 5.2²、别名、动态重算、退化）、2D API 48 → **51**、2D 浏览器 72 → **75**（对象列表 + 零新增 JS 错误）
 - **第五十八/五十九批（2026-10-04 · 新功能：CAS 算子接线为构造命令 + 表面积/有限性）**：
   - **候选调研**（第五十八批）：`GAP_ANALYSIS.md` 的 24 项已完成 → 从**已清理的孤儿显示名**（`nsolve/solveode/partialfractions/isfinite/surfacearea`）与 **CAS 面板已有算子**定位缺口；确认 scipy 可用、现有 3D 能力边界，产出候选清单（含「3D 网格布尔」判定为大工程、暂缓）
   - **新增 8 个命令**（第五十九批，COMMANDS 169 → **177**）：`Solve` `NSolve` `Limit` `PartialFractions` `Substitute` `SolveODE`（CAS 算子接线，新模块 `kernel/cas_cmds.py`）+ `SurfaceArea`（3D 表面积）+ `IsFinite`（有限性布尔）
@@ -394,7 +407,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 184 + 2D API 48 + 3D 494/181/142 + 2D 前端 72 + 代码质量 19 = 1543 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 193 + 2D API 51 + 3D 494/181/142 + 2D 前端 75 + 代码质量 19 = 1558 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

@@ -797,6 +797,10 @@ class GeoList(GeoElement):
         elif self.itemkind == "point3d":
             d["items"] = [[a, b, c] for a, b, c in self.items]
             d["value"] = "{" + ", ".join("(" + _fmt(a) + ", " + _fmt(b) + ", " + _fmt(c) + ")" for a, b, c in self.items) + "}"
+        elif self.itemkind == "polygon":
+            # 多边形列表（Delaunay 三角剖分 / Voronoi 元胞）：items 为若干顶点数组
+            d["items"] = [[[float(x), float(y)] for x, y in poly] for poly in self.items]
+            d["value"] = "{%d 个多边形}" % len(self.items)
         else:
             d["items"] = list(self.items)
             d["value"] = "{" + ", ".join(_fmt(v) for v in self.items) + "}"

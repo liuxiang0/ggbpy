@@ -354,6 +354,24 @@ window.GGB_R2D = (function () {
             ctx.fill();
           }
         }
+        if (e.kind === 'list' && e.itemkind === 'polygon' && e.items && e.items.length) {
+          // 多边形列表（Delaunay 三角剖分 / Voronoi 元胞）：半透明填充 + 描边
+          ctx.save();
+          ctx.strokeStyle = colorOf(e);
+          ctx.lineWidth = 1.4;
+          ctx.fillStyle = 'rgba(37,99,235,0.10)';
+          for (var pi = 0; pi < e.items.length; pi++) {
+            var poly = e.items[pi];
+            if (!poly || poly.length < 3) continue;
+            ctx.beginPath();
+            ctx.moveTo(sxp(poly[0][0]), syp(poly[0][1]));
+            for (var pj = 1; pj < poly.length; pj++) ctx.lineTo(sxp(poly[pj][0]), syp(poly[pj][1]));
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
         if (e.kind === 'locus' && e.pts && e.pts.length >= 2) {
           ctx.strokeStyle = '#dc2626';
           ctx.lineWidth = 2;

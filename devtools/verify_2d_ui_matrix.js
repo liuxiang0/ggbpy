@@ -705,6 +705,18 @@ function check(name, ok, detail) {
   await ctx2.close();
 
   // -------------------------------------------------------------------------
+  section('N. 二维剖分渲染（Delaunay / Voronoi 多边形列表）');
+  const tessErrBefore = JS_ERRORS.length;
+  await typeCmd('Pts={(0,0),(4,0),(4,4),(0,4),(2,2)}');
+  await typeCmd('Del=Delaunay[Pts]');
+  await typeCmd('Vor=Voronoi[Pts]');
+  await page.waitForTimeout(400);
+  const tessRows = await page.$$eval('#objlist .obj', (els) => els.map((e) => e.getAttribute('data-label')));
+  check('Delaunay 结果进入对象列表', tessRows.indexOf('Del') >= 0, String(tessRows.slice(-4)));
+  check('Voronoi 结果进入对象列表', tessRows.indexOf('Vor') >= 0, String(tessRows.slice(-4)));
+  check('绘制多边形列表无新增 JS 错误', JS_ERRORS.length === tessErrBefore,
+        JS_ERRORS.slice(tessErrBefore).join(';').slice(0, 60));
+
   section('J. JS 错误');
   check('全流程无未捕获 JS 错误', JS_ERRORS.length === 0, JS_ERRORS.slice(0, 3).join(' | '));
 

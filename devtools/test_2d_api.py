@@ -324,6 +324,26 @@ check("API：Substitute[x^2, x, 3] → 9",
       abs(float((_els.get("B") or {}).get("val") or 0) - 9.0) < 1e-9,
       str((_els.get("B") or {}).get("val")))
 
+# ---------------------------------------------------------------------------
+section("I. 二维剖分端到端（Delaunay / Voronoi 经 HTTP）")
+
+clear()
+put("Pts={(0,0),(4,0),(4,4),(0,4),(2,2)}")
+put("Del=Delaunay[Pts]")
+put("Vor=Voronoi[Pts]")
+_els2 = {e.get("label"): e for e in state()}
+_del = _els2.get("Del") or {}
+_vor = _els2.get("Vor") or {}
+check("API：Delaunay → itemkind=polygon 列表（4 个三角形，每项 3 顶点）",
+      _del.get("itemkind") == "polygon" and len(_del.get("items") or []) == 4
+      and all(len(p) == 3 for p in (_del.get("items") or [])),
+      "itemkind=%s n=%s" % (_del.get("itemkind"), len(_del.get("items") or [])))
+check("API：Voronoi → 5 个元胞（元胞均有界）",
+      _vor.get("itemkind") == "polygon" and len(_vor.get("items") or []) == 5,
+      "n=%s" % len(_vor.get("items") or []))
+check("API：多边形列表带中文摘要 value（{N 个多边形}）",
+      str(_del.get("value") or "").endswith("个多边形}"), str(_del.get("value")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
