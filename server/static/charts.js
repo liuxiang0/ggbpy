@@ -9,6 +9,10 @@
 window.GGB_CHARTS = (function () {
   'use strict';
 
+  // 图表在世界坐标下的基准尺寸（统一缩放策略：几何随缩放变化，字体/线宽仍为屏幕固定）
+  var CHART_H = 3.0;   // 柱/直方图的最大柱高（世界单位）
+  var PIE_R = 3.0;     // 饼图半径（世界单位）
+
   function create(env) {
       function usableCanvasRect() {
         var canvas = env.get('canvas'), cssH = env.get('cssH'), cssW = env.get('cssW');
@@ -81,8 +85,9 @@ window.GGB_CHARTS = (function () {
         for (var bi = 0; bi < e.counts.length; bi++) if (e.counts[bi] > maxC) maxC = e.counts[bi];
         var barW = Math.max(8, e.width * scale * 0.6);
         var bx0s = 1e9, bx1s = -1e9, maxH = 0;
-        // 基线取"可用区底边"（扣除停靠面板遮挡），否则默认贴画布最底会被面板盖住
-        var barBase = usableCanvasRect().bottom - 4;
+        // 统一缩放策略：基线取世界 y=0、柱高按世界单位 CHART_H（随缩放线性变化），
+        // 不再贴画布底边（旧策略下柱高与基线是屏幕固定像素，缩放时会与其它图表不一致）
+        var barBase = syp(0);
         ctx.save();
         ctx.translate(co.x, co.y);
         ctx.fillStyle = 'rgba(59,130,246,.75)';
@@ -97,7 +102,7 @@ window.GGB_CHARTS = (function () {
             x0 = sxp(e.bins[bj]) - barW / 2;
             w = barW;
           }
-          var h = (e.counts[bj] / maxC) * (barBase * 0.45);
+          var h = (e.counts[bj] / maxC) * (CHART_H * scale);
           ctx.fillRect(x0, barBase - h, w, h);
           ctx.strokeRect(x0 + 0.5, barBase - h + 0.5, w - 1, h - 1);
           bx0s = Math.min(bx0s, x0); bx1s = Math.max(bx1s, x0 + w); maxH = Math.max(maxH, h);
@@ -131,9 +136,12 @@ window.GGB_CHARTS = (function () {
       }
 
       function drawPieChart(e) {
-        var PIE_PAL = env.get('PIE_PAL'), cssH = env.get('cssH'), cssW = env.get('cssW'), ctx = env.get('ctx');
+        var PIE_PAL = env.get('PIE_PAL'), ctx = env.get('ctx');
         var co = chartOff(e);
-        var pCx = cssW * 0.5, pCy = cssH * 0.48, pR = Math.min(cssW, cssH) * 0.3;
+        // 统一缩放策略：圆心取世界原点（拖动由 offset 平移）、半径按世界单位 PIE_R，
+        // 因此滚轮缩放时饼图与其它图表同步（旧策略下饼图是画布固定像素，缩放不动）
+        var scale = env.get('scale');
+        var pCx = sxp(0), pCy = syp(0), pR = PIE_R * scale;
         var a0 = -Math.PI / 2, pieTot = e.total > 0 ? e.total : 1;
         ctx.save();
         ctx.translate(co.x, co.y);

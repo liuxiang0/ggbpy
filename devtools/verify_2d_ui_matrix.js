@@ -705,6 +705,37 @@ function check(name, ok, detail) {
   await ctx2.close();
 
   // -------------------------------------------------------------------------
+  section('O. 统计图缩放策略统一（柱高/饼半径随缩放变化）');
+  const csErrBefore = JS_ERRORS.length;
+  await typeCmd('ZB1=BarChart[{3,1,4,1,5,9,2,6}]');
+  await typeCmd('ZP1=PieChart[{3,5,2}]');
+  await page.waitForTimeout(500);
+  const boxBefore = await page.evaluate(() => ({
+    scale: window.__ggbpyDebug.toScreen(1, 0).scale,
+    bar: window.__ggbpyDebug.chartBox('ZB1'),
+    pie: window.__ggbpyDebug.chartBox('ZP1'),
+  }));
+  await page.mouse.move(600, 450);
+  await page.mouse.wheel(0, -300);              // 滚轮放大
+  await page.waitForTimeout(600);               // 等 180ms 延迟重载完成
+  const boxAfter = await page.evaluate(() => ({
+    scale: window.__ggbpyDebug.toScreen(1, 0).scale,
+    bar: window.__ggbpyDebug.chartBox('ZB1'),
+    pie: window.__ggbpyDebug.chartBox('ZP1'),
+  }));
+  const boxW = (b) => (b ? b.x1 - b.x0 : 0);
+  const boxH = (b) => (b ? b.y1 - b.y0 : 0);
+  check('滚轮确实放大（scale 增大）', boxAfter.scale > boxBefore.scale * 1.05,
+        boxBefore.scale + ' → ' + boxAfter.scale);
+  check('柱状图高度随缩放变化（世界坐标策略）',
+        !!boxBefore.bar && !!boxAfter.bar && boxH(boxAfter.bar) > boxH(boxBefore.bar) * 1.05,
+        boxH(boxBefore.bar).toFixed(1) + ' → ' + boxH(boxAfter.bar).toFixed(1));
+  check('饼图直径随缩放变化（世界坐标策略）',
+        !!boxBefore.pie && !!boxAfter.pie && boxW(boxAfter.pie) > boxW(boxBefore.pie) * 1.05,
+        boxW(boxBefore.pie).toFixed(1) + ' → ' + boxW(boxAfter.pie).toFixed(1));
+  check('缩放统计图无新增 JS 错误', JS_ERRORS.length === csErrBefore,
+        JS_ERRORS.slice(csErrBefore).join(';').slice(0, 60));
+
   section('N. 二维剖分渲染（Delaunay / Voronoi 多边形列表）');
   const tessErrBefore = JS_ERRORS.length;
   await typeCmd('Pts={(0,0),(4,0),(4,4),(0,4),(2,2)}');

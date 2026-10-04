@@ -65,13 +65,15 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 #### 2D 限制（由检测矩阵锁定当前行为）
 
-- **统计图 7 类**：`BarChart` / `Histogram` / `BoxPlot` / `PieChart` / `LineChart` / `ScatterPlot` / `DotPlot`（另有 3D 三类，见下节）。数据校验都给出明确报错：饼图须非负且总和为正、直方图须非空且数据有变化（否则无法分组）、折线图 x/y 序列须等长且非空；每张图是**可整体拖动的对象**（世界坐标 `offset`，随 `.ggk` v4 保存）
+- **统计图 7 类**（**统一缩放策略**：柱高/饼半径/箱高等几何都按**世界坐标**绘制 —— 滚轮缩放时整图同步放大缩小；字体与线宽仍为屏幕固定以保证可读性）：`BarChart` / `Histogram` / `BoxPlot` / `PieChart` / `LineChart` / `ScatterPlot` / `DotPlot`（另有 3D 三类，见下节）。数据校验都给出明确报错：饼图须非负且总和为正、直方图须非空且数据有变化（否则无法分组）、折线图 x/y 序列须等长且非空；每张图是**可整体拖动的对象**（世界坐标 `offset`，随 `.ggk` v4 保存）
 - **撤销/重做**：撤销栈上限 `UNDO_LIMIT = 200`（超出丢弃最早快照）；重做走计算记忆（见下），不是重新求值
 - **计算记忆**（`kernel/memo.py`）：派生元素按「定义式 + 依赖几何状态签名」缓存，条目 ≤ 96、规模 ≤ 约 60 万坐标（超限淘汰最久未用）；**随机类命令**（`RandomPointIn` 等）显式不参与记忆，保证每次重算都重新随机
 - **嵌套命令**：参数里的 `Cmd[...]` 最多 **4 层**（`_NESTED_MAX_DEPTH`，超出明确报错）；嵌套产生的匿名辅助元素不进对象列表 / 撤销 / 序列化
 - **轨迹**：`Locus[依赖点, 圆上动点]` 采样生成轨迹点（检测断言 >5 点），随驱动参数采样
 - **符号求解边界**：`Root` / `Extremum` 需有效区间（上限 > 下限）；`SolveIneq`、`Implicit` 输入不合法时给明确错误而非静默失败
 - **新命令的边界（刻意为之）**：`Solve` 只返回**实数**解（复数解给文本 `{x = -I, x = I}`，无解给空列表）
+- **统计图边界（策略统一后的行为）**：图表几何按世界坐标（`CHART_H = 3` 世界单位为柱/直方图最大柱高、`PIE_R = 3` 为饼半径），基线取世界 `y = 0`；
+  滚轮缩放时柱高/饼半径同比变化（浏览器回归断言：scale ×1.15 → 柱高与饼直径 ×1.15）；**旧行为**中柱高与基线是屏幕固定像素、饼图完全固定在画布中心，缩放时与折线/散点不一致 —— 已统一
 - **剖分的边界**：`Delaunay` 至少 3 点、共线/重合点集报「点集退化」（scipy Qhull）；`Voronoi` 至少 2 点、**重合点明确报错**、
   元胞用点集外扩 15% 的包围盒裁剪（因此**无界元胞问题被规避**，面积和 = 包围盒面积）；两者都只接受二维点/多边形· `NSolve` 在默认区间 `[-60, 60]` 内找实根，找不到即报错 ·
   `Limit` 结果为 ∞/不存在时**明确报错**（不返回假数值）· `SolveODE` 只给 **sympy dsolve 通解文本**（含常数 `c1`，暂不支持初值条件 → 函数）·
@@ -85,7 +87,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 - `devtools/test_2d_matrix.py`（内核 193 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
 - `devtools/test_2d_api.py`（51 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
-- `devtools/verify_2d_ui_matrix.js`（75 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
+- `devtools/verify_2d_ui_matrix.js`（79 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
 - `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
 - `devtools/bench_undo.py`（性能）：撤销/重做压测（快照字节数、snapshot/restore 耗时、记忆冷/热对照、LRU）
 
@@ -173,6 +175,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第六十一批（2026-10-04 · 统一统计图缩放策略：全部按世界坐标绘制）**：
+  - **问题**（2026-10-02 遗留项）：统计图缩放策略是混合的 —— 折线/散点/箱线按世界坐标 ✓，但**柱/直方图的柱高与基线是屏幕固定像素**，**饼图完全固定在画布中心**（`cssW/cssH`），滚轮缩放时彼此不一致
+  - **统一**：引入世界尺度常量 `CHART_H = 3`（柱/直方图最大柱高）与 `PIE_R = 3`（饼半径），基线取世界 `y = 0`；饼图圆心取世界原点（拖动仍由 `offset` 平移）；**字体与线宽保持屏幕固定**（可读性）
+  - **回归锁定**（浏览器矩阵 O 段 4 断言）：滚轮放大后 `scale` ×1.15、**柱状图高度 139.7 → 160.6 px**、**饼图直径 279.4 → 321.3 px**（旧策略下这两项不会变化 → 断言会失败）；另断言缩放过程零新增 JS 错误
+  - 视觉验证：`screenshots/chart_zoom_before.png` / `chart_zoom_after.png`
+  - 检测：2D 前端 75 → **79**
 - **第六十批（2026-10-04 · 新功能：二维剖分 Delaunay / Voronoi）**：
   - **新增 2 个命令**（COMMANDS 177 → **179**）：`Delaunay[点列表|多边形|点…]`（scipy Qhull）· `Voronoi[点列表|多边形|点…]`（**不依赖 scipy**：Sutherland–Hodgman 半平面裁剪 ✓ 元胞均有界凸多边形，**规避了无界元胞问题**）
   - **返回「多边形列表」**：`itemkind="polygon"`（对象列表显示 `{N 个多边形}`，画布半透明填充 + 描边）；为此给 `GeoList.draw()` 增加 polygon 分支、给 `render2d.js` 增加多边形列表绘制
@@ -407,7 +415,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 193 + 2D API 51 + 3D 494/181/142 + 2D 前端 75 + 代码质量 19 = 1558 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 193 + 2D API 51 + 3D 494/181/142 + 2D 前端 79 + 代码质量 19 = 1562 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
