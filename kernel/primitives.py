@@ -666,7 +666,7 @@ def _ix_conic_conic(c1, c2, idx=1):
     eq2 = a2 * x ** 2 + b2 * x * y + cc2 * y ** 2 + d2 * x + e2 * y + f2
     try:
         sols = sympy.solve([eq1, eq2], [x, y], dict=True)
-    except Exception:
+    except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
         raise GeoError("圆锥曲线求交失败（无法符号求解）")
     pts = []
     for s in sols:
@@ -674,7 +674,7 @@ def _ix_conic_conic(c1, c2, idx=1):
             vx, vy = complex(sympy.N(s[x])), complex(sympy.N(s[y]))
             if abs(vx.imag) < COORD and abs(vy.imag) < COORD:
                 pts.append((float(vx.real), float(vy.real)))
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             continue
     seen = set()
     uniq = []
@@ -749,7 +749,7 @@ def _tangent_state(f, x0: float):
     try:
         y0 = float(sympy.N(f.expr.subs(x, x0)))
         m = float(sympy.N(sympy.diff(f.expr, x).subs(x, x0)))
-    except Exception:
+    except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
         raise GeoError("切点处函数不可求值")
     if not (math.isfinite(y0) and math.isfinite(m)):
         raise GeoError("切点处函数不可求值")
@@ -1145,12 +1145,12 @@ def _numeric_verdict(cons, kind, args):
         if e is None:
             try:
                 e = _resolve(cons, raw)        # 内联命令（如 Line[(0,0),(1,1)]）的临时对象
-            except Exception:
+            except Exception:  # 防御性捕获：该分支失败不应中断用户操作
                 e = None
         if e is None and raw.startswith("(") and raw.endswith(")"):
             try:
                 e = _point_arg(cons, raw)      # 内联点字面量 (x,y)
-            except Exception:
+            except Exception:  # 防御性捕获：该分支失败不应中断用户操作
                 e = None
         els.append(e)
     if any(e is None for e in els):

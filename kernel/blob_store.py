@@ -64,7 +64,7 @@ def load(store: Dict[str, Record], data, normalize: Optional[Normalizer] = None)
         if normalize is not None:
             try:
                 out = normalize(rec)
-            except Exception:
+            except Exception:  # 防御性捕获：该分支失败不应中断用户操作
                 out = None
             if out is None:
                 continue

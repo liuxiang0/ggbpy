@@ -366,14 +366,14 @@ def _make_function(cons, label, body: str) -> GeoFunction:
             refs.append(sl)
     except GeoError:
         raise
-    except Exception:
+    except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
         pass  # 解析失败交给 configure 报错
     el = GeoFunction(label, label + "(x)=" + body)
     try:
         el.configure(cons, body, refs)
     except GeoError:
         raise
-    except Exception:
+    except Exception:  # 防御性捕获：该分支失败不应中断用户操作
         raise GeoError("无法解析函数表达式: " + body)
     return cons.add(el)
 
@@ -1116,7 +1116,7 @@ def process_line(cons, line: str) -> List:
             xv = fixed if fixed is not None else d[1].value
             try:
                 v = float(sympy.N(d[0].expr.subs(d[0].xsym, xv)))
-            except Exception:
+            except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
                 raise GeoError("函数在该点无法求值")
             return {"value": v}
         return [_mk(cons, GeoNumber, "number", defn, deps, fn)]

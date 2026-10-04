@@ -65,7 +65,7 @@ def _roots_1d(expr, x, xmin: float = -60.0, xmax: float = 60.0, n: int = 900):
             v = complex(sympy.N(s))
             if abs(v.imag) < COORD and xmin - COARSE <= v.real <= xmax + COARSE:
                 roots.append(float(v.real))
-    except Exception:
+    except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
         pass
     if roots:
         roots = sorted(set(round(r, 9) for r in roots))
@@ -76,7 +76,7 @@ def _roots_1d(expr, x, xmin: float = -60.0, xmax: float = 60.0, n: int = 900):
         lam = sympy.lambdify(x, expr, "numpy")
         xs = np.linspace(xmin, xmax, n)
         ys = lam(xs)
-    except Exception:
+    except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
         return []
     for i in range(n - 1):
         y1, y2 = ys[i], ys[i + 1]
@@ -159,7 +159,7 @@ def _cmd_integral(cons, defn, args):
             try:
                 v = sympy.integrate(fn0.expr, (x, a, b))
                 return {"value": float(sympy.N(v))}
-            except Exception:
+            except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
                 raise GeoError("定积分无法计算")
         return _mk(cons, GeoNumber, "number", defn, deps, fn)
     raise GeoError("Integral 需要 函数 或 函数+上下限")
@@ -444,7 +444,7 @@ def _fit_expr(cons, defn, body):
     import numpy as np
     try:
         import scipy.optimize as opt
-    except Exception:
+    except Exception:  # 可选依赖缺失：功能降级
         raise GeoError("缺少 scipy，无法拟合")
     f_num = sympy.lambdify((x,) + tuple(params), expr, "numpy")
     xs = np.array([p[0] for p in data])
@@ -459,7 +459,7 @@ def _fit_expr(cons, defn, body):
             res = opt.least_squares(resid, guess)
             if best is None or res.cost < best.cost:
                 best = res
-        except Exception:
+        except Exception:  # 防御性捕获：该分支失败不应中断用户操作
             continue
     if best is None:
         raise GeoError("拟合失败")
@@ -472,7 +472,7 @@ def _fit_expr(cons, defn, body):
     f_el = GeoFunction(label, fdefn)
     try:
         f_el.configure(cons, sympy.sstr(expr_sub), [])
-    except Exception:
+    except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
         raise GeoError("无法解析拟合表达式: " + expr_str)
     f_el.fit_msg = "拟合 " + expr_str + "：" + ", ".join(
         "%s=%s" % (pname, _fmt(float(vals[pname]))) for pname in params)
@@ -511,7 +511,7 @@ def _cmd_sequence(cons, defn, args):
     while i <= b + COORD:
         try:
             v = np.asarray(lam(i), dtype=float)
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             raise GeoError("序列元素无法求值")
         if v.ndim == 1 and v.shape[0] == 2:
             point_mode = True
@@ -557,7 +557,7 @@ def _cmd_solveineq(cons, defn, args):
         raise GeoError("SolveIneq 需要一个不等式，如 x^2<4")
     try:
         sol = sympy.reduce_inequalities(expr, var)
-    except Exception as e:
+    except Exception as e:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
         raise GeoError("无法求解该不等式: " + repr(e))
     el = GeoResult(label_of(defn), defn)
     el.free = False
@@ -609,5 +609,5 @@ def _fmt_sol_num(v) -> str:
         f = float(sympy.N(v))
         s = ("%.4g" % f)
         return s
-    except Exception:
+    except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
         return str(v).replace("**", "^")

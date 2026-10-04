@@ -72,7 +72,7 @@ def _state_sig(el) -> Tuple:
         v = getattr(el, "value", None)
         try:
             return ("num", round(float(v), 12))
-        except Exception:
+        except (ValueError, TypeError):  # 值无法转为浮点（None/字符串/复数）：用 repr 作为键
             return ("num", repr(v))
     if kind == "boolean":
         return ("bool", bool(getattr(el, "value", None)))
@@ -85,7 +85,7 @@ def _state_sig(el) -> Tuple:
         _sig_walk(d, parts)
         if parts:
             return (kind, tuple(parts))
-    except Exception:
+    except Exception:  # 防御性捕获：该分支失败不应中断用户操作
         pass
     return (kind, getattr(el, "defn", ""), getattr(el, "error", None))
 
@@ -102,7 +102,7 @@ def key_for(el) -> Optional[Tuple]:
     deps = getattr(el, "deps", None) or []
     try:
         return (getattr(el, "kind", ""), el.defn, tuple(_state_sig(d) for d in deps))
-    except Exception:
+    except Exception:  # 防御性捕获：该分支失败不应中断用户操作
         return None
 
 

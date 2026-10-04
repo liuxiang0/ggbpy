@@ -733,13 +733,13 @@ class Construction:
                     if len(st) > 3 and st[3]:
                         try:
                             self.elements[lab].wire = True
-                        except Exception:
+                        except (KeyError, AttributeError, TypeError):  # 样式字段缺失/类型不符：跳过该样式
                             pass
                     if len(st) > 4 and st[4] and isinstance(self.elements[lab], GeoChart2D):
                         # 统计图的整体偏移（旧 .ggk 无第 5 项 → 保持默认 0,0）
                         try:
                             self.elements[lab].move_chart(float(st[4][0]), float(st[4][1]))
-                        except Exception:
+                        except (ValueError, TypeError, IndexError):  # 旧 .ggk 缺偏移或格式非法：保持默认 0,0
                             pass
         from . import macro
         if data.get("macros"):

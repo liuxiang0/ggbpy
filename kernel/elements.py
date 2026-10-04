@@ -117,7 +117,7 @@ class GeoElement:
             from . import memo as _memo
             mkey = _memo.key_for(self)
             cached = _memo.get(mkey)
-        except Exception:
+        except Exception:  # 可选依赖缺失：功能降级
             _memo = None
             cached = None
         if cached is not None:
@@ -125,7 +125,7 @@ class GeoElement:
                 self.apply_state(cached)
                 self.error = None
                 return
-            except Exception:
+            except Exception:  # 防御性捕获：该分支失败不应中断用户操作
                 pass
         try:
             state = self._fn(self.deps)
@@ -134,7 +134,7 @@ class GeoElement:
             if _memo is not None:
                 try:
                     _memo.put(mkey, state)
-                except Exception:
+                except Exception:  # 防御性捕获：该分支失败不应中断用户操作
                     pass
         except GeoError as e:
             self.error = str(e)
@@ -629,7 +629,7 @@ class GeoFunction(GeoElement):
             v = self._lamb(xi)
             import numpy as np
             return float(v) if np.isfinite(v) else None
-        except Exception:
+        except Exception:  # 可选依赖缺失：功能降级
             return None
 
     @staticmethod
@@ -697,7 +697,7 @@ class GeoFunction(GeoElement):
             ys = np.asarray(self._lamb(np.array(refined, dtype=float)), dtype=float)
             if ys.ndim == 0:  # 常量函数返回标量
                 ys = np.full(len(refined), float(ys))
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             ys = np.array([np.nan] * len(refined))
         for ki, xi in enumerate(refined):
             y = float(ys[ki])
@@ -832,7 +832,7 @@ class GeoInequality(GeoElement):
             import numpy as np
             try:
                 lam = __import__("sympy").lambdify((self.xsym, self.ysym), self.expr, "numpy")
-            except Exception:
+            except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
                 lam = None
 
             def f(x, y):
@@ -841,7 +841,7 @@ class GeoInequality(GeoElement):
                 try:
                     v = lam(x, y)
                     return float(v) if np.isfinite(v) else 0.0
-                except Exception:
+                except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
                     return 0.0
             segs = marching_squares(f, xmin, xmax, ymin, ymax, 160, 120)
             d["loops"] = assemble_loops(segs)
@@ -858,7 +858,7 @@ class GeoInequality(GeoElement):
                 v = float(ys[i]) if np.isfinite(ys[i]) else float("nan")
                 out.append([float(xs[i]), v])
             return out
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             return []
 
 
@@ -1297,7 +1297,7 @@ class GeoCurve(GeoElement):
                 if math.isfinite(x) and math.isfinite(y):
                     pts.append([round(x, 6), round(y, 6)])
             return pts
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             return []
 
 
@@ -1335,7 +1335,7 @@ class GeoPolar(GeoElement):
                     if math.isfinite(x) and math.isfinite(y):
                         pts.append([round(x, 6), round(y, 6)])
             return pts
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             return []
 
 
@@ -1361,7 +1361,7 @@ class GeoImplicit(GeoElement):
                                    self.f_expr, "numpy")
                 xmin, xmax, ymin, ymax = view
                 segs = marching_squares(f, xmin, xmax, ymin, ymax, 80, 60)
-            except Exception:
+            except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
                 segs = []
         d["segs"] = [[s[0][0], s[0][1], s[1][0], s[1][1]] for s in segs]
         d["value"] = "F(x,y)=0"

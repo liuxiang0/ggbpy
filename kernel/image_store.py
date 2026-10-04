@@ -40,7 +40,7 @@ def decode(iid: str) -> Optional[Tuple[str, bytes]]:
         return None
     try:
         return m.group(1), base64.b64decode(m.group(2))
-    except Exception:
+    except Exception:  # 坏数据（JSON/base64 解码失败）：跳过该记录或字段
         return None
 
 

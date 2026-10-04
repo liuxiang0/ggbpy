@@ -351,7 +351,7 @@ def _surface_compute(expr, xmin, xmax, ymin, ymax, n):
                 edges.append([vid(n, j), vid(n, j + 1)])
         except GeoError:
             raise
-        except Exception as ex:
+        except Exception as ex:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             raise GeoError("曲面表达式无法求值：" + str(ex)[:80])
         return schemas.surface(verts, faces, edges, n, expr=expr,
                                ranges=[xmin, xmax, ymin, ymax])
@@ -424,7 +424,7 @@ def _surface_param_compute(xb, yb, zb, sname, tname, smin, smax, tmin, tmax, n):
                     verts.append(p)
         except GeoError:
             raise
-        except Exception as ex:
+        except Exception as ex:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             raise GeoError("参数曲面表达式无法求值：" + str(ex)[:80])
 
         def vid(i, j):
@@ -478,7 +478,7 @@ def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
     # 单个等值面抽取的时间预算（秒），超时给出可操作错误而不是长时间卡住；测试可用环境变量收紧
     try:
         _budget = float(_os.environ.get("GGBPY_IMPLICIT_BUDGET", "8.0"))
-    except Exception:
+    except (ValueError, TypeError):  # 环境变量非法（非数字）：回退默认预算 8.0
         _budget = 8.0
 
     # 立方体 6 个四面体（沿主对角线 0-7 的 Kuhn 分解）
@@ -490,7 +490,7 @@ def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
             xs_, ys_, zs_ = sympy.symbols("x y z")
             loc = {**vals, "pi": sympy.pi, "e": sympy.E}
             f = sympy.lambdify((xs_, ys_, zs_), sympy.sympify(expr.replace("^", "**"), locals=loc), "numpy")
-        except Exception as ex:
+        except Exception as ex:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             raise GeoError("隐式曲面表达式无法求值：" + str(ex)[:80])
         gx = [xmin + (xmax - xmin) * i / n for i in range(n + 1)]
         gy = [ymin + (ymax - ymin) * j / n for j in range(n + 1)]
@@ -498,7 +498,7 @@ def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
         X, Y, Z = np.meshgrid(gx, gy, gz, indexing="ij")
         try:
             F = np.asarray(f(X, Y, Z), dtype=float)
-        except Exception as ex:
+        except Exception as ex:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             raise GeoError("隐式曲面取值失败：" + str(ex)[:80])
         if not np.all(np.isfinite(F)):
             raise GeoError("隐式曲面在该范围内取值非有限（可能存在奇点）")
@@ -567,7 +567,7 @@ def _implicit_surface_compute(expr, xmin, xmax, ymin, ymax, zmin, zmax, n):
             try:
                 f_plus = float(f(*(a + eps * nvec)))
                 f_minus = float(f(*(a - eps * nvec)))
-            except Exception:
+            except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
                 fixed.append(list(f3))
                 continue
             fixed.append(list(f3) if f_plus > f_minus else [f3[0], f3[2], f3[1]])

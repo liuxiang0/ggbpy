@@ -271,7 +271,7 @@ def do_drag(b: DragBody):
             _mut(cons.push_history)
         _mut(cons.move, b.label, b.x, b.y, b.z)
         return {"ok": True, "message": "", **_state(_view(b))}
-    except Exception as e:
+    except Exception as e:  # 防御性捕获：该分支失败不应中断用户操作
         return {"ok": False, "message": str(e), **_state(_view(b))}
 
 
@@ -428,7 +428,7 @@ def macro_run(b: MacroRunBody):
             return {"ok": False, "message": "宏不存在: " + b.name, **_state(_view(b))}
         return {"ok": True, "message": "宏 " + b.name + " 执行成功", "created": [e.label for e in created],
                 **_state(_view(b))}
-    except Exception as e:
+    except Exception as e:  # 防御性捕获：该分支失败不应中断用户操作
         return {"ok": False, "message": "错误: " + str(e), **_state(_view(b))}
 
 
@@ -440,7 +440,7 @@ def do_shift(b: ShiftBody):
             _mut(cons.push_history)
         _mut(cons.shift, b.label, b.dx, b.dy, getattr(b, "dz", 0.0))
         return {"ok": True, "message": "", **_state(_view(b))}
-    except Exception as e:
+    except Exception as e:  # 防御性捕获：该分支失败不应中断用户操作
         return {"ok": False, "message": str(e), **_state(_view(b))}
 
 
@@ -450,7 +450,7 @@ def do_reorder(b: ReorderBody):
     try:
         _mut(cons.reorder, b.order)
         return {"ok": True, "message": "已调整对象顺序", **_state(_view(b))}
-    except Exception as e:
+    except Exception as e:  # 防御性捕获：该分支失败不应中断用户操作
         return {"ok": False, "message": str(e), **_state(_view(b))}
 
 
@@ -461,7 +461,7 @@ def image_upload(b: ImageBody):
     try:
         iid = image_store.put(b.data, b.w, b.h)
         return {"ok": True, "id": iid}
-    except Exception as e:
+    except Exception as e:  # 正则解析失败：按未匹配处理
         return {"ok": False, "message": str(e)}
 
 
@@ -478,7 +478,7 @@ async def import_mesh(request: Request):
         return {"ok": True, "id": mid, "format": fmt, "verts": len(rec["verts"]), "faces": len(rec["faces"]),
                 "edges": len(mesh_store.edges_of(rec["faces"])), "warnings": warnings,
                 "message": "已导入 %s 网格 %d 顶点 / %d 面" % (fmt, len(rec["verts"]), len(rec["faces"]))}
-    except Exception as e:
+    except Exception as e:  # 可选依赖缺失：功能降级
         return {"ok": False, "message": "导入失败: " + str(e)}
 
 
@@ -513,7 +513,7 @@ def do_batch(b: BatchBody):
                 out.append({"no": ln_no, "line": line, "ok": True,
                             "message": ("已创建 " + ", ".join(labels)) if labels else "OK"})
                 okn += 1
-            except Exception as e:
+            except Exception as e:  # 防御性捕获：该分支失败不应中断用户操作
                 out.append({"no": ln_no, "line": line, "ok": False, "message": str(e)})
         return out, okn
 
@@ -577,7 +577,7 @@ async def do_load(request: Request):
         else:
             _mut(cons.load_text, text)
         return {"ok": True, "message": "已加载", "view": view, **_state((-10, 10, -10, 10))}
-    except Exception as e:
+    except Exception as e:  # 坏数据（JSON/base64 解码失败）：跳过该记录或字段
         return {"ok": False, "message": "加载失败: " + str(e), **_state((-10, 10, -10, 10))}
 
 

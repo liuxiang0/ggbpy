@@ -157,7 +157,7 @@ class CASEngine:
             cell["sym"] = sym
         except GeoError as e:
             cell["error"] = str(e)
-        except Exception as e:
+        except Exception as e:  # 防御性捕获：该分支失败不应中断用户操作
             cell["error"] = "错误: " + repr(e)
         return cell
 
@@ -202,7 +202,7 @@ class CASEngine:
                     self.cons.push_history()
                     self.cons.add(GeoNumber(name, name + "=" + _num_fmt(v), v))
                     out += "   已创建数值 " + name
-                except Exception:
+                except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
                     pass
             return out, expr
 
@@ -219,7 +219,7 @@ class CASEngine:
             try:
                 v = float(sympy.N(expr))
                 return _num_fmt(v), expr
-            except Exception:
+            except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
                 pass
         return _fmt(expr), expr
 
@@ -277,7 +277,7 @@ class CASEngine:
         eq = self._parse_eq(eq_s)
         try:
             sols = sympy.solve(eq, var)
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             raise GeoError("Solve 无法求解该方程")
         if sols is None or len(sols) == 0:
             return "{ }", sols
@@ -372,7 +372,7 @@ class CASEngine:
             eq = sympy.Eq(eq, 0)
         try:
             sol = sympy.dsolve(eq, y_sym(var))
-        except Exception as e:
+        except Exception as e:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             raise GeoError("SolveODE 无法求解: " + repr(e))
         return _fmt(sol), sol
 

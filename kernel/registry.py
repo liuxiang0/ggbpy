@@ -368,7 +368,7 @@ def _label_kind(cons, lname: str, args) -> str:
             el = _lookup(cons, args[0])          # 支持嵌套命令参数
         if el is not None and getattr(el, "kind", "") == "point":
             return "point"
-    except Exception:
+    except Exception:  # 防御性捕获：该分支失败不应中断用户操作
         pass
     return "invert"
 

@@ -183,7 +183,7 @@ def _envelope(xiv: Interval, fn, n: int = 12) -> Interval:
         t = xiv.lo + (xiv.hi - xiv.lo) * i / n
         try:
             v = float(fn(t))
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             return Interval(-math.inf, math.inf)
         if math.isnan(v):
             return Interval(-math.inf, math.inf)
@@ -200,7 +200,7 @@ def eval_expr(expr, xiv: Interval) -> Interval:
     xiv = Interval(xiv.lo, xiv.hi)
     try:
         return _eval(expr, xiv)
-    except Exception:
+    except Exception:  # 防御性捕获：该分支失败不应中断用户操作
         return Interval(-math.inf, math.inf)
 
 

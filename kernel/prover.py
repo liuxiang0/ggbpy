@@ -192,7 +192,7 @@ class SymbolicGeo:
                     dy = a[1] - cyp
                     return (cxp + dx * cv - dy * sv,
                             cyp + dx * sv + dy * cv)
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             return None
         return None
 
@@ -357,7 +357,7 @@ class SymbolicGeo:
             return ProverResult(True, "结论多项式恒为零：命题成立")
         try:
             simp = sympy.simplify(conclusion)
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             simp = conclusion
         if simp == 0:
             return ProverResult(True, "化简后恒为零：命题成立")
@@ -381,7 +381,7 @@ class SymbolicGeo:
                         subs[sv] = random.uniform(-3.0, 3.0)
                 try:
                     val = float(num.evalf(subs=subs))
-                except Exception:
+                except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
                     continue
                 if abs(val) > COARSE:
                     worst = val

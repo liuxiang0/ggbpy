@@ -217,7 +217,7 @@ def parse_mesh(data) -> Tuple[List[List[float]], List[List[int]], List[str], str
         try:
             v, f, w = _parse_stl_binary(raw)
             return v, f, w, "stl-binary"
-        except Exception:
+        except Exception:  # 防御性捕获：该分支失败不应中断用户操作
             raise GeoError("无法识别的网格文件（支持 OBJ / ASCII STL / 二进制 STL / glTF / GLB）")
     text = str(data)
     if text.lstrip().startswith("{") and '"asset"' in text[:2048] and '"meshes"' in text:

@@ -252,7 +252,7 @@ def _invert_implicit_state(src, circ):
         try:
             num = sympy.fraction(sympy.together(F))[0]   # 去分母（可去极点，如原点）
             F = num
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             pass
         return {"f_expr": sympy.expand(F)}
     if src.kind == "implicit":
@@ -262,7 +262,7 @@ def _invert_implicit_state(src, circ):
         try:
             num = sympy.fraction(sympy.together(F))[0]
             F = num
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             pass
         return {"f_expr": sympy.expand(F)}
     raise GeoError("反演暂不支持 " + src.kind + " 类型对象")

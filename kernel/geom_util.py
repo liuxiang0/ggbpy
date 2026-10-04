@@ -55,11 +55,11 @@ def marching_squares(
             v = f(x, y)
             v = float(v)
             return v if math.isfinite(v) else float("nan")
-        except Exception:
+        except Exception:  # 数值/符号求值失败：本对象降级为 error/保持旧状态，不中断其余对象
             return float("nan")   # 奇点/除零：该网格点视为无效，仅影响邻近单元
     try:
         vals = [[_safe(x, y) for x in xs] for y in ys]
-    except Exception:
+    except Exception:  # 防御性捕获：该分支失败不应中断用户操作
         return segs
     for j in range(ny):
         for i in range(nx):

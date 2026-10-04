@@ -136,6 +136,13 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第四十五批（2026-10-04 · `except Exception` 审计：68 处补说明 + 5 处收窄 + 策略守卫）**：
+  - **背景**：REVIEW P1 第 10 条指出「`except Exception` 27 处（无裸 except），个别会把编程错误吞成无声 `error` 状态」；今日实测已增至 **68 处，其中仅 2 处有说明**
+  - **审计工具** `devtools/audit_except.py`：逐处列出所属 `try` 体（判断捕获的是什么）、是否有说明注释、疑似可收窄的异常类型，并可 `--stats` 汇总
+  - **① 补说明（66 处，纯注释零行为变化）**：按 try 体内容分类给出可核对的说明 —— 数值/符号求值失败降级、坏数据跳过、IO 忽略、可选依赖缺失降级、防御性捕获等；配合守卫后「每处宽泛捕获都必须写明理由」成为硬约束
+  - **② 类型收窄（5 处，异常类型明确者）**：环境变量数值解析 → `(ValueError, TypeError)`；记忆键数值化 → `(ValueError, TypeError)`；`ggbpyData` base64+JSON 解码 → `ValueError`（覆盖 `JSONDecodeError`/`binascii.Error`/`UnicodeDecodeError` 三个子类）；`.ggk` 统计图偏移解析 → `(ValueError, TypeError, IndexError)`；样式字段 → `(KeyError, AttributeError, TypeError)`；宽泛捕获 68 → **63**
+  - **③ 新守卫 `devtools/test_quality.py`（第 11 步，8 断言）**：宽泛捕获必须带说明 · 禁止裸 `except:` · 数量预算 ≤ 70 · 三处收窄抽查 · **自检**（注入无说明捕获/裸 except 必须被抓到）
+  - 检测：`run_all_detection.sh` 10 → **11 步**，全量 **1454 断言**
 - **第四十四批（2026-10-03 · 分类登记守卫扩展到全部分类）**：
   - **数据层**（`test_modules.py`，扩展 data.js 解析输出）：新增「分类 id 唯一」「每个分类都有工具（无空分类）」「每个分类的默认工具 `def` 都在其 `tools` 内」「分类总数 ≥ 10 且无重复登记」——配合已有的「无重复登记／计算不含直方图／统计图仍含直方图」，共 **7 条**分类结构断言
   - **浏览器层**（`verify_2d_ui_matrix.js`）：**逐分类**点击 12 个分类，断言「渲染出的按钮集合 == 数据定义的 tools」（缺/多都报），另加 id 唯一／非空／`def ∈ tools`
@@ -284,7 +291,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 10 步：注册表 8 + 仓库 18 + 容差 20 + 模块 281 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 = 1450 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 281 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1454 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

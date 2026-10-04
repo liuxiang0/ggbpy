@@ -131,7 +131,8 @@ def _load_data_block(construction) -> None:
         return
     try:
         payload = _json.loads(_b64.b64decode(raw).decode("utf-8"))
-    except Exception as e:
+    # ValueError 覆盖 json.JSONDecodeError / binascii.Error / UnicodeDecodeError（均为其子类）
+    except ValueError as e:  # 坏数据（JSON/base64 解码失败）：转成可读错误
         raise GeoError("ggbpyData 解析失败: " + str(e)[:60])
     if isinstance(payload, dict):
         mesh_store.load(payload.get("meshes") or {})
