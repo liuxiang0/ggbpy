@@ -444,6 +444,24 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B11. 前端：三维工具交互模块（static/tools3d.js，3D 工具族） ===")
+t3_path = ROOT / "server" / "static" / "tools3d.js"
+t3_src = t3_path.read_text(encoding="utf-8") if t3_path.exists() else ""
+check("tools3d.js 存在", t3_path.exists(), "")
+check("app.js 通过 window.GGB_T3D 装配（原实现体已移走，仅剩薄包装）",
+      "window.GGB_T3D" in app_src and "SOLID3_CMD" not in app_src
+      and "function tool3dClick() { return _tools3d" in app_src, "")
+check("index.html 在 app.js 之前加载 tools3d.js",
+      index_src.index("/static/tools3d.js") < index_src.index("/static/app.js"), "")
+check("tools3d 覆盖三维工具族（点/线段/平面/球/立方体/圆锥/圆柱/多面体）",
+      all(k in t3_src for k in ("pt3d", "seg3d", "plane3d", "sphere3d", "cube3d", "cone3d",
+                                "cylinder3d", "SOLID3_CMD")), "")
+check("外部仍被引用的助手保留在 app.js 并注入（如 hitPoint3d）",
+      "function hitPoint3d(sx, sy) {" in app_src and "hitPoint3d: hitPoint3d" in app_src
+      and "var hitPoint3d = env.hitPoint3d;" in t3_src, "")
+check("tools3d 的状态写入选点经 env.set（toolSel3d），且无直接变量赋值",
+      "env.set('toolSel3d', " in t3_src and "toolSel3d = [" not in t3_src, "")
+
 print("\n=== B10. 前端：三维叠加层模块（static/overlay3d.js）+ 状态绑定工具 ===")
 ov_path = ROOT / "server" / "static" / "overlay3d.js"
 ov_src = ov_path.read_text(encoding="utf-8") if ov_path.exists() else ""
@@ -562,7 +580,10 @@ check("draw2d 未夺走 panels 的转发助手（fmtNum 仍是 panels 包装）"
 # JS 作用域守卫：四个模块全部标识符可解析
 _sub = subprocess.run(["node", "devtools/check_frontend_modules.js"], cwd=str(ROOT), capture_output=True, text=True)
 check("前端模块 JS 作用域守卫（全部标识符可解析，动态扫描 static/*.js）",
-      _sub.returncode == 0 and _sub.stdout.count("OK") >= 9, _sub.stdout.strip().replace("\n", " | ")[:80])
+      _sub.returncode == 0
+      and _sub.stdout.count("OK") >= len([q for q in (ROOT / "server" / "static").glob("*.js")
+                                          if q.name not in ("app.js", "data.js", "i18n.js")]),
+      _sub.stdout.strip().replace("\n", " | ")[:80])
 # 守卫自检：删掉 drawGrid 的 cssH 注入必须被抓到
 _mut = re.sub(r"var C = env\.get\('C'\), cssH = env\.get\('cssH'\),", "var C = env.get('C'),", d2_src, count=1)
 if _mut != d2_src:

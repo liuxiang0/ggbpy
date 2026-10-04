@@ -48,7 +48,13 @@ def build(module, api, seeds, doc, apply_changes):
             m = re.match(r"^  function \w+\([^)]*\) \{ return _(\w+)\.", bodies[n].rstrip("\n"))
             if m and m.group(1) != module:
                 forwarders.append(n)
-    injected = forwarders
+    # 非种子函数若被「移动集之外」的代码引用（如 setMsg 有 87 处调用）→ 保留原处、改为注入，
+    # 否则会在删除后让调用点悬空（曾导致 assert app.count("function setMsg…") 失败）
+    _spans = [span(lines, n) for n in ORDER]
+    _keep = [l for i, l in enumerate(lines) if not any(a <= i < b for a, b in _spans)]
+    _outside = set(re.findall(r"(?<![\w.$])([A-Za-z_$][\w$]*)", strip_literals("".join(_keep))))
+    _extra = [n for n in ORDER if n not in seeds and n in _outside]
+    injected = sorted(set(forwarders) | set(_extra))
     real = [n for n in ORDER if n not in injected]
     all_state = sorted({s for n in real for s in per[n]["state"] if s != api and not s.startswith("_")})
     writes = sorted({s for n in real for s in per[n]["writes"]})
@@ -88,7 +94,7 @@ def build(module, api, seeds, doc, apply_changes):
     header = '/* ggbpy %s（P2 前端拆分：从 app.js 抽出）。\n *\n * 用法（app.js）：\n *   var _%s = %s.create({ get: _stateGet%s });\n *   之后同名函数由 app.js 保留薄包装，调用点无需改动。\n *\n * 状态：%s\n */\nwindow.%s = (function () {\n  \'use strict\';\n\n  function create(env) {\n' % (
         doc, module, api, "".join(", %s: %s" % (f, f) for f in forwarders), ", ".join(all_state) or "（无）", api)
     footer = '\n\n    return {\n%s    };\n  }\n\n  return { create: create };\n})();\n' % "".join(
-        "      %s: %s,\n" % (n, n) for n in ORDER)
+        "      %s: %s,\n" % (n, n) for n in ORDER if n not in injected)
     src = header + "\n\n".join("    " + emit(n).replace("\n", "\n    ") for n in ORDER) + footer
     print("[%s] 闭包 %d 函数 / %d 行；状态 %s；转发注入 %s" % (
         module, len(ORDER), sum(per[n]["lines"] for n in ORDER),
@@ -114,13 +120,15 @@ def build(module, api, seeds, doc, apply_changes):
     app = app[:m.end()] + add_cases + app[m.end():]
     # 状态写入（若有）
     if writes:
-        sm = re.search(r"  function _panelStateSet\(k, v\) \{ ([^\n]*)\}", app)
-        assert sm
-        conds = "".join("\n    if (k === '%s') { %s = v; return; }" % (w, w) for w in writes)
-        app = app[:sm.start()] + "  function _panelStateSet(k, v) {%s\n  }" % conds + app[sm.end():]
+        # _panelStateSet 现在可能是多行函数：定位函数体起止，在结束前插入分支
+        start = app.index("  function _panelStateSet(k, v) {")
+        close = app.index("\n  }", start) + 1
+        new_branches = "".join("\n    if (k === '%s') { %s = v; return; }" % (w, w)
+                              for w in writes if ("k === '%s'" % w) not in app[start:close])
+        app = app[:close] + new_branches + app[close:]
     anchor = "  function setMsg(msg, isErr) {"
     assert app.count(anchor) == 1
-    inject_helpers = "".join(", %s: %s" % (f, f) for f in forwarders)
+    inject_helpers = "".join(", %s: %s" % (f, f) for f in injected)
     wrappers = "\n".join("  function %s() { return _%s.%s.apply(null, arguments); }" % (n, module, n)
                           for n in ORDER if n not in injected)
     set_part = ", set: _panelStateSet" if writes else ""
