@@ -195,6 +195,14 @@
   // 面板渲染已抽到 static/panels.js（P2 前端拆分）；此处提供状态访问 + 同名薄包装
   function _panelStateGet(k) {
     switch (k) {
+      case 'CAS_COMMANDS': return CAS_COMMANDS;
+      case 'casOpen': return casOpen;
+      case 'casPanel': return casPanel;
+      case 'CMD_W': return CMD_W;
+      case 'FN_T': return FN_T;
+      case 'FN_W': return FN_W;
+      case 'GREEK_T': return GREEK_T;
+      case 'GREEK_W': return GREEK_W;
       case 'CHART_KINDS': return CHART_KINDS;
       case 'EPSILON': return EPSILON;
       case 'drag3dObj': return drag3dObj;
@@ -276,6 +284,7 @@
     if (k === 'scale') { scale = v; return; }
     if (k === 'toolBusy') { toolBusy = v; return; }
     if (k === 'toolSel') { toolSel = v; return; }
+    if (k === 'casOpen') { casOpen = v; return; }
   }
   var _panels = window.GGB_PANELS.create({ get: _panelStateGet, set: _panelStateSet });
   function t() { return _panels.t.apply(null, arguments); }
@@ -389,6 +398,14 @@
   function conicCoeffs() { return _preview.conicCoeffs.apply(null, arguments); }
   function conicPreviewSegs() { return _preview.conicPreviewSegs.apply(null, arguments); }
   function computeToolPreview() { return _preview.computeToolPreview.apply(null, arguments); }
+
+  // LaTeX 序列化（表达式/几何对象 → LaTeX，P2 前端拆分） 已抽到 static/latex.js（P2 前端拆分）；同名薄包装保持调用点不变
+  var _latex = window.GGB_LATEX.create({ get: _panelStateGet });
+  function toLatex() { return _latex.toLatex.apply(null, arguments); }
+
+  // 界面弹窗与提示（帮助弹窗等，P2 前端拆分） 已抽到 static/ui.js（P2 前端拆分）；同名薄包装保持调用点不变
+  var _ui = window.GGB_UI.create({ get: _panelStateGet, set: _panelStateSet, api: api, casInsert: casInsert, esc: esc, renderCas: renderCas, setMsg: setMsg, translateMsg: translateMsg, updateUndoBtns: updateUndoBtns });
+  function showHelpModal() { return _ui.showHelpModal.apply(null, arguments); }
 
   function setMsg(msg, isErr) {
     msgEl.textContent = translateMsg(msg);
@@ -1686,92 +1703,6 @@
   var FN_W = ['sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'ln', 'log10', 'log', 'exp', 'sinh', 'cosh', 'tanh', 'floor', 'ceil', 'min', 'max', 'gcd', 'lcm', 'sqrt', 'abs'];
   var FN_T = { sin: '\\sin', cos: '\\cos', tan: '\\tan', asin: '\\arcsin', acos: '\\arccos', atan: '\\arctan', ln: '\\ln', log10: '\\log_{10}', log: '\\log', exp: '\\exp', sinh: '\\sinh', cosh: '\\cosh', tanh: '\\tanh', floor: '\\lfloor', ceil: '\\lceil', min: '\\min', max: '\\max', gcd: '\\gcd', lcm: '\\operatorname{lcm}', sqrt: '\\sqrt', abs: '\\left|' };
   var CMD_W = ['Midpoint', 'Circle', 'Line', 'Segment', 'Ray', 'Polygon', 'Polyline', 'Intersect', 'Distance', 'Slope', 'Angle', 'Length', 'Translate', 'Rotate', 'Reflect', 'Dilate', 'Vector', 'PointOnCircle', 'Parametric', 'Polar', 'Implicit', 'Slider', 'Sequence', 'Sum', 'Mean', 'Median', 'Mode', 'Variance', 'Stdev', 'Sort', 'FitLine', 'FitPoly', 'FitExp', 'NormalDist', 'BarChart', 'SolveIneq', 'Solve', 'Factor', 'Expand', 'Limit', 'Derivative', 'Integral', 'Root', 'Extremum', 'Tangent', 'Focus', 'Conic', 'Ellipse', 'Hyperbola', 'Parabola', 'Incircle', 'Incenter', 'Centroid', 'Area', 'Perimeter', 'Circumference', 'Arc', 'Sector', 'Text', 'Locus', 'Matrix', 'Det', 'Transpose', 'Inverse', 'Prove', 'SetCoords', 'SetValue', 'SetColor', 'SetVisible', 'SetLocked', 'SetWire', 'ShowGrid', 'ShowAxes', 'Delete', 'Rename', 'Redefine'];
-  function toLatex(s) {
-    var out = '';
-    var i = 0;
-    var stack = [];  // 括号栈：'p'普通 '(' / 'f'函数 '(' / 's'sqrt{ / 'a'abs|
-    while (i < s.length) {
-      var ch = s[i];
-      var hit = null;
-      // 命令名 [ → \text{...} 保持
-      for (var ci = 0; ci < CMD_W.length; ci++) {
-        var cm = CMD_W[ci];
-        if (s.slice(i, i + cm.length) === cm && s[i + cm.length] === '[') { hit = ['cmd', cm]; break; }
-      }
-      if (!hit) {
-        for (var fi = 0; fi < FN_W.length; fi++) {
-          var fw = FN_W[fi];
-          if (s.slice(i, i + fw.length) === fw && s[i + fw.length] === '(') { hit = ['fn', fw]; break; }
-        }
-      }
-      if (!hit) {
-        for (var gi = 0; gi < GREEK_W.length; gi++) {
-          var gw = GREEK_W[gi];
-          if (s.slice(i, i + gw.length) === gw && !/[a-zA-Z]/.test(s[i + gw.length] || ' ')) { hit = ['gk', gw]; break; }
-        }
-      }
-      if (hit && hit[0] === 'cmd') {
-        out += '\\text{' + hit[1] + '}';
-        i += hit[1].length;
-        continue;
-      }
-      if (hit && hit[0] === 'fn') {
-        if (hit[1] === 'sqrt') { out += '\\sqrt{'; stack.push('s'); }
-        else if (hit[1] === 'abs') { out += '\\left|'; stack.push('a'); }
-        else { out += FN_T[hit[1]] + '\\left('; stack.push('f'); }
-        i += hit[1].length + 1;  // 跳过函数名与结构性的 '('
-        continue;
-      }
-      if (hit && hit[0] === 'gk') {
-        out += GREEK_T[hit[1]];
-        i += hit[1].length;
-        continue;
-      }
-      if (ch === '(') { out += '('; stack.push('p'); i++; continue; }
-      if (ch === ')') {
-        var kind = stack.pop() || 'p';
-        if (kind === 's') out += '}';
-        else if (kind === 'a') out += '\\right|';
-        else if (kind === 'f') out += '\\right)';
-        else out += ')';
-        i++;
-        continue;
-      }
-      if (ch === '^' || ch === '_') {
-        var nx = s[i + 1];
-        if (nx === '(' || nx === '{') {
-          var depth = 1;
-          var j = i + 2;
-          var inner = '';
-          while (j < s.length && depth > 0) {
-            if (s[j] === '(' || s[j] === '{') depth++;
-            else if (s[j] === ')' || s[j] === '}') { depth--; if (depth === 0) break; }
-            inner += s[j];
-            j++;
-          }
-          out += (ch === '^' ? '^{' : '_{') + toLatex(inner) + '}';
-          i = j + 1;
-          continue;
-        }
-        if (/[A-Za-z0-9\\u4e00-\\u9fff]/.test(nx || '')) {
-          out += (ch === '^' ? '^{' : '_{') + nx + '}';
-          i += 2;
-          continue;
-        }
-        out += ch;
-        i++;
-        continue;
-      }
-      if (ch === '~') { out += '\\sim '; i++; continue; }
-      if (ch === '*') { out += '\\cdot '; i++; continue; }
-      if (ch === '<' && s[i + 1] === '=') { out += '\\le '; i += 2; continue; }
-      if (ch === '>' && s[i + 1] === '=') { out += '\\ge '; i += 2; continue; }
-      if (ch === '=') { out += '='; i++; continue; }
-      out += ch;
-      i++;
-    }
-    return out;
-  }
   function renderPreview() {
     var v = cmdEl.value.trim();
     if (!v) { previewEl.style.display = 'none'; return; }
@@ -1825,64 +1756,6 @@
       showHelpModal(d.commands, d.display || {});
     }).catch(function () { setMsg('加载命令失败', true); });
   });
-  function showHelpModal(commands, display) {
-    var ex = document.getElementById('help-pop');
-    if (!ex) {
-      ex = document.createElement('div');
-      ex.id = 'help-pop';
-      document.getElementById('app').appendChild(ex);
-    }
-    var head = lang === 'en' ? ('Commands (' + commands.length + ')') : ('可用命令（共 ' + commands.length + ' 条）');
-    var casChips = CAS_COMMANDS.map(function (c) {
-      return '<span class="hc hc-cas" data-cas="' + c.name + '" title="' + esc(c.zh) + ' / ' + esc(c.en) + '">' + c.name + '</span>';
-    }).join('');
-    ex.innerHTML = '<div class="help-head"><span>' + head + '</span><button id="help-close" class="x" title="' + (lang === 'en' ? 'Close' : '关闭') + '">✕</button></div>'
-      + '<div class="help-search"><input id="help-search" type="text" placeholder="'
-      + (lang === 'en' ? 'Filter commands (e.g. surface, volume, fit)' : '筛选命令（如 surface / volume / 拟合 / 曲面）') + '"></div>'
-      + '<div class="help-body" id="help-cmds">' + commands.map(function (c) {
-          var cnm = (display && display[c]) || c;
-          return '<span class="hc hc-cmd" data-cmd="' + cnm + '" title="' + (lang === 'en' ? 'Click to insert' : '点击插入') + '">' + cnm + '</span>';
-        }).join('') + '</div>'
-      + '<div class="help-sec">' + (lang === 'en' ? 'CAS symbolic commands (click to use in the CAS panel)' : 'CAS 符号命令（点击可直接在 CAS 面板使用）') + '</div>'
-      + '<div class="help-body">' + casChips + '</div>'
-      + '<div class="help-foot">' + (lang === 'en' ? 'Click a command to insert Name[] into the input bar; CAS commands run in the CAS panel.' : '点击命令即在输入框插入 Name[]；CAS 命令在 CAS 面板执行。') + '</div>';
-    var searchEl = ex.querySelector('#help-search');
-    if (searchEl) {
-      searchEl.addEventListener('input', function () {
-        var q = searchEl.value.trim().toLowerCase();
-        var chips = ex.querySelectorAll('#help-cmds .hc-cmd');
-        for (var i = 0; i < chips.length; i++) {
-          var nm = (chips[i].getAttribute('data-cmd') || '').toLowerCase();
-          chips[i].style.display = (!q || nm.indexOf(q) !== -1) ? '' : 'none';
-        }
-      });
-      searchEl.focus();
-    }
-    ex.style.display = 'block';
-    ex.querySelector('#help-close').addEventListener('click', function () { ex.style.display = 'none'; });
-    ex.addEventListener('click', function (ev) {
-      var tc = ev.target.closest ? ev.target.closest('.hc-cmd') : null;
-      if (tc) {
-        var cname = tc.getAttribute('data-cmd') || '';   // 已是规范显示名（如 SurfacePoint）
-        var inp = document.getElementById('cmd');
-        if (inp) {
-          inp.value = cname + '[]';
-          inp.focus();
-          try { inp.setSelectionRange(cname.length + 1, cname.length + 1); } catch (e) {}
-        }
-        return;
-      }
-      var t = ev.target.closest ? ev.target.closest('.hc-cas') : null;
-      if (!t) return;
-      var nm = t.getAttribute('data-cas');
-      if (!casOpen) {
-        casOpen = true;
-        casPanel.style.display = 'flex';
-        api('GET', '/api/cas', null, function (d) { renderCas(d.cells); });
-      }
-      casInsert(nm + '[]', 1);
-    });
-  }
 
   function btn(id, action) {
     document.getElementById(id).addEventListener('click', action);

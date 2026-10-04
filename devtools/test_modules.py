@@ -444,6 +444,22 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B16. 前端：LaTeX 序列化（static/latex.js）+ 界面弹窗（static/ui.js） ===")
+for _name, _probe, _fns, _injs in (
+    ("latex", "function toLatex() { return _latex", ("toLatex",),
+     ("var CMD_W = env.get('CMD_W')", "GREEK_T = env.get('GREEK_T')")),
+    ("ui", "function showHelpModal() { return _ui", ("showHelpModal",),
+     ("var esc = env.esc;", "var renderCas = env.renderCas;")),
+):
+    _path = ROOT / "server" / "static" / (_name + ".js")
+    _src = _path.read_text(encoding="utf-8") if _path.exists() else ""
+    check("%s.js 存在" % _name, _path.exists(), "")
+    check("%s 已装配且原实现体移走（仅剩薄包装）" % _name, _probe in app_src, "")
+    check("index.html 在 app.js 之前加载 %s.js" % _name,
+          index_src.index("/static/%s.js" % _name) < index_src.index("/static/app.js"), "")
+    check("%s 覆盖预期函数" % _name, all(("function %s(" % f) in _src for f in _fns), "")
+    check("%s 依赖既有模块助手/常量" % _name, all(t in _src for t in _injs), "")
+
 print("\n=== B15. 前端：命中测试/逆投影（static/hit.js）+ 工具预览（static/preview.js） ===")
 for _name, _probe, _fns, _injs in (
     ("hit", "function hitObject() { return _hit", ("hitObject", "hitObject3d", "unproj3", "nearestPathParam"),
