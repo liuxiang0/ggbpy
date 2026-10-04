@@ -195,6 +195,8 @@
   // 面板渲染已抽到 static/panels.js（P2 前端拆分）；此处提供状态访问 + 同名薄包装
   function _panelStateGet(k) {
     switch (k) {
+      case 'CHART_KINDS': return CHART_KINDS;
+      case 'EPSILON': return EPSILON;
       case 'drag3dObj': return drag3dObj;
       case 'objShift3d': return objShift3d;
       case 'CHART_TOOL_CMD': return CHART_TOOL_CMD;
@@ -374,6 +376,19 @@
   function localShift3dEl() { return _drag3d.localShift3dEl.apply(null, arguments); }
   function flushObjShift3d() { return _drag3d.flushObjShift3d.apply(null, arguments); }
   function shiftLocal() { return _drag3d.shiftLocal.apply(null, arguments); }
+
+  // 命中测试与逆投影（2D/3D 命中、屏幕→世界逆投影、路径参数） 已抽到 static/hit.js（P2 前端拆分）；同名薄包装保持调用点不变
+  var _hit = window.GGB_HIT.create({ get: _panelStateGet, camBasis3: camBasis3, conicPathPts: conicPathPts, distToSeg: distToSeg, pointInPoly: pointInPoly, proj3: proj3, sxp: sxp, syp: syp });
+  function unproj3() { return _hit.unproj3.apply(null, arguments); }
+  function hitObject3d() { return _hit.hitObject3d.apply(null, arguments); }
+  function nearestPathParam() { return _hit.nearestPathParam.apply(null, arguments); }
+  function hitObject() { return _hit.hitObject.apply(null, arguments); }
+
+  // 工具预览计算（2D 工具预览几何，P2 前端拆分） 已抽到 static/preview.js（P2 前端拆分）；同名薄包装保持调用点不变
+  var _preview = window.GGB_PREV.create({ get: _panelStateGet, findEl: findEl, hitObject: hitObject, niceStep: niceStep, snapPoint: snapPoint, wxp: wxp, wyp: wyp });
+  function conicCoeffs() { return _preview.conicCoeffs.apply(null, arguments); }
+  function conicPreviewSegs() { return _preview.conicPreviewSegs.apply(null, arguments); }
+  function computeToolPreview() { return _preview.computeToolPreview.apply(null, arguments); }
 
   function setMsg(msg, isErr) {
     msgEl.textContent = translateMsg(msg);
@@ -1202,44 +1217,6 @@
   // 逆投影：屏幕 (sx,sy) → 世界坐标，落在平面 z=z0 上（用于 3D 工具取点）
   // 透视：平面 z=z0 → y_cam·up[2]+z_cam·dir[2]=z0-tz；y_cam=v/s, z_cam=F/s-F-r → s=(v·cp+F·sp)/(z0-tz+(F+r)·sp)
   // 正交：s=1，由 z 约束直接解 z_cam
-  function unproj3(sx, sy, z) {
-    var W = cssW, H = cssH;
-    var f = cam.r * 2.2;
-    var pxScale = Math.min(W, H) * 0.42 / cam.r;
-    var u = (sx - W / 2) / pxScale, v = (H / 2 - sy) / pxScale;
-    // 斜二测逆投影：v = z + K·y（z 已知），u = x + K·y
-    if (view3dMode === 'oblique') {
-      var K = 0.3536;
-      var yy = (v - (z - cam.tz)) / K;
-      var xx = u - K * yy;
-      return [xx + cam.tx, yy + cam.ty, z];
-    }
-    var b = camBasis3();
-    var cp = b.up[2], sp = b.dir[2];
-    var xc, yc, zc;
-    if (ortho3d) {
-      // 正交：z_cam 由平面约束直接解（dir_z = sp）
-      if (Math.abs(sp) < COORD) {
-        zc = 0;
-      } else {
-        zc = ((z - cam.tz) - v * cp) / sp;
-      }
-      xc = u; yc = v;
-    } else {
-      var denom = (z - cam.tz) + (f + cam.r) * sp;
-      if (Math.abs(denom) < COORD) {
-        xc = u; yc = v; zc = 0;
-      } else {
-        var s = (v * cp + f * sp) / denom;
-        s = Math.max(0.05, Math.min(20, s));
-        xc = u / s; yc = v / s; zc = f / s - f - cam.r;
-      }
-    }
-    var d0 = [xc * b.right[0] + yc * b.up[0] + zc * b.dir[0],
-              xc * b.right[1] + yc * b.up[1] + zc * b.dir[1],
-              xc * b.right[2] + yc * b.up[2] + zc * b.dir[2]];
-    return [d0[0] + cam.tx, d0[1] + cam.ty, z];
-  }
 
 
   // 3D 坐标轴：带箭头的彩色轴 + x/y/z 标签 + 原点；左下角微缩坐标轴指示器
@@ -1408,63 +1385,6 @@
   }
 
   // 按 objtype 命中 3D 对象（用于立方体工具的"点击线段/正方形"）
-  function hitObject3d(sx, sy) {
-    var best = null, bestD = 12;
-    for (var i = 0; i < els3d.length; i++) {
-      var e = els3d[i];
-      if (e.visible === false) continue;
-      if (e.kind === 'point') {
-        var pr = proj3([e.x, e.y, e.z]);
-        var dd = Math.hypot(pr.x - sx, pr.y - sy);
-        if (dd <= 12 && dd < bestD) { bestD = dd; best = e; }
-        continue;
-      }
-      var dt = e.data || {};
-      var pts3 = [];
-      if (e.objtype === 'polyhedron' || e.objtype === 'cube') {
-        var vs = dt.verts || [];
-        for (var ei = 0; ei < (dt.edges || []).length; ei++) {
-          var edg = dt.edges[ei];
-          var p1 = proj3(vs[edg[0]]), p2 = proj3(vs[edg[1]]);
-          var d2 = distToSeg(sx, sy, p1.x, p1.y, p2.x, p2.y);
-          if (d2 <= 10 && d2 < bestD) { bestD = d2; best = e; }
-        }
-      } else if (e.objtype === 'plane') {
-        var a3 = [dt.ax, dt.ay, dt.az], u3 = [dt.ux, dt.uy, dt.uz], v3 = [dt.vx, dt.vy, dt.vz];
-        var quad = [[a3[0], a3[1], a3[2]],
-                    [a3[0] + u3[0], a3[1] + u3[1], a3[2] + u3[2]],
-                    [a3[0] + u3[0] + v3[0], a3[1] + u3[1] + v3[1], a3[2] + u3[2] + v3[2]],
-                    [a3[0] + v3[0], a3[1] + v3[1], a3[2] + v3[2]]];
-        for (var qi = 0; qi < 4; qi++) {
-          var pa = proj3(quad[qi]), pb = proj3(quad[(qi + 1) % 4]);
-          var dq = distToSeg(sx, sy, pa.x, pa.y, pb.x, pb.y);
-          if (dq <= 10 && dq < bestD) { bestD = dq; best = e; }
-        }
-      } else if (e.objtype === 'segment') {
-        var s1 = proj3([dt.x1, dt.y1, dt.z1]), s2 = proj3([dt.x2, dt.y2, dt.z2]);
-        var ds = distToSeg(sx, sy, s1.x, s1.y, s2.x, s2.y);
-        if (ds <= 10 && ds < bestD) { bestD = ds; best = e; }
-      } else if (e.objtype === 'sphere') {
-        // 球：按经/纬线框采样后取屏幕最近距离
-        var sc = [dt.cx, dt.cy, dt.cz], sr = dt.r;
-        var latN2 = 12, longN2 = 24;
-        for (var la = 0; la < latN2; la++) {
-          for (var lo2 = 0; lo2 < longN2; lo2++) {
-            var phA = Math.PI * la / latN2, phB = Math.PI * (la + 1) / latN2;
-            var thA = 2 * Math.PI * lo2 / longN2, thB = 2 * Math.PI * (lo2 + 1) / longN2;
-            var pA = [sc[0] + sr * Math.sin(phA) * Math.cos(thA), sc[1] + sr * Math.cos(phA), sc[2] + sr * Math.sin(phA) * Math.sin(thA)];
-            var pB = [sc[0] + sr * Math.sin(phA) * Math.cos(thB), sc[1] + sr * Math.cos(phA), sc[2] + sr * Math.sin(phA) * Math.sin(thB)];
-            var pC = [sc[0] + sr * Math.sin(phB) * Math.cos(thB), sc[1] + sr * Math.cos(phB), sc[2] + sr * Math.sin(phB) * Math.sin(thB)];
-            var prA = proj3(pA), prB = proj3(pB), prC = proj3(pC);
-            var dS = Math.min(distToSeg(sx, sy, prA.x, prA.y, prB.x, prB.y),
-                              distToSeg(sx, sy, prB.x, prB.y, prC.x, prC.y));
-            if (dS <= 10 && dS < bestD) { bestD = dS; best = e; }
-          }
-        }
-      }
-    }
-    return best;
-  }
   function setSelected3d(label) {
     selected3d = label;
     populateEditBar3d();
@@ -2799,61 +2719,6 @@
   // 屏幕坐标射线法：点是否在多边形内
 
   // 动点在其母体对象上的最近参数 t（PointOnPath/PointOnCircle 的驱动滑块值）
-  function nearestPathParam(obj, wx, wy) {
-    if (!obj) return null;
-    if (obj.kind === 'segment') {
-      var dx = obj.x2 - obj.x1, dy = obj.y2 - obj.y1, l2 = dx * dx + dy * dy;
-      var t = l2 ? ((wx - obj.x1) * dx + (wy - obj.y1) * dy) / l2 : 0;
-      return Math.max(0, Math.min(1, t));
-    }
-    if (obj.kind === 'circle') {
-      var ang = Math.atan2(wy - obj.cy, wx - obj.cx);
-      var a = ((ang % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-      return a / (Math.PI * 2);
-    }
-    if (obj.kind === 'arc') {
-      var ang2 = Math.atan2(wy - obj.cy, wx - obj.cx);
-      var span = obj.ang2 - obj.ang1;
-      var tt = (ang2 - obj.ang1) / span;
-      return Math.max(0, Math.min(1, tt));
-    }
-    if (obj.kind === 'line') {
-      var a = obj.a, b = obj.b, c = obj.c, denom = a * a + b * b;
-      if (denom < EPSILON) return 0.5;
-      var spr = Math.sqrt(denom);
-      var px = -a * c / denom, py = -b * c / denom;
-      var s = (wx - px) * (-b / spr) + (wy - py) * (a / spr);  // 沿方向投影
-      return Math.max(0, Math.min(1, s / 60 + 0.5));
-    }
-    if (obj.kind === 'ray') {
-      var el = Math.hypot(obj.dx, obj.dy);
-      var s = ((wx - obj.ox) * obj.dx + (wy - obj.oy) * obj.dy) / (el * el);
-      return Math.max(0, Math.min(1, (s * el) / 20));
-    }
-    if (obj.kind === 'polygon' && obj.pts && obj.pts.length >= 3) {
-      var best = null, bestD = 1e18, bestT = 0, cum = 0, total = 0;
-      var segs = [];
-      for (var i = 0; i < obj.pts.length; i++) {
-        var j = (i + 1) % obj.pts.length;
-        var ln = Math.hypot(obj.pts[j][0] - obj.pts[i][0], obj.pts[j][1] - obj.pts[i][1]);
-        segs.push([i, j, ln]);
-        total += ln;
-      }
-      for (var k = 0; k < segs.length; k++) {
-        var sd = segs[k], i0 = sd[0], j0 = sd[1], ln = sd[2];
-        var x1 = obj.pts[i0][0], y1 = obj.pts[i0][1], x2 = obj.pts[j0][0], y2 = obj.pts[j0][1];
-        var ddx = x2 - x1, ddy = y2 - y1, l2 = ddx * ddx + ddy * ddy;
-        var t = l2 ? ((wx - x1) * ddx + (wy - y1) * ddy) / l2 : 0;
-        t = Math.max(0, Math.min(1, t));
-        var qx = x1 + t * ddx, qy = y1 + t * ddy;
-        var d = Math.hypot(wx - qx, wy - qy);
-        if (d < bestD) { bestD = d; bestT = cum + t * ln; }
-        cum += ln;
-      }
-      return total > 0 ? bestT / total : 0;
-    }
-    return null;
-  }
   // 拖动动点：把其驱动参数滑块更新为母体上最近点对应的 t
   function dragPathPoint(pLabel, wx, wy) {
     var el = null;
@@ -2877,245 +2742,8 @@
     return null;
   }
   // ---- 五点圆锥曲线预览：6 元齐次 nullspace + marching 三角形 ----
-  function conicCoeffs(pts) {
-    var m = [];
-    for (var i = 0; i < 5; i++) {
-      var x = pts[i][0], y = pts[i][1];
-      m.push([x * x, x * y, y * y, x, y, 1]);
-    }
-    var rows = 5, cols = 6, r = 0, pivotCol = [];
-    for (var c = 0; c < cols && r < rows; c++) {
-      var pr = -1;
-      for (var rr = r; rr < rows; rr++) if (Math.abs(m[rr][c]) > COORD) { pr = rr; break; }
-      if (pr < 0) continue;
-      var t0 = m[r]; m[r] = m[pr]; m[pr] = t0;
-      var piv = m[r][c];
-      for (var cc = 0; cc < cols; cc++) m[r][cc] /= piv;
-      for (var rr2 = 0; rr2 < rows; rr2++) if (rr2 !== r) {
-        var f2 = m[rr2][c];
-        if (Math.abs(f2) > EPSILON) for (var cc2 = 0; cc2 < cols; cc2++) m[rr2][cc2] -= f2 * m[r][cc2];
-      }
-      pivotCol.push(c);
-      r++;
-    }
-    var freeCol = -1;
-    for (var c2 = 0; c2 < cols; c2++) if (pivotCol.indexOf(c2) === -1) { freeCol = c2; break; }
-    if (freeCol < 0) return null;
-    var xv = [0, 0, 0, 0, 0, 0];
-    xv[freeCol] = 1;
-    for (var pr2 = pivotCol.length - 1; pr2 >= 0; pr2--) {
-      var pc = pivotCol[pr2];
-      var s = 0;
-      for (var cc3 = pc + 1; cc3 < cols; cc3++) s += m[pr2][cc3] * xv[cc3];
-      xv[pc] = -s;
-    }
-    var any = false;
-    for (var k = 0; k < 6; k++) if (Math.abs(xv[k]) > EPSILON) { any = true; break; }
-    return any ? xv : null;
-  }
-  function conicPreviewSegs(coeff) {
-    var a = coeff[0], b = coeff[1], c = coeff[2], d = coeff[3], e = coeff[4], f = coeff[5];
-    function F(x, y) { return a * x * x + b * x * y + c * y * y + d * x + e * y + f; }
-    var span = Math.max(view.xmax - view.xmin, view.ymax - view.ymin);
-    var cell = span / 48;
-    var x0 = view.xmin - cell, x1 = view.xmax + cell, y0 = view.ymin - cell, y1 = view.ymax + cell;
-    var nx = Math.ceil((x1 - x0) / cell), ny = Math.ceil((y1 - y0) / cell);
-    var segs = [];
-    function edge(p1x, p1y, f1, p2x, p2y, f2) {
-      var tt = f1 / (f1 - f2);
-      return [p1x + tt * (p2x - p1x), p1y + tt * (p2y - p1y)];
-    }
-    function triSeg(ax2, ay2, fa, bx2, by2, fb, cx2, cy2, fc) {
-      var n0 = (fa < 0 ? 1 : 0) + (fb < 0 ? 1 : 0) + (fc < 0 ? 1 : 0);
-      if (n0 === 0 || n0 === 3) return;
-      var v = [[ax2, ay2, fa], [bx2, by2, fb], [cx2, cy2, fc]];
-      var hits = [];
-      for (var i = 0; i < 3; i++) {
-        var j = (i + 1) % 3;
-        if ((v[i][2] < 0) !== (v[j][2] < 0)) hits.push(edge(v[i][0], v[i][1], v[i][2], v[j][0], v[j][1], v[j][2]));
-      }
-      if (hits.length === 2) segs.push([hits[0][0], hits[0][1], hits[1][0], hits[1][1]]);
-    }
-    for (var ix = 0; ix < nx; ix++) for (var iy = 0; iy < ny; iy++) {
-      var X0 = x0 + ix * cell, X1 = X0 + cell, Y0 = y0 + iy * cell, Y1 = Y0 + cell;
-      var bl = F(X0, Y0), br = F(X1, Y0), tr = F(X1, Y1), tl = F(X0, Y1);
-      triSeg(X0, Y0, bl, X1, Y0, br, X0, Y1, tl);
-      triSeg(X1, Y0, br, X1, Y1, tr, X0, Y1, tl);
-    }
-    return segs;
-  }
   // 工具绘制中的预览形状（部分参数完成 → 随鼠标临时图形）
-  function computeToolPreview(sel, mx, my) {
-    var wx = wxp(mx), wy = wyp(my);
-    if (snapOn || shiftKeyPressed) {
-      var snapped = snapPoint(wx, wy, niceStep(), mx, my);
-      wx = snapped[0]; wy = snapped[1];
-    }
-    if (!sel.length) return null;
-    if (activeTool === 'circle' && sel.length === 1) {
-      var cc = findEl(sel[0]);
-      if (!cc) return null;
-      return { type: 'circle', cx: cc.x, cy: cc.y, r: Math.hypot(wx - cc.x, wy - cc.y) };
-    }
-    if ((activeTool === 'segment' || activeTool === 'line' || activeTool === 'ray' ||
-         activeTool === 'vector' || activeTool === 'semicircle' || activeTool === 'perp' ||
-         activeTool === 'parallel') && sel.length === 1 && activeTool !== 'perp' && activeTool !== 'parallel') {
-      var p1 = findEl(sel[0]);
-      if (!p1) return null;
-      return { type: 'seg', x1: p1.x, y1: p1.y, x2: wx, y2: wy };
-    }
-    if ((activeTool === 'polygon' || activeTool === 'rigidpolygon' || activeTool === 'polyline') && sel.length >= 1) {
-      var pts = [];
-      for (var k = 0; k < sel.length; k++) {
-        var pp = findEl(sel[k]);
-        if (pp) pts.push([pp.x, pp.y]);
-      }
-      pts.push([wx, wy]);
-      return { type: 'poly', pts: pts };
-    }
-    if (activeTool === 'ellipse' && sel.length === 2) {
-      var el1 = findEl(sel[0]), el2 = findEl(sel[1]);
-      if (!el1 || !el2) return null;
-      var efc = Math.hypot(el2.x - el1.x, el2.y - el1.y) / 2;
-      var e1 = Math.hypot(wx - el1.x, wy - el1.y), e2 = Math.hypot(wx - el2.x, wy - el2.y);
-      var esa = (e1 + e2) / 2;              // 半长轴 = (|PF1|+|PF2|)/2
-      if (esa <= efc) return null;          // 2a <= 焦距 → 无椭圆
-      var esb = Math.sqrt(esa * esa - efc * efc);
-      return { type: 'conic', ctype: 'ellipse', cx: (el1.x + el2.x) / 2, cy: (el1.y + el2.y) / 2,
-               semi_a: esa, semi_b: esb, angle: Math.atan2(el2.y - el1.y, el2.x - el1.x) };
-    }
-    if (activeTool === 'hyperbola' && sel.length === 2) {
-      var hl1 = findEl(sel[0]), hl2 = findEl(sel[1]);
-      if (!hl1 || !hl2) return null;
-      var hfc = Math.hypot(hl2.x - hl1.x, hl2.y - hl1.y) / 2;
-      var h1 = Math.hypot(wx - hl1.x, wy - hl1.y), h2 = Math.hypot(wx - hl2.x, wy - hl2.y);
-      var hsa = Math.abs(h1 - h2) / 2;      // 实半轴 = ||PF1|-|PF2||/2
-      if (hsa < COORD || hsa >= hfc) return null;
-      var hsb = Math.sqrt(hfc * hfc - hsa * hsa);
-      return { type: 'conic', ctype: 'hyperbola', cx: (hl1.x + hl2.x) / 2, cy: (hl1.y + hl2.y) / 2,
-               semi_a: hsa, semi_b: hsb, angle: Math.atan2(hl2.y - hl1.y, hl2.x - hl1.x) };
-    }
-    if (activeTool === 'parabola' && sel.length === 1) {
-      var pfc = findEl(sel[0]);
-      if (!pfc) return null;
-      var dL = hitObject(mx, my, ['line', 'segment', 'ray']);
-      if (!dL) return null;
-      var dlEl = findEl(dL);
-      if (!dlEl) return null;
-      // 准线系数 A x + B y + C = 0
-      var qA, qB, qC;
-      if (dlEl.kind === 'line') { qA = dlEl.a; qB = dlEl.b; qC = dlEl.c; }
-      else if (dlEl.kind === 'segment') { var sdx = dlEl.x2 - dlEl.x1, sdy = dlEl.y2 - dlEl.y1; qA = -sdy; qB = sdx; qC = -(qA * dlEl.x1 + qB * dlEl.y1); }
-      else { qA = -dlEl.uy; qB = dlEl.ux; qC = -(qA * dlEl.ox + qB * dlEl.oy); }
-      var qden = qA * qA + qB * qB;
-      if (qden < EPSILON) return null;
-      var qt = -(qA * pfc.x + qB * pfc.y + qC) / qden;
-      var qhx = pfc.x + qA * qt, qhy = pfc.y + qB * qt;   // 焦点到准线垂足
-      var qp = Math.hypot(pfc.x - qhx, pfc.y - qhy) / 2;  // p（顶点到焦点/准线距离）
-      if (qp < COORD) return null;
-      return { type: 'conic', ctype: 'parabola', cx: (pfc.x + qhx) / 2, cy: (pfc.y + qhy) / 2,
-               semi_a: qp, angle: Math.atan2(pfc.y - qhy, pfc.x - qhx) };
-    }
-    if (activeTool === 'image' && pendingImage && sel.length === 1) {
-      var aImg = findEl(sel[0]);
-      if (!aImg) return null;
-      var wImg = Math.hypot(wx - aImg.x, wy - aImg.y);
-      if (wImg < COORD) return null;
-      var uxI = (wx - aImg.x) / wImg, uyI = (wy - aImg.y) / wImg;
-      var hImg = wImg * pendingImage.ratio;
-      var vxI = -uyI, vyI = uxI;
-      return { type: 'poly', pts: [[aImg.x, aImg.y], [wx, wy],
-                                   [wx + hImg * vxI, wy + hImg * vyI],
-                                   [aImg.x + hImg * vxI, aImg.y + hImg * vyI],
-                                   [aImg.x, aImg.y]] };
-    }
-    if (activeTool === 'conic5' && sel.length === 4) {
-      var p5 = [];
-      for (var c5 = 0; c5 < 4; c5++) { var el5 = findEl(sel[c5]); if (!el5) return null; p5.push([el5.x, el5.y]); }
-      p5.push([wx, wy]);
-      var cf = conicCoeffs(p5);
-      if (!cf) return null;
-      return { type: 'conic5', pts: p5, preSegs: conicPreviewSegs(cf) };
-    }
-    if (activeTool === 'arc' || activeTool === 'sector') {
-      if (sel.length === 1) {
-        var ac = findEl(sel[0]);
-        if (ac) return { type: 'circle', cx: ac.x, cy: ac.y, r: Math.hypot(wx - ac.x, wy - ac.y) };  // 圆心已定：预览随鼠标半径的圆
-      }
-      if (sel.length === 2) {
-        var ac2 = findEl(sel[0]), as2 = findEl(sel[1]);
-        if (ac2 && as2) return { type: 'circle', cx: ac2.x, cy: ac2.y, r: Math.hypot(as2.x - ac2.x, as2.y - ac2.y) };  // 起点已定：预览过起点的圆
-      }
-    }
-    return null;
-  }
 
-  function hitObject(sx, sy, kinds) {
-    for (var i = 0; i < elements.length; i++) {
-      var e = elements[i];
-      if (kinds.indexOf(e.kind) === -1) continue;
-      if (e.kind === 'point') {
-        var dx = sxp(e.x) - sx, dy = syp(e.y) - sy;
-        if (dx * dx + dy * dy <= 81) return e.label;
-      } else if (e.kind === 'segment') {
-        if (distToSeg(sx, sy, sxp(e.x1), syp(e.y1), sxp(e.x2), syp(e.y2)) <= 10) return e.label;
-      } else if (e.kind === 'line' || e.kind === 'ray') {
-        if (e.seg && distToSeg(sx, sy, sxp(e.seg[0]), syp(e.seg[1]), sxp(e.seg[2]), syp(e.seg[3])) <= 10) return e.label;
-      } else if (e.kind === 'circle') {
-        var d = Math.hypot(sxp(e.cx) - sx, syp(e.cy) - sy);
-        if (Math.abs(d - e.r * scale) <= 10) return e.label;
-      } else if (e.kind === 'vector') {
-        if (distToSeg(sx, sy, sxp(e.sx || 0), syp(e.sy || 0), sxp((e.sx || 0) + e.dx), syp((e.sy || 0) + e.dy)) <= 14) return e.label;
-      } else if (e.kind === 'arc') {
-        var arD = Math.hypot(sxp(e.cx) - sx, syp(e.cy) - sy);
-        if (Math.abs(arD - e.r * scale) <= 10) return e.label;
-      } else if (e.kind === 'polygon' && e.pts && e.pts.length >= 3) {
-        for (var pli = 0; pli < e.pts.length; pli++) {
-          var pj = (pli + 1) % e.pts.length;
-          if (distToSeg(sx, sy, sxp(e.pts[pli][0]), syp(e.pts[pli][1]), sxp(e.pts[pj][0]), syp(e.pts[pj][1])) <= 10) return e.label;
-        }
-        // 点击多边形内部任意点也可选中（射线法）
-        if (pointInPoly(sx, sy, e.pts)) return e.label;
-      } else if (e.kind === 'image' && e.corners && e.corners.length === 4) {
-        if (pointInPoly(sx, sy, e.corners)) return e.label;
-      } else if (e.kind === 'function' && e.samples) {
-        var prevF = null;
-        for (var fi2 = 0; fi2 < e.samples.length; fi2++) {
-          var fy = e.samples[fi2][1];
-          if (fy === null || !isFinite(fy)) { prevF = null; continue; }
-          var fpt = [sxp(e.samples[fi2][0]), syp(fy)];
-          if (prevF && distToSeg(sx, sy, prevF[0], prevF[1], fpt[0], fpt[1]) <= 10) return e.label;
-          if (!prevF && Math.hypot(fpt[0] - sx, fpt[1] - sy) <= 10) return e.label;
-          prevF = fpt;
-        }
-      } else if (e.kind === 'parametric' || e.kind === 'polar') {
-        for (var pi2b = 0; pi2b < (e.pts || []).length; pi2b++) {
-          if (Math.hypot(sxp(e.pts[pi2b][0]) - sx, syp(e.pts[pi2b][1]) - sy) <= 10) return e.label;
-        }
-      } else if (e.kind === 'implicit' && e.segs) {
-        for (var isi2 = 0; isi2 < e.segs.length; isi2++) {
-          if (distToSeg(sx, sy, sxp(e.segs[isi2][0]), syp(e.segs[isi2][1]), sxp(e.segs[isi2][2]), syp(e.segs[isi2][3])) <= 10) return e.label;
-        }
-      } else if (e.kind === 'conic' && e.segs) {
-        for (var csi = 0; csi < e.segs.length; csi++) {
-          if (distToSeg(sx, sy, sxp(e.segs[csi][0]), syp(e.segs[csi][1]), sxp(e.segs[csi][2]), syp(e.segs[csi][3])) <= 10) return e.label;
-        }
-      } else if (CHART_KINDS.indexOf(e.kind) !== -1) {
-        // 统计图：整张图一个命中盒（绘制时记录），拖拽/选中都按整体处理
-        var cb = chartBoxes[e.label];
-        if (cb && sx >= cb.x0 - 2 && sx <= cb.x1 + 2 && sy >= cb.y0 - 2 && sy <= cb.y1 + 2) return e.label;
-      } else if (e.kind === 'conic' && conicPathPts(e)) {
-        var cpath = conicPathPts(e);
-        for (var cpi = 0; cpi < cpath.length; cpi++) {
-          var cpc = cpath[cpi];
-          for (var cq = 0; cq + 1 < cpc.length; cq++) {
-            if (distToSeg(sx, sy, sxp(cpc[cq][0]), syp(cpc[cq][1]), sxp(cpc[cq + 1][0]), syp(cpc[cq + 1][1])) <= 10) return e.label;
-          }
-        }
-      }
-    }
-    return null;
-  }
   function finishPolygon() {
     if (toolSel.length < 3) return;
     var fCmd = activeTool === 'rigidpolygon' ? 'RigidPolygon' : 'Polygon';

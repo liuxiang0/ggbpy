@@ -444,6 +444,22 @@ for pth in sorted((ROOT / "kernel").glob("*.py")):
 check("kernel 内联 objtype 载荷已收敛到 schemas.py（新增内联会被拦下）", not inline_hits,
       str(inline_hits[:4]))
 
+print("\n=== B15. 前端：命中测试/逆投影（static/hit.js）+ 工具预览（static/preview.js） ===")
+for _name, _probe, _fns, _injs in (
+    ("hit", "function hitObject() { return _hit", ("hitObject", "hitObject3d", "unproj3", "nearestPathParam"),
+     ("var sxp = env.sxp;", "var proj3 = env.proj3;", "var camBasis3 = env.camBasis3;")),
+    ("preview", "function computeToolPreview() { return _preview", ("computeToolPreview",),
+     ("var findEl = env.findEl;", "var hitObject = env.hitObject;")),
+):
+    _path = ROOT / "server" / "static" / (_name + ".js")
+    _src = _path.read_text(encoding="utf-8") if _path.exists() else ""
+    check("%s.js 存在" % _name, _path.exists(), "")
+    check("%s 已装配且原实现体移走（仅剩薄包装）" % _name, _probe in app_src, "")
+    check("index.html 在 app.js 之前加载 %s.js" % _name,
+          index_src.index("/static/%s.js" % _name) < index_src.index("/static/app.js"), "")
+    check("%s 覆盖预期函数" % _name, all(("function %s(" % f) in _src for f in _fns), "")
+    check("%s 注入既有模块助手" % _name, all(t in _src for t in _injs), "")
+
 print("\n=== B14. 前端：三维对象位移/拖动（static/drag3d.js） ===")
 d3_path = ROOT / "server" / "static" / "drag3d.js"
 d3_src = d3_path.read_text(encoding="utf-8") if d3_path.exists() else ""
