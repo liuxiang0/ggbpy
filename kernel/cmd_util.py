@@ -39,6 +39,7 @@ __all__ = [
     "_resolve",
     "_lookup",
     "_tuple_parts_any",
+    "list_literal_state",
     "_list_arg",
     "_point_arg",
     "_num_deps",
@@ -204,3 +205,70 @@ def _elem_or_point(cons, s: str):
 
 def _is_segment_el(el) -> bool:
     return el.kind == "segment" or (el.kind == "geo3d" and getattr(el, "objtype", "") == "segment")
+
+
+def list_literal_state(cons, line: str, itemkind: str):
+    """列表字面量依赖化：``L={n, n*10+2}`` → ``(deps, state_fn)``。
+
+    背景：列表字面量原先只保存**求值后的快照**（无 deps），于是含滑块/变量的列表
+    （``L={n, n*10+2}``）不随依赖更新 —— 经列表传递的 DAG 链断开。
+
+    规则：
+    - 只处理**每一项都可重算**的字面量：数值表达式 / 点标签 / ``(x,y[,z])`` 元组；
+    - **纯常量列表**（不含元素引用）返回 ``([], None)`` → 保持原有静态语义（行为不变）；
+    - 依赖按出现顺序去重；重算失败时抛 GeoError（元素进入 error 状态，与其它命令一致）。
+    """
+    import re as _re
+
+    from .parser import _split_brace, eval_number, tokenize
+
+    m = _re.search(r"=\s*(\{.*\})\s*$", line, _re.S)
+    if not m:
+        return [], None
+    parts = _split_brace(tokenize(m.group(1)))
+    if not parts:
+        return [], None
+
+    deps: List = []
+    seen = set()
+
+    def _add(el) -> None:
+        if el is not None and id(el) not in seen:
+            seen.add(id(el))
+            deps.append(el)
+
+    for part in parts:
+        pt = part.strip()
+        _add(cons.elements.get(pt))                       # 整项是元素标签（数值/点）
+        frags = _tuple_parts_any(pt) if (pt.startswith("(") and pt.endswith(")")) else [pt]
+        for frag in frags:
+            for tok in _re.findall(r"[A-Za-z_][A-Za-z0-9_]*", frag):
+                _add(cons.elements.get(tok))              # 表达式里引用的元素
+    if not deps:
+        return [], None
+
+    def _value(part: str):
+        pt = part.strip()
+        el = cons.elements.get(pt)
+        if el is not None and el.kind in ("point", "point3d"):
+            if itemkind == "point3d":
+                return [float(el.x), float(el.y), float(getattr(el, "z", 0.0))]
+            return [float(el.x), float(el.y)]
+        if pt.startswith("(") and pt.endswith(")"):
+            return [eval_number(cons, c) for c in (_tuple_parts_any(pt) or [])]
+        if el is not None and el.kind == "number":
+            return float(el.value)
+        return eval_number(cons, pt)
+
+    def state(_d):
+        items = []
+        for part in parts:
+            try:
+                items.append(_value(part))
+            except GeoError:
+                raise
+            except Exception as ex:  # 依赖变化后无法求值：明确报错（元素转 error，不静默留旧值）
+                raise GeoError("列表求值失败：" + str(ex)[:60])
+        return {"items": items, "itemkind": itemkind}
+
+    return deps, state

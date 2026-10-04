@@ -955,6 +955,42 @@ check("列表被重定义后茎叶图自动重算（依赖接线正确）",
       _before == ([0, 2], [[5, 7], [5]]) and _after == ([0, 1, 2], [[9], [9], [9]]),
       "%s → %s" % (_before, _after))
 
+# ---------------------------------------------------------------------------
+section("Z5. 列表字面量依赖化（含变量的 L={…} 随依赖重算）")
+
+_lc = Construction()
+_lc.process("n=1")
+_lc.process("L={n, n*10+2, n*10+5}")
+_lle = _lc.elements.get("L")
+check("含变量的列表字面量挂上依赖（free=False, deps=[n]）",
+      _lle is not None and _lle.free is False and [d.label for d in _lle.deps] == ["n"],
+      "free=%s deps=%s" % (getattr(_lle, "free", None), [d.label for d in getattr(_lle, "deps", [])]))
+
+_lc.process("SL=Sum[L]")
+_lc.process("SPL=StemPlot[L]")
+_before_l = (list(_lc.elements["L"].items), _lc.elements["SL"].value,
+             list(_lc.elements["SPL"].stems), [list(x) for x in _lc.elements["SPL"].leaves])
+_lc.process("SetValue[n, 3]")
+_after_l = (list(_lc.elements["L"].items), _lc.elements["SL"].value,
+            list(_lc.elements["SPL"].stems), [list(x) for x in _lc.elements["SPL"].leaves])
+check("列表随依赖重算（n=1→3：L=[3,32,35]，Sum=70）",
+      _after_l[0] == [3.0, 32.0, 35.0] and abs(_after_l[1] - 70.0) < 1e-9,
+      "L=%s Sum=%s" % (_after_l[0], _after_l[1]))
+check("经列表的 DAG 链贯通（Sum 与 StemPlot 同步刷新）",
+      _before_l != _after_l and _after_l[2] == [0, 3] and _after_l[3] == [[3], [2, 5]],
+      "%s → %s" % (_before_l, _after_l))
+
+_lc.process("D2={3,1,4}")
+check("纯常量列表保持静态快照（free=True，无依赖）—— 行为不变",
+      _lc.elements["D2"].free is True and not _lc.elements["D2"].deps,
+      "free=%s deps=%s" % (_lc.elements["D2"].free, len(_lc.elements["D2"].deps)))
+
+_lc.process("n2=2")
+_lc.process("P2={n2, n2*n2}")
+_lc.process("SetValue[n2, 4]")
+check("表达式项也随依赖重算（n2=2→4：P2=[4,16]）",
+      list(_lc.elements["P2"].items) == [4.0, 16.0], str(_lc.elements["P2"].items))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

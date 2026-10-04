@@ -75,8 +75,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **统计图边界（策略统一后的行为）**：图表几何按世界坐标（`CHART_H = 3` 世界单位为柱/直方图最大柱高、`PIE_R = 3` 为饼半径），基线取世界 `y = 0`；
   滚轮缩放时柱高/饼半径同比变化（浏览器回归断言：scale ×1.15 → 柱高与饼直径 ×1.15）；**旧行为**中柱高与基线是屏幕固定像素、饼图完全固定在画布中心，缩放时与折线/散点不一致 —— 已统一
 - **茎叶图边界**：`StemPlot` 只接受**非负有限**数据（负数/非有限给明确 error；空数据报错）；叶单位固定为 1（个位为叶）
-- **已知局限（列表字面量是静态快照）**：`L={n, n*10+2}` 这类**含滑块/变量的列表字面量不会随依赖更新** ——
-  经列表传递的 DAG 链在此断开（`DotPlot`/`StemPlot` 等所有以列表为输入的命令同样如此）；需改用 `Redefine[L, L={…}]` 触发刷新
+- **列表字面量依赖化（已修）**：`L={n, n*10+2}` 这类**含元素引用**的列表字面量现在会**声明依赖并随依赖重算**（`SetValue[n,3]` → `L=[3,32,35]`，
+  且 `Sum[L]`、`StemPlot[L]` 等消费方同步刷新）；**纯常量列表保持静态快照**（行为不变）。仍有的边界：
+  列表字面量里**不能直接写点标签**（`{A,B}`、`{(A),(B)}` 在解析层即被拒 —— 这是既有解析限制），点列表请用坐标元组 `{(1,1),(3,1)}`
 - **剖分的边界**：`Delaunay` 至少 3 点、共线/重合点集报「点集退化」（scipy Qhull）；`Voronoi` 至少 2 点、**重合点明确报错**、
   元胞用点集外扩 15% 的包围盒裁剪（因此**无界元胞问题被规避**，面积和 = 包围盒面积）；两者都只接受二维点/多边形· `NSolve` 在默认区间 `[-60, 60]` 内找实根，找不到即报错 ·
   `Limit` 结果为 ∞/不存在时**明确报错**（不返回假数值）· `SolveODE` 只给 **sympy dsolve 通解文本**（含常数 `c1`，暂不支持初值条件 → 函数）·
@@ -88,7 +89,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 #### 2D 检测矩阵（可重复执行）
 
-- `devtools/test_2d_matrix.py`（内核 199 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
+- `devtools/test_2d_matrix.py`（内核 204 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
 - `devtools/test_2d_api.py`（51 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
 - `devtools/verify_2d_ui_matrix.js`（82 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
 - `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
@@ -178,6 +179,13 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第六十三批（2026-10-04 · 修复：列表字面量依赖化，打通经列表的 DAG 链）**：
+  - **问题**（第六十二批顺带发现）：`commands.py` 建立列表元素时只保存**求值后的快照**（无 deps）→ `L={n, n*10+2}` 不随 `n` 更新，**经列表传递的 DAG 链断开**（影响 `Sum[L]`、`DotPlot[L]`、`StemPlot[L]` 等所有以列表为输入的命令）
+  - **修复**：新增 `cmd_util.list_literal_state(cons, line, itemkind)` —— 从原始行文本重新解析列表项，收集其中引用的元素作为**依赖**，并在重算时按当前依赖值**重新求值**每一项；`commands.process_line` 的列表分支挂上它
+  - **行为边界（刻意）**：只对**含元素引用**的列表字面量生效（`free=False` + deps）；**纯常量列表保持静态快照**（`free=True`，零行为变化 → 现有回归全绿）；重算失败给明确 GeoError（元素转 error，不静默留旧值）
+  - **实测**：`n=1` → `L=[1,12,15]`；`SetValue[n,3]` → `L=[3,32,35]`、`Sum[L]=70`、`StemPlot[L]` 茎叶同步变为 `[0,3]`；`n=5` → `[5,52,55]`
+  - **仍存在的解析层边界（既有，已在 README 说明）**：列表字面量不能直接写点标签（`{A,B}` → 「对象 A 不是数值」；`{(A),(B)}` → 「元组需要两个或三个分量」），点列表请用坐标元组
+  - 检测：2D 内核 199 → **204**（依赖挂载/链式重算/常量列表不变/表达式项重算）
 - **第六十二批（2026-10-04 · 新图表：茎叶图 StemPlot）**：
   - **新增命令**（COMMANDS 179 → **180**）：`StemPlot[数值列表]` → 茎叶图（十位为茎、个位为叶；中文别名「茎叶图」），元素 `kind="stemplot"`；前端新增 `drawStemPlot`（等宽字体表格 + 可拖动命中框），工具面板「统计图」分类新增第 11 个按钮、中英文案齐备
   - **边界**：只接受非负有限数据（负数/非有限 → 元素带明确 error；空数据 → 命令报错）；叶单位固定 1
@@ -425,7 +433,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 199 + 2D API 51 + 3D 494/181/142 + 2D 前端 82 + 代码质量 19 = 1571 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 204 + 2D API 51 + 3D 494/181/142 + 2D 前端 82 + 代码质量 19 = 1576 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

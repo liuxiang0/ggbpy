@@ -16,7 +16,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 from . import schemas
 from .cmd_util import (  # 命令层共享工具（自本模块抽出）
     _nested_depth, label_of, _label_of, _mk, _auto, _resolve, _lookup, _tuple_parts_any, _list_arg,
-    _point_arg, _num_deps, _num_list_items, _num_series, _elem_or_point, _is_segment_el
+    _point_arg, _num_deps, _num_list_items, _num_series, _elem_or_point, _is_segment_el,
+    list_literal_state
 )
 from .cmd_util import set_nested_evaluator
 # 微积分/符号计算命令已抽到 kernel/calculus.py；re-export 保持调用方兼容
@@ -1076,6 +1077,12 @@ def process_line(cons, line: str) -> List:
         if label is None:
             label = cons.auto_label("list")
         el = GeoList(label, label + "=" + _list_defn(items, itemkind), items, itemkind)
+        # 依赖化：含元素引用的列表字面量（如 L={n, n*10+2}）随依赖自动重算；
+        # 纯常量列表返回 ([], None) → 保持静态快照语义（行为不变）
+        deps, state_fn = list_literal_state(cons, line, itemkind)
+        if deps and state_fn is not None:
+            el.free = False
+            el.set_deps(deps, state_fn)
         return [cons.add(el)]
 
     if kind == "vector":
