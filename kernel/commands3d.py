@@ -275,6 +275,21 @@ def _cmd_area(cons, defn, args):
                    lambda d: {"value": _solid_area(d[0])})
     raise GeoError("Area 需要 多边形/圆/椭圆/3D 立体 或 函数+上下限")
 
+def _cmd_surfacearea(cons, defn, args):
+    """SurfaceArea[立体|曲面] → 表面积。
+
+    球/圆锥/圆柱走解析式；网格（多面体/曲面/导入网格）按三角形面积求和（``_solid_area``）。
+    二维对象请用 ``Area``；无限圆锥没有有限表面积（明确报错）。
+    """
+    if len(args) != 1:
+        raise GeoError("SurfaceArea 需要 一个 3D 立体或曲面")
+    obj = _resolve(cons, args[0])
+    if obj.kind != "geo3d":
+        raise GeoError("SurfaceArea 需要 3D 立体或曲面（二维对象请用 Area）")
+    return _mk(cons, GeoNumber, "number", defn, [obj],
+               lambda d: {"value": _solid_area(d[0])})
+
+
 def _cmd_volume(cons, defn, args):
     """Volume[立体]：球/圆锥/圆柱解析精确，多面体按网格精确求和。"""
     if len(args) != 1:

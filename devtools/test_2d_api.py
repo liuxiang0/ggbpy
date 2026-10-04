@@ -302,6 +302,28 @@ check("3D 高度场出现在 state3d（3×3 网格）",
 st, _h, raw = req("/api/export/svg", raw=True)[0:3]
 check("统计图存在时 SVG 导出仍成功", st == 200 and b"<svg" in raw, "HTTP %s" % st)
 
+# ---------------------------------------------------------------------------
+section("H. 新命令端到端（CAS 算子接线 + 表面积/有限性，经 HTTP 链路）")
+
+clear()
+put("S=Solve[x^2-4=0, x]")
+put("F=IsFinite[1/0]")
+put("L=Limit[sin(x)/x, 0]")
+put("B=Substitute[x^2, x, 3]")
+_els = {e.get("label"): e for e in state()}
+# 序列化约定：list → 顶层 items；boolean → 顶层 value（"true"/"false"）；number → 顶层 val
+check("API：Solve → 列表元素 items=[-2, 2]",
+      sorted((_els.get("S") or {}).get("items") or []) == [-2.0, 2.0],
+      str((_els.get("S") or {}).get("items")))
+check("API：IsFinite[1/0] → 布尔 false",
+      (_els.get("F") or {}).get("value") == "false", str((_els.get("F") or {}).get("value")))
+check("API：Limit[sin(x)/x, 0] → 1",
+      abs(float((_els.get("L") or {}).get("val") or 0) - 1.0) < 1e-9,
+      str((_els.get("L") or {}).get("val")))
+check("API：Substitute[x^2, x, 3] → 9",
+      abs(float((_els.get("B") or {}).get("val") or 0) - 9.0) < 1e-9,
+      str((_els.get("B") or {}).get("val")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

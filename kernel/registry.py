@@ -17,10 +17,12 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Tuple
 
 from .cmd_util import _lookup
+from .cas_cmds import (_cmd_limit, _cmd_nsolve, _cmd_partialfractions,
+                       _cmd_solve, _cmd_solveode, _cmd_substitute)
 from .calculus import _cmd_derivative, _cmd_divisors, _cmd_extremum, _cmd_factorslist, _cmd_fitexpr, _cmd_integral, _cmd_isprime, _cmd_normaldist, _cmd_rectsum, _cmd_root, _cmd_sequence, _cmd_solveineq
 from .centers import _cmd_circumcenter, _cmd_excenter, _cmd_orthocenter
 from .charts import _cmd_barchart, _cmd_barchart3d, _cmd_boxplot, _cmd_dotplot, _cmd_histogram, _cmd_linechart, _cmd_piechart, _cmd_scatterplot, _cmd_scatterplot3d, _cmd_surfacechart3d
-from .commands3d import _cmd_area, _cmd_bbox, _cmd_cone, _cmd_convexhull, _cmd_covariance, _cmd_cube, _cmd_cylinder, _cmd_dodecahedron, _cmd_fitplane, _cmd_fitsphere, _cmd_hexahedron, _cmd_icosahedron, _cmd_implicit_surface, _cmd_mesh, _cmd_octahedron, _cmd_plane, _cmd_prism, _cmd_pyramid, _cmd_sphere, _cmd_surface, _cmd_surface_param, _cmd_surfacepoint, _cmd_surfaceproject, _cmd_tetrahedron, _cmd_volume
+from .commands3d import _cmd_area, _cmd_bbox, _cmd_cone, _cmd_convexhull, _cmd_covariance, _cmd_cube, _cmd_cylinder, _cmd_dodecahedron, _cmd_fitplane, _cmd_fitsphere, _cmd_hexahedron, _cmd_icosahedron, _cmd_implicit_surface, _cmd_mesh, _cmd_octahedron, _cmd_plane, _cmd_prism, _cmd_pyramid, _cmd_sphere, _cmd_surface, _cmd_surface_param, _cmd_surfacepoint, _cmd_surfaceproject, _cmd_tetrahedron, _cmd_volume, _cmd_surfacearea
 from .conics import _cmd_conic5, _cmd_diameter, _cmd_ellipse, _cmd_focus, _cmd_hyperbola, _cmd_implicit, _cmd_parabola, _cmd_parametric, _cmd_polar
 from .editing import _cmd_delete, _cmd_macrodelete, _cmd_redefine, _cmd_rename, _cmd_setcolor, _cmd_setcoords, _cmd_setlocked, _cmd_setvalue, _cmd_setvisible, _cmd_slider
 from .fits import _cmd_cov_ellipsoid, _cmd_fitexp, _cmd_fitlog, _cmd_fitpoly, _cmd_fitpow, _cmd_fitsin, _cmd_pmcc
@@ -30,7 +32,7 @@ from .linalg import _cmd_arg, _cmd_conj, _cmd_det, _cmd_dot, _cmd_im, _cmd_inver
 from .macros import _cmd_macrocreate, _cmd_macrolist
 from .measures import _cmd_angle, _cmd_circumference, _cmd_distance, _cmd_length, _cmd_perimeter, _cmd_radius, _cmd_semiperimeter, _cmd_slope
 from .misc import _cmd_randombetween, _cmd_randomize, _cmd_setwire
-from .numeric import _cmd_complex_abs, _cmd_gcd, _cmd_iqr, _cmd_lcm, _cmd_max, _cmd_mean, _cmd_median, _cmd_min, _cmd_mode, _cmd_ncr, _cmd_normal, _cmd_npr, _cmd_q1, _cmd_q3, _cmd_sort, _cmd_stdev, _cmd_sum, _cmd_variance
+from .numeric import _cmd_complex_abs, _cmd_gcd, _cmd_iqr, _cmd_lcm, _cmd_max, _cmd_mean, _cmd_median, _cmd_min, _cmd_mode, _cmd_ncr, _cmd_normal, _cmd_npr, _cmd_q1, _cmd_q3, _cmd_sort, _cmd_stdev, _cmd_sum, _cmd_variance, _cmd_isfinite
 from .primitives import _cmd_anglebisector, _cmd_arc, _cmd_arecollinear, _cmd_areparallel, _cmd_areperpendicular, _cmd_centroid, _cmd_circle, _cmd_fitline, _cmd_foot, _cmd_incenter, _cmd_incircle, _cmd_intersect, _cmd_isoline, _cmd_line, _cmd_midpoint, _cmd_perpbis, _cmd_perpendicularline, _cmd_pointoncircle, _cmd_pointonpath, _cmd_polygon, _cmd_polyline, _cmd_randpointin, _cmd_ray, _cmd_regularpolygon, _cmd_rigidpolygon, _cmd_sector, _cmd_segment, _cmd_semicircle, _cmd_tangent, _cmd_vector
 from .proofs import _cmd_areconcurrent, _cmd_areconcyclic, _cmd_arecongruent, _cmd_prove
 from .transforms import _cmd_dilate, _cmd_invert, _cmd_reflect, _cmd_rotate, _cmd_translate
@@ -142,6 +144,15 @@ SPECS: List[Tuple[str, Callable, str, str, Tuple[str, ...]]] = [
     ("regularpolygon", _cmd_regularpolygon, "RegularPolygon", "polygon", ("正多边形",)),
     ("area", _cmd_area, "", "number", ("表面积", "面积")),
     ("volume", _cmd_volume, "", "number", ("体积",)),
+    # 新功能（REVIEW §6 #1/#2）：CAS 算子接线 + 表面积/有限性判定
+    ("solve", _cmd_solve, "Solve", "list", ("求解方程", "解方程")),
+    ("nsolve", _cmd_nsolve, "NSolve", "list", ("数值解", "数值求解")),
+    ("limit", _cmd_limit, "Limit", "number", ("极限",)),
+    ("partialfractions", _cmd_partialfractions, "PartialFractions", "function", ("部分分式", "分式分解")),
+    ("substitute", _cmd_substitute, "Substitute", "function", ("代入", "替换")),
+    ("solveode", _cmd_solveode, "SolveODE", "result", ("微分方程", "解微分方程")),
+    ("surfacearea", _cmd_surfacearea, "SurfaceArea", "number", ("表面积", "曲面面积")),
+    ("isfinite", _cmd_isfinite, "IsFinite", "boolean", ("是否有限", "有限")),
     ("perimeter", _cmd_perimeter, "", "number", ("周长",)),
     ("circumference", _cmd_circumference, "", "number", ("圆周长", "椭圆周长")),
     ("incenter", _cmd_incenter, "", "point", ("内心",)),

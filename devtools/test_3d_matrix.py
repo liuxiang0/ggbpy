@@ -1654,6 +1654,33 @@ if e61 is None:
         check("无 3D 对象 → 明确报错", "3D" in str(_ex), str(_ex)[:40])
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+section("SurfaceArea（新功能：曲面/立体表面积）")
+
+_c, _err = build(["Sp=Sphere[(0,0,0),2]", "SA=SurfaceArea[Sp]"])
+_el = _c.elements.get("SA")
+check("SurfaceArea[半径 2 球] = 4πr² ≈ 50.265482",
+      _err is None and _el is not None and _el.kind == "number" and close(_el.value, 4 * math.pi * 4),
+      str(_err or getattr(_el, "value", None)))
+
+_c2, _err2 = build(["C1=Cube[(0,0,0),(1,0,0)]", "A1=SurfaceArea[C1]"])
+_el2 = _c2.elements.get("A1")
+check("SurfaceArea[单位立方体] = 6",
+      _err2 is None and _el2 is not None and close(_el2.value, 6.0),
+      str(_err2 or getattr(_el2, "value", None)))
+
+_c3, _err3 = build(["Apex=(0,0,0)", "IC=Cone[Apex,(0,0,1),30]", "SA2=SurfaceArea[IC]"])
+_el3 = _c3.elements.get("SA2")
+check("SurfaceArea[无限圆锥] → 元素带明确 error（无有限表面积）",
+      _el3 is not None and "表面积" in (getattr(_el3, "error", "") or ""),
+      str(getattr(_el3, "error", None))[:40])
+
+_c4 = Construction()
+_c4.process("P2d=(1,1)")
+_msg5 = _c4.process("SA3=SurfaceArea[P2d]")
+check("SurfaceArea 拒绝二维对象（提示用 Area）",
+      _c4.elements.get("SA3") is None and "Area" in (_msg5 or ""), (_msg5 or "")[:40])
+
 print("\n" + "=" * 60)
 print("3D 内核检测矩阵：%d 项断言，%d 失败" % (COUNT[0], len(FAILS)))
 if FAILS:

@@ -753,6 +753,92 @@ check("记忆统计含 hits/misses/entries/coords", set(_memo.stats()) >= {"entr
       str(sorted(_memo.stats())))
 check("撤销栈上限常量存在且被引用", _UNDO_LIMIT == 200 and hasattr(Construction, "snapshot"), str(_UNDO_LIMIT))
 
+# ---------------------------------------------------------------------------
+section("Z2. CAS 算子接线命令（REVIEW §6 #1：Solve/NSolve/Limit/PartialFractions/Substitute/SolveODE/IsFinite）")
+
+_c = Construction()
+_c.process("S1=Solve[x^2-4=0, x]")
+_e = _c.elements.get("S1")
+check("Solve[x^2=4] → 数值解列表 {-2, 2}",
+      _e is not None and _e.kind == "list" and len(_e.items) == 2
+      and abs(_e.items[0] + 2) < 1e-9 and abs(_e.items[1] - 2) < 1e-9,
+      str(getattr(_e, "items", None)))
+
+_c.process("S2=求解方程[x^2=9, x]")           # 中文别名
+_e = _c.elements.get("S2")
+check("中文别名「求解方程」可用（Solve 别名注册生效）",
+      _e is not None and _e.kind == "list" and abs(_e.items[0] + 3) < 1e-9, str(getattr(_e, "items", None)))
+
+_c.process("S3=Solve[exp(x)=0, x]")           # 无解 → 空列表
+_e = _c.elements.get("S3")
+check("Solve 无解 → 空列表", _e is not None and _e.kind == "list" and _e.items == [], str(getattr(_e, "items", None)))
+
+_c.process("S4=Solve[x^2+1=0, x]")            # 复数解 → 文本（不硬塞数值）
+_e = _c.elements.get("S4")
+check("Solve 复数解 → 文本（明确不返回假数值）",
+      _e is not None and _e.kind == "result" and "I" in (_e.text or ""), str(getattr(_e, "text", None))[:30])
+
+_c.process("N1=NSolve[cos(x)=x, x]")
+_e = _c.elements.get("N1")
+check("NSolve[cos(x)=x] → 实根 ≈ 0.739085（数值扫描兜底）",
+      _e is not None and _e.kind == "list" and len(_e.items) == 1 and abs(_e.items[0] - 0.7390851332151607) < 1e-6,
+      str(getattr(_e, "items", None)))
+
+_msg = _c.process("N2=NSolve[exp(x)+1=0, x]")
+check("NSolve 无实根 → 明确报错且不创建元素",
+      _c.elements.get("N2") is None and _msg.startswith("错误"), (_msg or "")[:40])
+
+_c.process("L1=Limit[sin(x)/x, 0]")
+_e = _c.elements.get("L1")
+check("Limit[sin(x)/x, 0] → 1", _e is not None and _e.kind == "number" and abs(_e.value - 1.0) < 1e-9,
+      str(getattr(_e, "value", None)))
+
+_msg = _c.process("L2=Limit[1/x, 0]")
+check("Limit 为无穷 → 明确报错（不返回假数值）",
+      _c.elements.get("L2") is None and "无穷" in (_msg or ""), (_msg or "")[:40])
+
+_c.process("L3=极限[sin(x)/x, 0]")            # 中文别名
+_e = _c.elements.get("L3")
+check("中文别名「极限」可用", _e is not None and abs(_e.value - 1.0) < 1e-9, str(getattr(_e, "value", None)))
+
+_c.process("P1=PartialFractions[(x^2+1)/(x-1), x]")
+_e = _c.elements.get("P1")
+check("PartialFractions → 函数且含 2/(x - 1) 项",
+      _e is not None and _e.kind == "function" and "2" in str(_e.expr) and "/" in str(_e.expr),
+      str(getattr(_e, "expr", None))[:40])
+
+_c.process("B1=Substitute[x^2, x, 3]")
+_e = _c.elements.get("B1")
+check("Substitute[x^2, x, 3] → 9（无自由变量 → 数值）",
+      _e is not None and _e.kind == "number" and abs(_e.value - 9.0) < 1e-9, str(getattr(_e, "value", None)))
+
+_c.process("OD1=SolveODE[y'=y]")
+_e = _c.elements.get("OD1")
+check("SolveODE[y'=y] → 通解文本（含 exp）",
+      _e is not None and _e.kind == "result" and "exp" in (_e.text or ""), str(getattr(_e, "text", None))[:40])
+
+_c.process("F1=IsFinite[1/0]")
+_c.process("F2=IsFinite[3]")
+_c.process("F3=IsFinite[∞]")
+_f1, _f2, _f3 = (_c.elements.get(k) for k in ("F1", "F2", "F3"))
+check("IsFinite：1/0=False、3=True、∞=False",
+      _f1 is not None and _f1.value is False and _f2 is not None and _f2.value is True
+      and _f3 is not None and _f3.value is False,
+      "%s/%s/%s" % (getattr(_f1, "value", None), getattr(_f2, "value", None), getattr(_f3, "value", None)))
+
+# 依赖重算（DAG 正确性）：引用元素变化时，新命令必须刷新
+_c.process("n=4")
+_c.process("FD=IsFinite[1/n]")
+_c.process("SD=Substitute[x^2, x, n]")
+_c.process("KD=Limit[sin(n*x)/x, 0]")
+_c.process("QD=Solve[x^2=n^2, x]")
+_before = (_c.elements["FD"].value, _c.elements["SD"].value, _c.elements["KD"].value, list(_c.elements["QD"].items))
+_c.process("SetValue[n, 0]")
+_after = (_c.elements["FD"].value, _c.elements["SD"].value, _c.elements["KD"].value, list(_c.elements["QD"].items))
+check("新命令随依赖重算（SetValue[n,0]：IsFinite→False / Substitute→0 / Limit→0 / Solve→[0]）",
+      _before == (True, 16.0, 4.0, [-4.0, 4.0]) and _after == (False, 0.0, 0.0, [0.0]),
+      "before=%s after=%s" % (_before, _after))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

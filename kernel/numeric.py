@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .calculus import _int_values
 from .cmd_util import _list_arg, _lookup, _mk, _num_list_items, _resolve, label_of
 from .stats import _median, _mode, _variance
-from .elements import GeoError, GeoList, GeoNumber
+from .elements import GeoBoolean, GeoError, GeoList, GeoNumber
 from .parser import eval_number
 
 
@@ -193,3 +193,46 @@ def _cmd_iqr(cons, defn, args):
     return _mk(cons, GeoNumber, "number", defn, deps,
                lambda d, its=items: {"value": float(np.percentile(np.array(list(d[0].items) if d else its, dtype=float), 75)
                                                - np.percentile(np.array(list(d[0].items) if d else its, dtype=float), 25))})
+def _finite_value(cons, body: str):
+    """参数 → 是否为有限数（引用构造内数值元素；支持 oo/∞ 与表达式）。"""
+    import sympy
+    from .calculus import _parse_sympy
+    lab = body.strip()
+    el = cons.elements.get(lab) if lab else None
+    if el is not None and el.kind in ("number",):
+        v = getattr(el, "value", None)
+        return isinstance(v, (int, float)) and math.isfinite(float(v))
+    # 无穷文本（∞/oo/inf）直接判定
+    txt = lab.replace(" ", "").lower().lstrip("+-")
+    if txt in ("∞", "oo", "inf", "infinity"):
+        return False
+    try:
+        e = _parse_sympy(body.replace("∞", "oo"), {}, cons)
+    except (SyntaxError, TypeError, ValueError, AttributeError, KeyError) as ex:
+        # 无法解析为 sympy 表达式：明确报错而不是猜
+        raise GeoError("IsFinite 需要一个可求值的数值或表达式：" + str(ex)[:60])
+    # sympy 谓词优先：zoo（1/0）/nan 都是 False，且不需要 float 转换
+    if e.is_finite is True:
+        return True
+    if e.is_finite is False:
+        return False
+    try:
+        v = float(sympy.N(e))
+    except (TypeError, ValueError, AttributeError, OverflowError) as ex:
+        # 含自由符号/无法数值化：明确报错而不是猜
+        raise GeoError("IsFinite 需要一个可求值的数值或表达式：" + str(ex)[:60])
+    return math.isfinite(v)
+
+
+def _cmd_isfinite(cons, defn, args):
+    """IsFinite[数值|表达式] → 布尔（是否有限；∞/NaN 为 False）。"""
+    if len(args) != 1:
+        raise GeoError("IsFinite 需要 一个数值或表达式，如 IsFinite[1/0]")
+    body = args[0]
+    el = _lookup(cons, body)
+    from .cas import _function_refs
+    deps = [el] if el is not None and el.kind == "number" else _function_refs(cons, body)
+    return _mk(cons, GeoBoolean, "boolean", defn, deps,
+               lambda d: {"value": _finite_value(cons, body)})
+
+
