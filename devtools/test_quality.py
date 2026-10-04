@@ -90,6 +90,18 @@ def main() -> int:
         _, mut_bare = scan(list(bad.glob("*.py")))
         check("注入的裸 except 会被抓到", len(mut_bare) >= 1, str(mut_bare))
 
+    print("\n=== D. 文档章节完整性（README 限制/边界章节，防漂移） ===")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    check("README 含「2D 限制」章节（与 3D 章节对称）", "#### 2D 限制" in readme, "")
+    check("README 含「2D 检测矩阵」章节", "#### 2D 检测矩阵" in readme, "")
+    if "#### 2D 限制" in readme:
+        sec = readme[readme.index("#### 2D 限制"):readme.index("### 3D 视图")]
+        bullets = [l for l in sec.splitlines() if l.startswith("- **")]
+        check("2D 限制章节条目 ≥ 8（覆盖撤销/记忆/嵌套/统计图/工具等）", len(bullets) >= 8,
+              "n=%d" % len(bullets))
+        check("2D 限制章节锚定关键上限（撤销 200 / 嵌套 4 层 / 203 词条 / 12 分类）",
+              all(k in sec for k in ("UNDO_LIMIT = 200", "4 层", "203", "12 个分类")), "")
+
     print("\n" + "=" * 56)
     print("代码质量策略检测：%d 项断言，%d 失败" % (ok + fail, fail))
     print("结果: " + ("ALL PASS" if fail == 0 else "FAILED"))

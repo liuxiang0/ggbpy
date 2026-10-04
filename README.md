@@ -52,6 +52,25 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - 直方图 / 分组直方图 / 饼图 / 箱线图（五数概括）/ 黎曼和条带（左/右/中/下/上/梯形）
 - 正态分布密度 `NormalDist`、`FitLine/FitPoly/FitExp/FitLog/FitPow/FitSin`、散点列表
 
+#### 2D 限制（由检测矩阵锁定当前行为）
+
+- **统计图 7 类**：`BarChart` / `Histogram` / `BoxPlot` / `PieChart` / `LineChart` / `ScatterPlot` / `DotPlot`（另有 3D 三类，见下节）。数据校验都给出明确报错：饼图须非负且总和为正、直方图须非空且数据有变化（否则无法分组）、折线图 x/y 序列须等长且非空；每张图是**可整体拖动的对象**（世界坐标 `offset`，随 `.ggk` v4 保存）
+- **撤销/重做**：撤销栈上限 `UNDO_LIMIT = 200`（超出丢弃最早快照）；重做走计算记忆（见下），不是重新求值
+- **计算记忆**（`kernel/memo.py`）：派生元素按「定义式 + 依赖几何状态签名」缓存，条目 ≤ 96、规模 ≤ 约 60 万坐标（超限淘汰最久未用）；**随机类命令**（`RandomPointIn` 等）显式不参与记忆，保证每次重算都重新随机
+- **嵌套命令**：参数里的 `Cmd[...]` 最多 **4 层**（`_NESTED_MAX_DEPTH`，超出明确报错）；嵌套产生的匿名辅助元素不进对象列表 / 撤销 / 序列化
+- **轨迹**：`Locus[依赖点, 圆上动点]` 采样生成轨迹点（检测断言 >5 点），随驱动参数采样
+- **符号求解边界**：`Root` / `Extremum` 需有效区间（上限 > 下限）；`SolveIneq`、`Implicit` 输入不合法时给明确错误而非静默失败
+- **作图工具入口**：工具面板 **12 个分类**（点 / 线 / 圆 / 多边形 / 圆锥曲线 / 变换 / 度量 / 计算 / 统计图 / 滑块 / 3D / 视图）；**工具选中后再点一次即取消**；统计图分类含 10 个按钮（2D 七类 + 3D 三类）
+- **`.ggk` / `.ggb`**：`.ggk` 为 JSON（v4 含样式与统计图偏移）；`.ggb` 往返按命令重放，网格与图片数据内嵌 `<ggbpyData>`（base64+JSON），不再跳过元素（详见下节）
+- **多语言 / 主题**：zh / en 各 **203 条**词条，键集合完全一致（由检测锁定，防漏翻）；主题 light / dark 记忆在 localStorage
+- **有意为之的边界**：`Perimeter` 只接受多边形 / 圆；`Implicit` 需含 x、y 的方程；立体相关的体积 / 截面积等运算属 3D 章节
+
+#### 2D 检测矩阵（可重复执行）
+
+- `devtools/test_2d_matrix.py`（内核 167 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
+- `devtools/test_2d_api.py`（44 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
+- `devtools/verify_2d_ui_matrix.js`（72 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
+
 ### 3D 视图
 
 - 三维点/线段/直线/平面/球/圆锥/圆柱/棱柱/棱锥 + **五种正多面体**（正方体/正四面体/正八面体/正二十面体/正十二面体，黄金比构造）；2D 图形按 z=0 同场显示
@@ -136,6 +155,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第五十四批（2026-10-04 · REVIEW #13：补齐 2D 侧「限制与边界」文档 + 文档守卫）**：
+  - **README 新增两节**（与 3D 侧对称，位置在 `### 3D 视图` 之前）：`#### 2D 限制（由检测矩阵锁定当前行为）`（10 条要点）与 `#### 2D 检测矩阵（可重复执行）`（三个入口）
+  - **内容全部以代码/检测为据**（不臆造）：撤销栈 `UNDO_LIMIT = 200` · 计算记忆 96 条/约 60 万坐标且随机命令不参与 · 嵌套命令最多 4 层 · 统计图 7 类与其数据校验报错 · `Locus` 采样（检测断言 >5 点）· 符号求解边界 · 工具面板 **12 个分类** + 选中再点取消 + 统计图 10 按钮 · `.ggk` v4 / `.ggb` 内嵌 `ggbpyData` · zh/en 各 **203 条**词条 · 有意为之的边界（`Perimeter` 只收多边形/圆等）
+  - **新增文档守卫**（`devtools/test_quality.py` D 段 4 断言）：README 必须含这两节、2D 限制条目 ≥ 8、且锚定关键上限（`UNDO_LIMIT = 200`/4 层/203/12 分类）—— 防止章节被删或漂移
+  - 检测：代码质量策略 8 → **12**
 - **第五十三批（2026-10-04 · REVIEW #6：命令注册单一来源 + 复验 H/#4/#8）**：
   - **`SPECS` 单一来源**：`registry.py` 改为「一行一条命令规格（命令名/实现/显示名/结果类型/别名）」→ 由 `_derive(SPECS)` 派生 `COMMANDS`/`ALIASES`/`DISPLAY_NAMES`/`RESULT_KINDS`。**新增命令只改一处**（此前要改 4 张表，漏一处即退化）；派生结果与原四张表**逐一相等**（脚本先校验再落盘），`registry.py` 378 → **265 行**
   - **顺带清掉 5 个不可达孤儿显示名**（`partialfractions`/`solveode`/`nsolve`/`isfinite`/`surfacearea`：既非命令也非别名，唯一消费者按 `COMMANDS` 迭代 → 死数据），并新增守卫「`DISPLAY_NAMES` 的键必须是真实命令」
@@ -331,7 +355,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 328 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1502 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 328 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 12 = 1506 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
