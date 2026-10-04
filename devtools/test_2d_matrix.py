@@ -918,6 +918,43 @@ _msg_t = _t4.process("DT9=Delaunay[(0,0),(1,1)]")
 check("Delaunay 点数不足 → 命令报错（不创建元素）",
       _t4.elements.get("DT9") is None and "至少" in (_msg_t or ""), (_msg_t or "")[:30])
 
+# ---------------------------------------------------------------------------
+section("Z4. 茎叶图 StemPlot")
+
+_sp = Construction()
+_sp.process("SP=StemPlot[{12,15,23,11,31,45,45}]")
+_el = _sp.elements.get("SP")
+check("StemPlot 十位为茎、个位为叶（12,15,23,11,31,45,45）",
+      _el is not None and _el.kind == "stemplot" and _el.stems == [1, 2, 3, 4]
+      and _el.leaves == [[1, 2, 5], [3], [1], [5, 5]],
+      "%s / %s" % (getattr(_el, "stems", None), getattr(_el, "leaves", None)))
+
+_sp.process("SP2=茎叶图[{1,2,21}]")
+check("中文别名「茎叶图」可用",
+      _sp.elements.get("SP2") is not None and _sp.elements["SP2"].stems == [0, 2], "")
+
+_sp.process("L={5,7,25}")
+_sp.process("SP3=StemPlot[L]")
+check("接受列表元素入参（5,7,25 → 茎 0/2）",
+      _sp.elements.get("SP3").stems == [0, 2] and _sp.elements["SP3"].leaves == [[5, 7], [5]], "")
+
+_msg_neg = _sp.process("SP4=StemPlot[{-1,2}]")
+check("负数数据 → 元素带明确 error（不画出错误图形）",
+      _sp.elements.get("SP4") is not None and "非负" in (_sp.elements["SP4"].error or ""),
+      str(getattr(_sp.elements.get("SP4"), "error", None))[:36])
+
+_msg_empty = _sp.process("SP5=StemPlot[{}]")
+check("空数据 → 命令报错（不创建元素）",
+      _sp.elements.get("SP5") is None and "数值数据" in (_msg_empty or ""), (_msg_empty or "")[:36])
+
+# 依赖重算：列表被 Redefine 后茎叶图同步刷新
+_before = (_sp.elements["SP3"].stems, _sp.elements["SP3"].leaves)
+_sp.process("Redefine[L, L={9,19,29}]")
+_after = (_sp.elements["SP3"].stems, _sp.elements["SP3"].leaves)
+check("列表被重定义后茎叶图自动重算（依赖接线正确）",
+      _before == ([0, 2], [[5, 7], [5]]) and _after == ([0, 1, 2], [[9], [9], [9]]),
+      "%s → %s" % (_before, _after))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

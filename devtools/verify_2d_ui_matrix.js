@@ -705,6 +705,19 @@ function check(name, ok, detail) {
   await ctx2.close();
 
   // -------------------------------------------------------------------------
+  section('P. 茎叶图（新图表：渲染 + 可拖动命中框）');
+  const stemErrBefore = JS_ERRORS.length;
+  await typeCmd('ZS=StemPlot[{12,15,23,11,31,45,45}]');
+  await page.waitForTimeout(400);
+  const stemRows = await page.$$eval('#objlist .obj', (els) => els.map((e) => e.getAttribute('data-label')));
+  check('StemPlot 结果进入对象列表', stemRows.indexOf('ZS') >= 0, String(stemRows.slice(-3)));
+  const stemBox = await page.evaluate(() => window.__ggbpyDebug.chartBox('ZS'));
+  check('茎叶图登记可拖动命中框（宽度/高度合理）',
+        !!stemBox && (stemBox.x1 - stemBox.x0) > 40 && (stemBox.y1 - stemBox.y0) > 20,
+        JSON.stringify(stemBox));
+  check('茎叶图渲染无新增 JS 错误', JS_ERRORS.length === stemErrBefore,
+        JS_ERRORS.slice(stemErrBefore).join(';').slice(0, 60));
+
   section('O. 统计图缩放策略统一（柱高/饼半径随缩放变化）');
   const csErrBefore = JS_ERRORS.length;
   await typeCmd('ZB1=BarChart[{3,1,4,1,5,9,2,6}]');

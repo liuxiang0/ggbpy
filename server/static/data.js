@@ -72,6 +72,7 @@ window.GGB_DATA.TOOLS = {
     linechart: { hints: ['点击任意处，输入数据（逗号分隔，按顺序连线）'], en: ['Click anywhere, enter data (comma separated, connected in order)'] },
     scatterplot: { hints: ['点击任意处，输入点（如 1,2; 3,4; 5,3 或 (1,2),(3,4)）'], en: ['Click anywhere, enter points (e.g. 1,2; 3,4; 5,3 or (1,2),(3,4))'] },
     dotplot: { hints: ['点击任意处，输入数据（逗号分隔，相同值叠点）'], en: ['Click anywhere, enter data (comma separated, repeated values stack)'] },
+    stemplot: { hints: ['点击任意处，输入数据（非负，逗号分隔，如 12,15,23）'], en: ['Click anywhere, enter data (non-negative, comma separated, e.g. 12,15,23)'] },
     barchart3d: { hints: ['点击任意处，输入数据（逗号分隔）→ 三维柱状图'], en: ['Click anywhere, enter data (comma separated) → 3D bar chart'] },
     scatterplot3d: { hints: ['点击任意处，输入三维点（如 1,2,3; 4,5,6）'], en: ['Click anywhere, enter 3D points (e.g. 1,2,3; 4,5,6)'] },
     surfacechart3d: { hints: ['点击任意处，输入数值与列数（如 1,2,3,4,5,6 / 列数 3）'], en: ['Click anywhere, enter values and column count (e.g. 1,2,3,4,5,6 / cols 3)'] },
@@ -107,7 +108,7 @@ window.GGB_DATA.TOOL_CATS = [
     { id: 'calculates', zh: '计算', en: 'Calculate', icon: 'calculates.png', def: 'function', tools: ['function', 'locus', 'ineq'] },
     { id: 'charts', zh: '统计图', en: 'Charts', icon: 'measures.png', def: 'barchart',
       tools: ['barchart', 'histogram', 'boxplot', 'piechart', 'linechart', 'scatterplot', 'dotplot',
-              'barchart3d', 'scatterplot3d', 'surfacechart3d'] },
+              'barchart3d', 'scatterplot3d', 'surfacechart3d', 'stemplot'] },
     { id: 'sliders', zh: '滑块', en: 'Sliders', icon: 'sliders.png', def: 'slider', tools: ['slider'] },
     { id: 'd3', zh: '3D', en: '3D', icon: 'sliders.png', def: 'pt3d', tools: ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone3d', 'cylinder3d', 'prism3d', 'pyramid3d', 'tetra3d', 'octa3d', 'hexa3d', 'icosa3d', 'dodeca3d'] },
     { id: 'viewpoint', zh: '视图', en: 'View', icon: 'viewpoint.png', def: 'zoomin', tools: ['zoomin', 'zoomout', 'home'] }

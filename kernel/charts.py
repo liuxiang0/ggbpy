@@ -7,10 +7,10 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .cmd_util import _list_arg, _lookup, _mk, _num_list_items, _num_series, label_of
-from .stats import _barchart_state, _bars3d_mesh, _dotplot_state, _linechart_state, _scatter3d_mesh, _scatter_state, _surface3d_mesh
+from .stats import _stem_state, _barchart_state, _bars3d_mesh, _dotplot_state, _linechart_state, _scatter3d_mesh, _scatter_state, _surface3d_mesh
 from . import schemas
 from .elements import (Geo3D, GeoBarChart, GeoBoxPlot, GeoDotPlot, GeoError, GeoLineChart,
-                       GeoPie, GeoScatterPlot)
+                       GeoPie, GeoScatterPlot, GeoStemPlot)
 from .parser import eval_number
 from .tolerance import COORD, EPSILON
 
@@ -230,6 +230,21 @@ def _cmd_dotplot(cons, defn, args):
             stacks.append([v, level])
         el.values, el.stacks = vals, stacks
     return cons.add(el)
+
+def _cmd_stemplot(cons, defn, args):
+    """StemPlot[数值列表] → 茎叶图（十位为茎、个位为叶；可整体拖动）。"""
+    vals, deps = _num_series(cons, args)
+    if not vals:
+        raise GeoError("StemPlot 需要数值数据")
+    el = GeoStemPlot(label_of(defn), defn)
+    el.free = False
+    if deps:
+        el.set_deps(deps, lambda d: _stem_state([float(v) for v in d[0].items]))
+    else:
+        st = _stem_state([float(v) for v in vals])
+        el.stems, el.leaves = st["stems"], st["leaves"]
+    return cons.add(el)
+
 
 def _cmd_barchart3d(cons, defn, args):
     """BarChart3D[数值列表] → 三维柱状图（每根柱为长方体，合成为一个网格对象）。"""

@@ -262,3 +262,20 @@ def _surface3d_mesh(values, cols: int, cell: float = 1.0):
             a = i * cols + j
             faces.append([a, a + 1, a + cols + 1, a + cols])
     return verts, faces
+
+
+def _stem_state(vals):
+    """茎叶图状态：非负数据 → 十位为茎、个位为叶（茎升序、叶升序）。
+
+    与点图/箱线图一致：只做数据整形，几何（行距/字体）由前端决定。
+    """
+    import math
+    groups = {}
+    for v in vals:
+        f = float(v)
+        if not math.isfinite(f) or f < 0:
+            raise GeoError("StemPlot 需要非负有限数据（当前含 %s）" % ("非有限" if not math.isfinite(f) else "负数"))
+        iv = int(math.floor(f + COORD))
+        groups.setdefault(iv // 10, []).append(iv % 10)
+    stems = sorted(groups)
+    return {"stems": stems, "leaves": [sorted(groups[k]) for k in stems]}

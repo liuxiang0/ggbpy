@@ -21,6 +21,7 @@ from .cas_cmds import (_cmd_limit, _cmd_nsolve, _cmd_partialfractions,
                        _cmd_solve, _cmd_solveode, _cmd_substitute)
 from .calculus import _cmd_derivative, _cmd_divisors, _cmd_extremum, _cmd_factorslist, _cmd_fitexpr, _cmd_integral, _cmd_isprime, _cmd_normaldist, _cmd_rectsum, _cmd_root, _cmd_sequence, _cmd_solveineq
 from .centers import _cmd_circumcenter, _cmd_excenter, _cmd_orthocenter
+from .charts import _cmd_stemplot
 from .charts import _cmd_barchart, _cmd_barchart3d, _cmd_boxplot, _cmd_dotplot, _cmd_histogram, _cmd_linechart, _cmd_piechart, _cmd_scatterplot, _cmd_scatterplot3d, _cmd_surfacechart3d
 from .commands3d import _cmd_area, _cmd_bbox, _cmd_cone, _cmd_convexhull, _cmd_covariance, _cmd_cube, _cmd_cylinder, _cmd_dodecahedron, _cmd_fitplane, _cmd_fitsphere, _cmd_hexahedron, _cmd_icosahedron, _cmd_implicit_surface, _cmd_mesh, _cmd_octahedron, _cmd_plane, _cmd_prism, _cmd_pyramid, _cmd_sphere, _cmd_surface, _cmd_surface_param, _cmd_surfacepoint, _cmd_surfaceproject, _cmd_tetrahedron, _cmd_volume, _cmd_surfacearea
 from .conics import _cmd_conic5, _cmd_diameter, _cmd_ellipse, _cmd_focus, _cmd_hyperbola, _cmd_implicit, _cmd_parabola, _cmd_parametric, _cmd_polar
@@ -156,6 +157,7 @@ SPECS: List[Tuple[str, Callable, str, str, Tuple[str, ...]]] = [
     ("isfinite", _cmd_isfinite, "IsFinite", "boolean", ("是否有限", "有限")),
     ("delaunay", _cmd_delaunay, "Delaunay", "list", ("三角剖分", "德劳内")),
     ("voronoi", _cmd_voronoi, "Voronoi", "list", ("泰森多边形", "沃罗诺伊")),
+    ("stemplot", _cmd_stemplot, "StemPlot", "stemplot", ("茎叶图",)),
     ("perimeter", _cmd_perimeter, "", "number", ("周长",)),
     ("circumference", _cmd_circumference, "", "number", ("圆周长", "椭圆周长")),
     ("incenter", _cmd_incenter, "", "point", ("内心",)),

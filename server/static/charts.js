@@ -166,6 +166,36 @@ window.GGB_CHARTS = (function () {
         chartBoxPut(e, co, pCx - pR, pCy - pR, pCx + pR, pCy + pR);
       }
 
+      function drawStemPlot(e) {
+        // 茎叶图：文字形态（按统一策略：几何/文字屏幕固定，锚点在世界原点，拖动由 offset 平移）
+        var ctx = env.get('ctx');
+        var co = chartOff(e);
+        var LH = 18;                              // 行高（与其它图表文字一致，屏幕固定）
+        var x0 = sxp(0), y0 = syp(0);             // 锚点：世界原点
+        var n = (e.stems || []).length;
+        ctx.save();
+        ctx.translate(co.x, co.y);
+        ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        var strs = [], w = 0;
+        for (var i = 0; i < n; i++) {
+          var row = e.stems[i] + ' | ' + (e.leaves[i] || []).join(' ');
+          strs.push(row);
+          w = Math.max(w, ctx.measureText(row).width);
+        }
+        var bw = Math.max(72, w + 18), bh = Math.max(LH, n * LH) + 12;
+        ctx.fillStyle = 'rgba(255,255,255,.94)';
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1;
+        ctx.fillRect(x0 - 6, y0, bw, bh);
+        ctx.strokeRect(x0 - 5.5, y0 + 0.5, bw, bh);
+        ctx.fillStyle = '#0f172a';
+        for (var j = 0; j < n; j++) ctx.fillText(strs[j], x0 + 2, y0 + 6 + LH / 2 + j * LH);
+        ctx.restore();
+        chartBoxPut(e, co, x0 - 6, y0, x0 - 6 + bw, y0 + bh);
+      }
+
       function drawLineChart(e) {
         var ctx = env.get('ctx');
         var co = chartOff(e), i, x, y;
@@ -243,6 +273,7 @@ window.GGB_CHARTS = (function () {
       drawLineChart: drawLineChart,
       drawScatterPlot: drawScatterPlot,
       drawDotPlot: drawDotPlot,
+      drawStemPlot: drawStemPlot,
     };
   }
 

@@ -1118,6 +1118,28 @@ class GeoDotPlot(GeoChart2D):
         return d
 
 
+class GeoStemPlot(GeoChart2D):
+    """茎叶图：``stems[i]`` 与 ``leaves[i]`` 同一行（如 1 | 2 3 5）。"""
+
+    kind = "stemplot"
+
+    def __init__(self, label: str, defn: str, free: bool = False) -> None:
+        super().__init__(label, defn, free)
+        self.stems: List[int] = []
+        self.leaves: List[List[int]] = []
+        self.unit = 1.0          # 叶单位（当前固定 1：个位为叶）
+
+    def draw(self, view):
+        d = super().draw(view)
+        if d is None:
+            return None
+        d["stems"] = self.stems
+        d["leaves"] = self.leaves
+        d["unit"] = self.unit
+        d["value"] = "n = " + str(sum(len(lv) for lv in self.leaves))
+        return d
+
+
 class GeoText(GeoElement):
     """文本标注：内容 + 锚点坐标。"""
     kind = "text"

@@ -327,6 +327,7 @@
   function drawLineChart() { return _charts.drawLineChart.apply(null, arguments); }
   function drawScatterPlot() { return _charts.drawScatterPlot.apply(null, arguments); }
   function drawDotPlot() { return _charts.drawDotPlot.apply(null, arguments); }
+  function drawStemPlot() { return _charts.drawStemPlot.apply(null, arguments); }
 
   // 三维投影与屏幕空间命中判定（P2 前端拆分：render3d 第一步） 已抽到 static/proj3d.js（P2 前端拆分）；同名薄包装保持调用点不变
   var _proj3d = window.GGB_P3.create({ get: _panelStateGet, set: _panelStateSet, sxp: sxp, syp: syp });
@@ -358,7 +359,7 @@
   function postInput3d() { return _tools3d.postInput3d.apply(null, arguments); }
 
   // 二维元素绘制层（元素/圆锥曲线/不等式/叠加层/图片，P2 前端拆分） 已抽到 static/render2d.js（P2 前端拆分）；同名薄包装保持调用点不变
-  var _render2d = window.GGB_R2D.create({ get: _panelStateGet, angleUnit: angleUnit, drawArrow: drawArrow, drawBarChart: drawBarChart, drawBoxPlot: drawBoxPlot, drawDotPlot: drawDotPlot, drawGrid: drawGrid, drawLineChart: drawLineChart, drawPieChart: drawPieChart, drawScatterPlot: drawScatterPlot, fmtNum: fmtNum, is3DEl: is3DEl, populateEditBar: populateEditBar, render: render, renderList: renderList, strokeSeg: strokeSeg, sxp: sxp, syp: syp, tipText: tipText, usableCanvasRect: usableCanvasRect });
+  var _render2d = window.GGB_R2D.create({ get: _panelStateGet, angleUnit: angleUnit, drawArrow: drawArrow, drawBarChart: drawBarChart, drawBoxPlot: drawBoxPlot, drawDotPlot: drawDotPlot, drawStemPlot: drawStemPlot, drawGrid: drawGrid, drawLineChart: drawLineChart, drawPieChart: drawPieChart, drawScatterPlot: drawScatterPlot, fmtNum: fmtNum, is3DEl: is3DEl, populateEditBar: populateEditBar, render: render, renderList: renderList, strokeSeg: strokeSeg, sxp: sxp, syp: syp, tipText: tipText, usableCanvasRect: usableCanvasRect });
   function gcdInt() { return _render2d.gcdInt.apply(null, arguments); }
   function fmtAngleDeg() { return _render2d.fmtAngleDeg.apply(null, arguments); }
   function drawSelectionOverlay() { return _render2d.drawSelectionOverlay.apply(null, arguments); }
@@ -591,7 +592,7 @@
 
   var CHART_TOOL_CMD = {
     barchart: 'BarChart', boxplot: 'BoxPlot', piechart: 'PieChart',
-    linechart: 'LineChart', dotplot: 'DotPlot', barchart3d: 'BarChart3D'
+    linechart: 'LineChart', dotplot: 'DotPlot', stemplot: 'StemPlot', barchart3d: 'BarChart3D'
   };
 
 
@@ -600,6 +601,7 @@
       barchart: '数据（逗号分隔，如 1,2,2,3,3）：', histogram: '数据（逗号分隔）：',
       boxplot: '数据（逗号分隔）：', piechart: '各部分数值（逗号分隔，如 3,5,2）：',
       linechart: '数据（逗号分隔，按顺序连线）：', dotplot: '数据（逗号分隔，相同值叠点）：',
+      stemplot: '数据（非负，逗号分隔，如 12,15,23）：',
       scatterplot: '点（如 1,2; 3,4; 5,3）：', barchart3d: '数据（逗号分隔）→ 三维柱状图：',
       scatterplot3d: '三维点（如 1,2,3; 4,5,6）：', surfacechart3d: '数值（逗号分隔）：'
     }[tool] || '数据（逗号分隔）：';
@@ -607,6 +609,7 @@
       barchart: 'Data (comma separated, e.g. 1,2,2,3,3):', histogram: 'Data (comma separated):',
       boxplot: 'Data (comma separated):', piechart: 'Part values (comma separated, e.g. 3,5,2):',
       linechart: 'Data (comma separated, connected in order):', dotplot: 'Data (comma separated, repeats stack):',
+      stemplot: 'Data (non-negative, comma separated, e.g. 12,15,23):',
       scatterplot: 'Points (e.g. 1,2; 3,4; 5,3):', barchart3d: 'Data (comma separated) → 3D bar chart:',
       scatterplot3d: '3D points (e.g. 1,2,3; 4,5,6):', surfacechart3d: 'Values (comma separated):'
     }[tool] || 'Data (comma separated):';
@@ -751,7 +754,7 @@
   }
 
   // 会显示"仅名称"提示的对象类型（复用已有的 hitObject 命中检测）
-  var CHART_KINDS = ['barchart', 'histogram', 'boxplot', 'piechart', 'linechart', 'scatterplot', 'dotplot'];
+  var CHART_KINDS = ['barchart', 'histogram', 'boxplot', 'piechart', 'linechart', 'scatterplot', 'dotplot', 'stemplot'];
   var TIP_NAME_KINDS = ['segment', 'line', 'ray', 'vector', 'polygon', 'polyline', 'function',
                         'parametric', 'polar', 'implicit', 'conic', 'image'].concat(CHART_KINDS);
 

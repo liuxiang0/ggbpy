@@ -61,6 +61,7 @@ window.GGB_R2D = (function () {
       var drawScatterPlot = env.drawScatterPlot;   // 由 app.js 注入（属于其他模块）
 
       var drawDotPlot = env.drawDotPlot;   // 由 app.js 注入（属于其他模块）
+      var drawStemPlot = env.drawStemPlot;   // 由 app.js 注入（属于其他模块）
 
       var is3DEl = env.is3DEl;   // 由 app.js 注入（属于其他模块）
 
@@ -344,6 +345,7 @@ window.GGB_R2D = (function () {
         if (e.kind === 'linechart' && e.xs && e.xs.length) drawLineChart(e);
         if (e.kind === 'scatterplot' && e.pts && e.pts.length) drawScatterPlot(e);
         if (e.kind === 'dotplot' && e.stacks && e.stacks.length) drawDotPlot(e);
+        if (e.kind === 'stemplot' && e.stems && e.stems.length) drawStemPlot(e);
         if (e.kind === 'list' && e.itemkind === 'point' && e.items && e.items.length) {
           // 点列表 → 散点（如 Sequence[(i, i^2), i, 1, 10] 或 {(1,2),(3,4)}）
           ctx.fillStyle = '#dc2626';
