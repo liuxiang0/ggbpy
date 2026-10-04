@@ -136,6 +136,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第五十二批（2026-10-04 · REVIEW 第 10 条：网格边表派生单一实现）**：
+  - **去重**：`_convexhull_state`（`commands3d.py`）与 `_ix_solid_solid`（`geometry3d.py`）各自内联的「面表 → 去重无向边表」循环统一改为调用 **`mesh_store.edges_of(faces)`**；`geometry3d` 新增对 `mesh_store` 的依赖（`mesh_store` 仅依赖标准库，无环）
+  - **行为等价**：`edges_of` 语义与两处内联一致（去重、含环绕边），并额外跳过 `a == b` 退化边；`_ix_solid_solid` 的「交集退化」检查保留
+  - **新增守卫**：kernel 内**除 `mesh_store.py` 外**不得再出现边表去重循环（`min(a, b), max(a, b)` 模式）→ 防复发；同时更新 `geometry3d` 依赖白名单
+  - 检测：模块边界 323 → **326**；内核矩阵 167/490 全过（行为未变）
 - **第五十一批（2026-10-04 · LaTeX 序列化 + 界面弹窗外置：latex.js / ui.js）**：
   - **`static/latex.js`（107 行）**：`toLatex`（86 行）外置为 `window.GGB_LATEX.create(env)`，只读 5 张符号表（`CMD_W`/`FN_T`/`FN_W`/`GREEK_T`/`GREEK_W`），无转发依赖
   - **`static/ui.js`（93 行）**：帮助弹窗等界面弹窗（`showHelpModal` 等 8 函数闭包）外置为 `window.GGB_UI.create(env)`；状态 `CAS_COMMANDS`/`casOpen`/`casPanel`/`lang`（唯一写入 `casOpen` 经 `env.set`），注入助手 `esc`/`renderCas`/`translateMsg`
@@ -321,7 +326,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 323 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1496 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 8 + 仓库 18 + 容差 20 + 模块 326 + 会话 23 + 2D 内核 167 + 2D API 44 + 3D 490/181/142 + 2D 前端 72 + 代码质量 8 = 1499 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

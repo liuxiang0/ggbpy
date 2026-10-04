@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Optional, Tuple
 
+from . import mesh_store
 from . import schemas
 from .elements import Geo3D, GeoError
 from .tolerance import EPSILON, COORD, ZERO_SQ, LOOSE, COARSE  # 统一数值容差（见 kernel/tolerance.py）
@@ -765,19 +766,11 @@ def _ix_solid_solid(s1, s2):
         verts, faces = _clip_polyhedron(verts, faces, pl)
         if len(verts) < 4 or not faces:
             raise GeoError("两个立体的交集为空或退化为面/点")
-    # 由面表恢复边表
-    edges = []
-    for f in faces:
-        for i in range(len(f)):
-            a, b = f[i], f[(i + 1) % len(f)]
-            if a == b:
-                continue
-            key = (min(a, b), max(a, b))
-            if key not in edges:
-                edges.append(key)
+    # 由面表恢复边表（统一用 mesh_store.edges_of，见 REVIEW 第 10 条）
+    edges = mesh_store.edges_of(faces)
     if not edges:
         raise GeoError("两个立体的交集退化")
-    mesh = {"verts": [list(v) for v in verts], "faces": [list(f) for f in faces], "edges": [list(e) for e in edges]}
+    mesh = {"verts": [list(v) for v in verts], "faces": [list(f) for f in faces], "edges": edges}
     if _mesh_volume(mesh) < COORD:
         raise GeoError("两个立体的交集退化为零体积（面/点接触）")
     return schemas.polyhedron(mesh=mesh)

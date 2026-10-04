@@ -35,9 +35,11 @@ cmd_src = (ROOT / "kernel" / "commands.py").read_text(encoding="utf-8")
 check("geometry3d 不 import 命令层",
       not re.search(r"^from \.commands|^import commands", geo_src, re.M)
       and "from .commands" not in geo_src, "")
-check("geometry3d 只依赖 elements/tolerance/math/numpy",
-      set(re.findall(r"^from \.(\w+) import", geo_src, re.M)) <= {"elements", "tolerance"},
+check("geometry3d 只依赖 elements/tolerance/mesh_store/math/numpy",
+      set(re.findall(r"^from \.(\w+) import", geo_src, re.M)) <= {"elements", "tolerance", "mesh_store"},
       str(sorted(set(re.findall(r"^from \.(\w+) import", geo_src, re.M)))))
+check("geometry3d 不再内联边表去重循环（统一走 mesh_store.edges_of）",
+      "min(a, b), max(a, b)" not in geo_src and "mesh_store.edges_of(" in geo_src, "")
 tol_src = (ROOT / "kernel" / "tolerance.py").read_text(encoding="utf-8")
 check("tolerance 是叶子模块（不做相对导入）",
       not re.search(r"^from \.", tol_src, re.M), "")
@@ -373,6 +375,19 @@ check("commands.py 已接近纯调度器（< 1200 行）", len(cmd_src.splitline
       str(len(cmd_src.splitlines())))
 check("commands.py 仅剩调度与共享助手（顶层 def ≤ 14 个）",
       len(re.findall(r"^def ", cmd_src, re.M)) <= 14, str(len(re.findall(r"^def ", cmd_src, re.M))))
+
+print("\n=== A13. 几何工具去重（REVIEW 第 10 条：网格边表派生单一实现） ===")
+_dup_edge = []
+for _p in sorted((ROOT / "kernel").glob("*.py")):
+    if _p.name == "mesh_store.py":
+        continue
+    for _i, _l in enumerate(_p.read_text(encoding="utf-8").splitlines(), 1):
+        if "min(a, b), max(a, b)" in _l or "min(i, j), max(i, j)" in _l:
+            _dup_edge.append("%s:%d" % (_p.name, _i))
+check("kernel 内边表派生只有 mesh_store.edges_of 一处实现", not _dup_edge, str(_dup_edge[:4]))
+check("convexhull 与立体求交都复用 edges_of",
+      "mesh_store.edges_of(faces)" in (ROOT / "kernel" / "commands3d.py").read_text(encoding="utf-8")
+      and "mesh_store.edges_of(faces)" in (ROOT / "kernel" / "geometry3d.py").read_text(encoding="utf-8"), "")
 
 print("\n=== A7. AST 级守卫：抽出模块不得漏导入 ===")
 for mod in ("kernel/geometry3d.py", "kernel/solids.py", "kernel/geo2d.py", "kernel/stats.py",

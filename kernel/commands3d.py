@@ -137,15 +137,7 @@ def _convexhull_state(items):
         f = [remap[int(tri[0])], remap[int(tri[1])], remap[int(tri[2])]]
         if f not in faces:
             faces.append(f)
-    edges = []
-    seen = set()
-    for f in faces:
-        for m in range(3):
-            a, b = f[m], f[(m + 1) % 3]
-            key = (min(a, b), max(a, b))
-            if key not in seen:
-                seen.add(key)
-                edges.append([key[0], key[1]])
+    edges = mesh_store.edges_of(faces)      # 统一派生（REVIEW 第 10 条：不再内联去重循环）
     return schemas.polyhedron(verts, _normalize_mesh(verts, faces), edges, solid="hull",
                               points=int(len(pts)))
 
