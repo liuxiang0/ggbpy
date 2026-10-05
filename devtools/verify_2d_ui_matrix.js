@@ -807,9 +807,10 @@ function check(name, ok, detail) {
   check('双击对象列表行改说明/脚本（与画布双击同一编辑器）',
         edEl2.caption === '行内新说明' && String(edEl2.script).indexOf('edA2=(5,5)') >= 0,
         JSON.stringify({ caption: edEl2.caption, script: edEl2.script }));
-  // .df 定义式单元格：合成两次 pointerdown 驱动「计时双击」路径。
-  // （真实鼠标点击在列表重渲染下会落到其它行/元素，Playwright 的坐标与元素解析都无法稳定命中，
-  //   因此该路径由本用例直接驱动；上方控件行用例仍用真实点击。）
+  // .df 定义式单元格：合成两次 pointerdown 驱动「计时双击」判定。
+  // 已知限制：列表重渲染会让第二次真实点击落到别的行/元素（Playwright 的选择器重解析、
+  // 固定坐标、原生 mouse.dblclick 三种方式都试过均不稳定），因此这里直接驱动判定逻辑本身；
+  // 控件行用例（上一段）仍用真实点击。
   await typeCmd('edN=3');
   await page.waitForTimeout(400);
   await page.evaluate(() => {
@@ -820,7 +821,7 @@ function check(name, ok, detail) {
       res(true);
     }, 120));
   });
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(400);
   const dfInput = await page.$('#objlist .obj[data-label="edN"] .df input.df-edit');
   check('计时双击 .df 打开行内定义编辑（原生 dblclick 失效已修）', !!dfInput, String(!!dfInput));
   if (dfInput) {

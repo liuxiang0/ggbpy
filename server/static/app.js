@@ -316,7 +316,18 @@
   function findEl3d() { return _panels.findEl3d.apply(null, arguments); }
   function solidLabelName() { return _panels.solidLabelName.apply(null, arguments); }
   function applyLang() { return _panels.applyLang.apply(null, arguments); }
+  // 列表渲染会重建行 DOM：若正处于行内定义编辑，渲染后为对应行重新打开输入框
+  function reopenDefnEdit() {
+    if (!defnEdit) return;
+    var row = listEl.querySelector('.obj[data-label="' + defnEdit.label + '"]');
+    var df = row && row.querySelector('.df');
+    if (df && !df.querySelector('input')) startDefnEdit(df);
+  }
   function renderList() { return _panels.renderList.apply(null, arguments); }
+  // 行 DOM 由 panels 重建（薄包装不得改动）：用 MutationObserver 在重建后重开行内定义输入框
+  if (window.MutationObserver) {
+    new MutationObserver(function () { reopenDefnEdit(); }).observe(listEl, { childList: true, subtree: true });
+  }
   function renderList3d() { return _panels.renderList3d.apply(null, arguments); }
   function renderToolsPanel() { return _panels.renderToolsPanel.apply(null, arguments); }
   function renderCas() { return _panels.renderCas.apply(null, arguments); }
@@ -2015,6 +2026,7 @@
   // 注意：原生 dblclick 不可靠 —— 第一次点击会重渲染列表，第二次落在新节点上。
   // 因此按 data-label 手动计时检测（跨重渲染有效）；.df 单元格仍让给既有行内编辑。
   var rowClick = { label: null, t: 0 };
+  var defnEdit = null;   // 行内定义编辑中的行 {label}（列表重渲染后需重开输入框）
   listEl.addEventListener('pointerdown', function (ev) {
     var t = ev.target;
     var row = t && t.closest ? t.closest('.obj') : null;
@@ -2029,7 +2041,7 @@
       rowClick.label = null;
       rowClick.t = 0;
       ev.preventDefault();
-      if (df) startDefnEdit(df);
+      if (df) { defnEdit = { label: lab }; startDefnEdit(df); }
       else editWidget(rEl);
     } else {
       rowClick.label = lab;
@@ -2140,6 +2152,7 @@
     inp.focus();
     inp.select();
     var finish = function (commit) {
+      defnEdit = null;
       if (inp.parentNode !== df) return;
       var val = inp.value.trim();
       try { inp.remove(); } catch (e) {}
@@ -2160,7 +2173,10 @@
   // 原生 dblclick 兜底（列表重渲染时通常不触发，见下方 pointerdown 计时判定）
   listEl.addEventListener('dblclick', function (ev) {
     var df = ev.target && ev.target.closest ? ev.target.closest('.df') : null;
-    if (df) startDefnEdit(df);
+    if (!df) return;
+    var nRow = df.closest('.obj');
+    defnEdit = { label: nRow ? nRow.getAttribute('data-label') : null };
+    startDefnEdit(df);
   });
 
   // ---------- 编辑栏 ----------
