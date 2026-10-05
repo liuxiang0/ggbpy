@@ -1277,6 +1277,40 @@ check(".ggk 往返保留新说明与脚本",
       and _ce2.elements["txE"].content == "新文本",
       "%r %r" % (_ce2.elements["bE"].caption, _ce2.elements["bE"].script))
 
+# ---------------------------------------------------------------------------
+section("Z15. 输入框提交 SetInput（数值 / 表达式 / 坐标）")
+
+_si = Construction()
+_si.process("sI=Slider[0,10,1,(0,0)]")
+_si.process("SetValue[sI, 3]")
+_si.process("nI=5")
+_si.process("dI=sI*2")
+_si.process("AI=(1,1)")
+_si.process('SetInput[sI, "7"]')
+check("SetInput 纯数值 → 改值且保留 Slider 定义（不退化成普通数值）",
+      abs(_si.elements["sI"].value - 7) < 1e-9 and _si.elements["sI"].defn == "sI=Slider[0,10,1,(0,0)]"
+      and _si.elements["sI"].min == 0, "%r 值=%.1f" % (_si.elements["sI"].defn, _si.elements["sI"].value))
+_si.process('SetInput[sI, "2+3*2"]')
+check("SetInput 数值表达式 → 求值改值（滑块仍保留）",
+      abs(_si.elements["sI"].value - 8) < 1e-9 and "Slider[" in _si.elements["sI"].defn,
+      "值=%.1f defn=%r" % (_si.elements["sI"].value, _si.elements["sI"].defn))
+_si.process('SetInput[nI, "sI+1"]')
+check("SetInput 引用元素的表达式 → 重定义为受控数值（free=False、保留表达式）",
+      _si.elements["nI"].free is False and _si.elements["nI"].defn == "nI=sI+1"
+      and abs(_si.elements["nI"].value - 9) < 1e-9,
+      "free=%s defn=%r 值=%.1f" % (_si.elements["nI"].free, _si.elements["nI"].defn, _si.elements["nI"].value))
+_si.process("SetValue[sI, 9]")
+check("重定义后跟随滑块（sI=9 → nI=10）", abs(_si.elements["nI"].value - 10) < 1e-9,
+      "%.1f" % _si.elements["nI"].value)
+_si.process('SetInput[AI, "(4,5)"]')
+check("SetInput 坐标 → 重定义点", abs(_si.elements["AI"].x - 4) < 1e-9 and abs(_si.elements["AI"].y - 5) < 1e-9,
+      "(%.1f,%.1f)" % (_si.elements["AI"].x, _si.elements["AI"].y))
+_si.process('SetInput[dI, "sI*3"]')
+check("SetInput 改受控对象 → 按新表达式重定义", abs(_si.elements["dI"].value - 27) < 1e-9,
+      "%.1f" % _si.elements["dI"].value)
+_msg_si = _si.process('SetInput[nI, "((("]')
+check("SetInput 非法表达式 → 明确报错", "不匹配" in (_msg_si or "") or "错误" in (_msg_si or ""), (_msg_si or "")[:30])
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

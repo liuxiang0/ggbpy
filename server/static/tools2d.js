@@ -215,11 +215,19 @@ window.GGB_T2D = (function () {
           return true;
         }
         if (el.kind === 'inputbox') {
-          var cur = '';
-          for (var m = 0; m < els.length; m++) if (els[m].label === el.target) { cur = els[m].value != null ? els[m].value : ''; break; }
-          var v = prompt((lang === 'en' ? 'Value for ' : '输入 ') + el.target + ':', String(cur).replace(/^= /, ''));
-          if (v === null) return true;
-          postInput('SetValue[' + el.target + ', ' + v + ']', function () { render(); });
+          // 输入框支持数值与表达式：交给 SetInput 判定（纯数值改值；表达式/坐标重定义）
+          var cur = '', tgtEl = null;
+          for (var m = 0; m < els.length; m++) if (els[m].label === el.target) { tgtEl = els[m]; break; }
+          cur = tgtEl && tgtEl.value != null ? String(tgtEl.value).replace(/^= /, '') : '';
+          var pre = cur;
+          if (tgtEl && tgtEl.defn && tgtEl.defn.indexOf('=') > 0
+              && (tgtEl.kind !== 'number' || (tgtEl.min === null && tgtEl.free === false))) {
+            pre = tgtEl.defn.slice(tgtEl.defn.indexOf('=') + 1);   // 受控对象：预填定义式
+          }
+          var v = prompt((lang === 'en' ? 'Value or expression for ' : '数值或表达式 ') + el.target + ':', pre);
+          if (v === null || !String(v).trim()) return true;
+          postInput('SetInput[' + el.target + ',"' + String(v).replace(/"/g, "'") + '"]',
+                    function () { render(); });
           return true;
         }
         return false;

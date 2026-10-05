@@ -473,6 +473,28 @@ check("API：SetCaption/SetScript 生效且 defn 同步",
       and 'Button["新说明","CP=(2,2)"' in str(_bP.get("defn")),
       "%s | %s" % (_bP.get("caption"), _bP.get("defn")))
 
+# ---------------------------------------------------------------------------
+section("Q. 输入框提交经 HTTP（SetInput：数值/表达式）")
+
+clear()
+put("sQ=Slider[0,10,1,(0,0)]")
+put("nQ=5")
+put('SetInput[sQ, "6"]')
+put('SetInput[nQ, "sQ*2"]')
+_elsQ = {e.get("label"): e for e in state()}
+check("API：SetInput 数值改滑块（保留 Slider 定义）",
+      abs(float((_elsQ.get("sQ") or {}).get("val", -1)) - 6) < 1e-9
+      and "Slider[" in str((_elsQ.get("sQ") or {}).get("defn")),
+      "val=%s defn=%s" % ((_elsQ.get("sQ") or {}).get("val"), (_elsQ.get("sQ") or {}).get("defn")))
+check("API：SetInput 表达式 → 受控数值并跟随滑块",
+      str((_elsQ.get("nQ") or {}).get("defn")) == "nQ=sQ*2"
+      and abs(float((_elsQ.get("nQ") or {}).get("val", -1)) - 12) < 1e-9,
+      "defn=%s val=%s" % ((_elsQ.get("nQ") or {}).get("defn"), (_elsQ.get("nQ") or {}).get("val")))
+post("/api/drag", {"label": "sQ", "x": 8, "y": 0, "push": True})
+_nQ2 = {e.get("label"): e for e in state()}.get("nQ") or {}
+check("API：拖动滑块后受控数值跟随（sQ=8 → nQ=16）",
+      abs(float(_nQ2.get("val", -1)) - 16) < 1e-9, str(_nQ2.get("val")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

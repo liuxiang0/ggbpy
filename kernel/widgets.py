@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import List, Tuple
 
 from .cmd_util import label_of, _lookup, _resolve
+from .parser import eval_number
 from .elements import GeoButton, GeoCheckBox, GeoError, GeoInputBox
 from .tolerance import COORD
 from .parser import eval_number
@@ -179,3 +180,34 @@ def _cmd_setwidgetpos(cons, defn, args):
         el.defn = _regen_defn(el)
         return []
     raise GeoError("SetWidgetPos 需要 交互控件 或 滑动条（当前是 %s）" % getattr(el, "kind", "?"))
+
+
+def _cmd_setinput(cons, defn, args):
+    """``SetInput[目标, "文本"]`` → 输入框提交：按内容自动选择语义。
+
+    - **自由数值/滑块 + 纯数值** → 只改值（保留 `Slider[…]` 定义，见 construction.move 的同类规则）
+    - **其它情况**（表达式、坐标、受控对象）→ 重定义为 ``目标=文本``（自动重新挂依赖，见 exprdeps）
+    这样输入框既能改值，也能直接写 ``s*2``、``(2,3)``、``x^2`` 这类定义（与 GeoGebra 输入框一致）。
+    """
+    if len(args) != 2:
+        raise GeoError('SetInput 需要 目标 和 文本，如 SetInput[n, "s*2"]')
+    tgt = _resolve(cons, args[0])
+    text = _caption_of(cons, args[1]).strip()
+    if not text:
+        raise GeoError("SetInput 文本不能为空")
+    free_num = getattr(tgt, "kind", "") == "number" and getattr(tgt, "free", False)
+    if free_num:
+        # 文本引用已有数值元素（如 s+1）→ 重定义成受控对象（之后跟随滑块）；
+        # 纯数值 → 只改值（滑块保留 Slider[…] 定义，见 construction.move 的同类规则）
+        from .exprdeps import _ref_deps
+        _refs = [d for d in _ref_deps(cons, [text]) if getattr(d, "kind", "") in ("number", "angle")]
+        if not _refs:
+            try:
+                v = eval_number(cons, text)
+                from .editing import _cmd_setvalue
+                return _cmd_setvalue(cons, defn, [tgt.label, _num_txt(v)])
+            except GeoError:
+                pass
+    # 其它（含受控对象、点、表达式）→ 重定义
+    from .editing import _cmd_redefine
+    return _cmd_redefine(cons, defn, [tgt.label, tgt.label + "=" + text])
