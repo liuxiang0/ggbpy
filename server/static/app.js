@@ -258,6 +258,7 @@
       case 'listEl': return listEl;
       case 'mode3d': return mode3d;
       case 'playState': return playState;
+      case 'playingLabels': return playState ? Object.keys(playState.labels) : [];
       case 'selected': return selected;
       case 'selected3d': return selected3d;
       case 'selectedMulti': return selectedMulti;
@@ -716,25 +717,65 @@
 
   // 滑块播放动画（点击 ▶ 自动递增参数，依赖曲线实时联动）
   var playState = null;
-  function sliderPlay(label) {
-    if (playState && playState.label === label) {
-      clearInterval(playState.timer); playState = null; render(); return;
+  var anim = { ms: 90, dir: 'up' };     // 动画设置：步间隔(ms)、方向 up / down / bounce
+  // 播放状态：多个滑块**共用一个定时器** → 真正同步；labels[label] 记录各自当前方向
+  function isPlaying(label) { return !!(playState && playState.labels[label]); }
+  function playingLabels() { return playState ? Object.keys(playState.labels) : []; }
+  function sliderLabels() {
+    var out = [];
+    for (var i = 0; i < elements.length; i++) {
+      var e = elements[i];
+      if (e.kind === 'number' && e.min !== null && e.min !== undefined) out.push(e.label);
     }
+    return out;
+  }
+  function stopPlay() {
     if (playState) { clearInterval(playState.timer); playState = null; }
-    playState = { label: label, timer: setInterval(function () {
-      var el = null;
-      for (var pi = 0; pi < elements.length; pi++) {
-        if (elements[pi].label === label && elements[pi].min !== undefined) el = elements[pi];
+  }
+  function startPlay(labels) {
+    var map = {};
+    for (var i = 0; i < labels.length; i++) map[labels[i]] = (anim.dir === 'bounce') ? 'up' : anim.dir;
+    if (!Object.keys(map).length) return;
+    stopPlay();
+    playState = { labels: map, timer: setInterval(animTick, anim.ms) };
+  }
+  function animTick() {
+    if (!playState) return;
+    var labs = Object.keys(playState.labels), alive = 0;
+    for (var i = 0; i < labs.length; i++) {
+      var L = labs[i], el = null;
+      for (var j = 0; j < elements.length; j++) {
+        if (elements[j].label === L && elements[j].min !== undefined) el = elements[j];
       }
-      if (!el) { clearInterval(playState.timer); playState = null; render(); return; }
-      var v = el.val + el.step;
-      if (v > el.max) v = el.min;
-      api('POST', '/api/drag', { label: label, x: v, y: 0, push: false }, function (d) {
+      if (!el) { delete playState.labels[L]; continue; }     // 对象已删除 → 退出该滑块
+      alive++;
+      var step = el.step > 0 ? el.step : 0;
+      var v = el.val + (playState.labels[L] === 'down' ? -step : step);
+      if (v > el.max + COORD) {
+        if (anim.dir === 'bounce') { playState.labels[L] = 'down'; v = el.max - step; }
+        else v = el.min;
+      } else if (v < el.min - COORD) {
+        if (anim.dir === 'bounce') { playState.labels[L] = 'up'; v = el.min + step; }
+        else v = el.max;
+      }
+      api('POST', '/api/drag', { label: L, x: v, y: 0, push: false }, function (d) {
         if (d && d.elements) { elements = d.elements; render(); }
       });
-    }, 90) };
-    render();
+    }
+    if (!alive) { stopPlay(); render(); }
   }
+  function playToggle(label) {                    // 在播则退出，未播则加入（与在播的同步）
+    if (!playState) { startPlay([label]); return; }
+    if (playState.labels[label]) {
+      delete playState.labels[label];
+      if (!Object.keys(playState.labels).length) stopPlay();
+    } else {
+      playState.labels[label] = (anim.dir === 'bounce') ? 'up' : anim.dir;
+      clearInterval(playState.timer);
+      playState.timer = setInterval(animTick, anim.ms);
+    }
+  }
+  function sliderPlay(label) { playToggle(label); render(); }
 
 
   // 对象列表行拖拽重排（Z 叠放顺序）：仅通过行首 ⠿ 手柄拖拽
@@ -1448,7 +1489,9 @@
     selectMode: function () { return !!selectMode; },
     chartBoxes: function () { return chartBoxes; },
     widgetBoxes: function () { return widgetBoxes; },
-    playLabel: function () { return playState ? playState.label : null; },
+    playLabel: function () { return playingLabels()[0] || null; },
+    playingLabels: function () { return playingLabels(); },
+    animState: function () { return { ms: anim.ms, dir: anim.dir }; },
     playAt: function (sx, sy) { return sliderPlayAt(sx, sy); },
     sliderAt: function (sx, sy) { return sliderAt(sx, sy); },
     dragState: function () { return drag ? { label: drag.label, slider: !!drag.slider, chart: !!drag.chart } : null; },
@@ -2027,6 +2070,25 @@
     view.xmax = view.xmin + cssW / scale;
     render();
   }
+  btn('btn-anim-play', function () {
+    var ls = sliderLabels();
+    if (!ls.length) { setMsg(t('animNone'), true); return; }
+    startPlay(ls);
+    setMsg(t('animPlay') + ': ' + ls.length + ' · ' + anim.ms + 'ms / ' + anim.dir, false);
+  });
+  btn('btn-anim-stop', function () { stopPlay(); render(); setMsg(t('animStop'), false); });
+  btn('btn-anim-set', function () {
+    var v = prompt(t('animSettings'), anim.ms + ',' + anim.dir);
+    if (v === null) return;
+    var sp = String(v).split(',');
+    var ms = parseFloat(sp[0]);
+    if (ms >= 10 && ms <= 2000) anim.ms = ms;
+    var d = (sp[1] || '').trim();
+    if (d === 'up' || d === 'down' || d === 'bounce') anim.dir = d;
+    if (playState) { var ls = playingLabels(); stopPlay(); startPlay(ls); }   // 立即生效
+    setMsg(t('animSet') + ': ' + anim.ms + 'ms / ' + anim.dir, false);
+  });
+
   btn('btn-zoomin', function () { viewZoom(1.3); setMsg(t('tool_zoomin'), false); });
   btn('btn-zoomout', function () { viewZoom(1 / 1.3); setMsg(t('tool_zoomout'), false); });
   btn('btn-home', function () { viewHome(); setMsg(t('tool_home'), false); });

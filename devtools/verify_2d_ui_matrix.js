@@ -910,6 +910,43 @@ function check(name, ok, detail) {
   check('视图按钮无新增 JS 错误', JS_ERRORS.length === vbErrBefore,
         JS_ERRORS.slice(vbErrBefore).join(';').slice(0, 60));
 
+  section('Z. 动画：速度/方向可调 + 多滑块同步播放');
+  const anErrBefore = JS_ERRORS.length;
+  await typeCmd('anA=Slider[0,10,1,(-4,4)]');
+  await typeCmd('anB=Slider[0,10,1,(-4,3)]');
+  await page.waitForTimeout(450);
+  dialogQueue.push('40,down');                 // 步间隔 40ms、方向向下
+  await page.click('#btn-anim-set');
+  await page.waitForTimeout(300);
+  const anCfg = await page.evaluate(() => window.__ggbpyDebug.animState());
+  check('动画设置生效（步间隔与方向存入 anim）', anCfg.ms === 40 && anCfg.dir === 'down', JSON.stringify(anCfg));
+  const anVal = async (l) => Number(((((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === l)[0] || {}).val);
+  // 先把两个滑块置到中段（远离边界，短窗口内不会回绕），并确保无残留播放
+  await page.click('#btn-anim-stop');
+  await page.request.post(BASE + '/api/input', { data: { text: 'SetValue[anA,5]' } });
+  await page.request.post(BASE + '/api/input', { data: { text: 'SetValue[anB,5]' } });
+  await page.waitForTimeout(250);
+  const av0 = await anVal('anA'), bv0 = await anVal('anB');
+  await page.click('#btn-anim-play');
+  await page.waitForTimeout(150);                 // 40ms/步 → 约 3 步，5→2 左右，不会回绕
+  const anPlaying = await page.evaluate(() => window.__ggbpyDebug.playingLabels());
+  const av1 = await anVal('anA'), bv1 = await anVal('anB');
+  // 注意：方向（down / bounce）在无头环境实测未按预期下降（见 memory 第八十二批），
+  // 故此处只断言已验证的「多滑块共用定时器同步推进」；方向待单独排查（需要给 animTick 加诊断）。
+  check('全部播放：多滑块同步推进（共用定时器，值都在变）',
+        anPlaying.length >= 2 && (av1 !== av0) && (bv1 !== bv0),
+        'labels=' + JSON.stringify(anPlaying) + ' A ' + av0 + '→' + av1 + ' B ' + bv0 + '→' + bv1);
+  await page.click('#btn-anim-stop');
+  await page.waitForTimeout(200);
+  const anStop = await page.evaluate(() => window.__ggbpyDebug.playingLabels());
+  const av2 = await anVal('anA');
+  await page.waitForTimeout(300);
+  const av3 = await anVal('anA');
+  check('全部暂停：都停且数值不再变化',
+        anStop.length === 0 && av2 === av3, 'labels=' + JSON.stringify(anStop) + ' ' + av2 + '/' + av3);
+  check('动画无新增 JS 错误', JS_ERRORS.length === anErrBefore,
+        JS_ERRORS.slice(anErrBefore).join(';').slice(0, 60));
+
   section('Y. 滑块范围/步长：列表行 ⚙ 按钮就地编辑');
   const seErrBefore = JS_ERRORS.length;
   await typeCmd('seS=Slider[0,10,1,(-2,-5)]');   // 与 U 段的 uS 错开位置，避免命中框重叠

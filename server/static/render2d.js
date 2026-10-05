@@ -350,8 +350,7 @@ window.GGB_R2D = (function () {
           ctx.fillText(e.label + ' = ' + fmtNum(e.val), (tk0 + tk1) / 2, tky - 9);
           ctx.restore();
           // 播放/暂停按钮（轨道右侧）：点击在 ▶ 与 ⏸ 间切换（与对象列表的 ▶ 同一实现）
-          var _ps = env.get('playState');
-          var playing = !!(_ps && _ps.label === e.label);
+          var playing = (env.get('playingLabels') || []).indexOf(e.label) >= 0;
           var pbx = Math.max(tk0, tk1) + 18, pby = tky;
           ctx.fillStyle = playing ? '#dc2626' : '#059669';
           ctx.beginPath();

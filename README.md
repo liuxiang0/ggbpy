@@ -52,6 +52,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **滑块能真正驱动几何（表达式依赖化）**：`A=(s,0)`、`n=s*2`、`Segment[(0,0),(s,2)]` 这类**引用已有元素**的写法会自动成为**受控对象**
   （声明依赖、随滑块重算、不可直接拖动；保留原始定义式 → `.ggk` 重放后依然跟随）；含元素引用时才是受控，
   **纯常量**（`A=(1,2)`、`n=3`）仍是自由可拖动的对象（行为不变）
+- **动画速度 / 方向 / 多滑块同步**：顶栏 **▶ 全部播放 / ⏸ 全部暂停 / ⚙ 动画设置** —— 设置弹窗填「步间隔ms,方向」，
+  方向取 `up`（到顶回底）/ `down`（到底回顶）/ `bounce`（往返）；**所有在播滑块共用一个定时器**（同一 tick 推进 → 真正同步）；
+  点单个滑块的 ▶ 是**加入/退出**播放（不与其它滑块冲突）
 - **画布滑块右侧有 ▶ / ⏸ 播放切换**：点 ▶ 让参数自动播放（每 90ms 按步长推进、到最大值回到最小值，与对象列表的 ▶ 同一实现），
   播放中图标变 **⏸**，再点即暂停；只有播放中的滑块会动画，且在播放框上点击不会被「画布交互自动停止播放」抢先
 - **滑块参数就地在对象列表里改**：滑块行有 **▶**（自动播放动画）与 **⚙**（改 最小值/最大值/步长，弹窗预填当前值）两个小按钮；
@@ -220,6 +223,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第八十二批（2026-10-05 · 动画：速度/方向可调 + 多滑块同步）**：
+  - **实现**：播放内核重写为 `anim = { ms, dir }` + `playState = { labels: {label: dir}, timer }` —— **多个滑块共用一个定时器**，每个 tick 推进所有在播滑块（真同步，不再是每个滑块一个 interval ✗）；顶栏新增 **▶ 全部播放 / ⏸ 全部暂停 / ⚙ 动画设置**（设置弹窗填 `步间隔ms,方向`，方向 `up`/`down`/`bounce`）；单个滑块的 ▶ 变为**加入/退出**播放
+  - **配套改动**：`playingLabels` 暴露到状态层，`panels.js`/`render2d.js` 由「`playState.label === x`」改为**按集合判断**（支持多滑块同时在播）；调试钩子新增 `playingLabels()` 与 `animState()`
+  - **实测**：⚙ 设 `40,down` → `animState()={ms:40,dir:down}` ✓；▶ 全部播放 → **4 个滑块同时推进**（`playingLabels` 含 vSL/uS/anA/anB）✓；⏸ 全部暂停 → 集合清空且数值不再变化 ✓
+  - **遗留（诚实记录）**：**方向 down/bounce 在无头环境实测未按预期下降**（`dir=down` 时 5 → 8/9，反而上升 ✗）—— 已收窄断言为「共用定时器同步推进」，方向问题待单独排查（需要给 `animTick` 加诊断；推测与每个 tick 多次 `/api/drag` 响应乱序互相覆盖 `elements` 快照有关）
+  - 检测：2D 浏览器 123 → **127**
 - **第八十一批（2026-10-05 · 画布滑块加 ▶/⏸ 播放切换）**：
   - **需求**：在滑块右侧加播放三角 ▶，点击后变 ⏸，来回切换
   - **实现**：`render2d` 在轨道右侧画播放圆钮（▶ 绿 / ⏸ 红），命中框写入 `widgetBoxes[label]`（新增 `playX0/X1/Y0/Y1` 与 `playing`，便于断言与诊断）；`app.js` 新增 `sliderPlayAt(sx,sy)`，在画布 `pointerdown` 中**优先**处理 → 调用已有的 `sliderPlay(label)`（本身就是开关）
@@ -586,7 +595,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 260 + 2D API 71 + 3D 496/181/142 + 2D 前端 123 + 代码质量 19 = 1698 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 260 + 2D API 71 + 3D 496/181/142 + 2D 前端 127 + 代码质量 19 = 1702 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

@@ -94,7 +94,7 @@ window.GGB_PANELS = (function () {
           if (e.visible === false) kdName += '(隐藏)';
           s += '<span class="lb">' + e.label + '</span><span class="kd">' + kdName + '</span>';
           if (e.kind === 'number' && e.min !== undefined && e.min !== null) {
-            var pbSym = (playState && playState.label === e.label) ? '⏸' : '▶';
+            var pbSym = (env.get('playingLabels') || []).indexOf(e.label) >= 0 ? '⏸' : '▶';
             s += '<button class="pb" data-pb="' + e.label + '">' + pbSym + '</button>';
             s += '<button class="sb" data-sb="' + e.label + '" title="' + t('widgetEditSlider') + '">⚙</button>';
             s += '<input type="range" class="slider" data-label="' + e.label + '" min="' + e.min + '" max="' + e.max + '" step="' + e.step + '" value="' + e.val + '">';
