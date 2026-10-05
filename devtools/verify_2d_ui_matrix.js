@@ -912,7 +912,7 @@ function check(name, ok, detail) {
 
   section('Y. 滑块范围/步长：列表行 ⚙ 按钮就地编辑');
   const seErrBefore = JS_ERRORS.length;
-  await typeCmd('seS=Slider[0,10,1,(-2,2)]');
+  await typeCmd('seS=Slider[0,10,1,(-2,-5)]');   // 与 U 段的 uS 错开位置，避免命中框重叠
   await page.waitForTimeout(450);
   // 真实点击对象列表滑块行的 ⚙（不冲突入口：滑块的画布双击会被「改值拖动」抢占）
   dialogQueue.push('-5,5,0.5');
@@ -927,6 +927,49 @@ function check(name, ok, detail) {
   check('改范围后滑块仍渲染在画布上（命中框仍在）',
         !!seBox2 && seBox2.kind === 'slider' && Math.abs(seBox2.wx1 - seBox2.wx0 - 3) < 1e-6,
         JSON.stringify(seBox2));
+  // 滑块右侧 ▶/⏸ 播放切换（与对象列表 ▶ 同一实现 sliderPlay）
+  const seBox3 = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['seS'] || null);
+  const seRect2 = await page.evaluate(() => { const r = document.getElementById('cv').getBoundingClientRect(); return { x: r.x, y: r.y }; });
+  // 段首清理：若前面的用例留下了播放中的滑块，先点它的播放框停掉（playState 是全局单例）
+  const sePrev = await page.evaluate(() => window.__ggbpyDebug.playLabel());
+  if (sePrev) {
+    await page.evaluate((lb) => {
+      const b = window.__ggbpyDebug.widgetBoxes()[lb];
+      if (!b) return;
+      const cv = document.getElementById('cv');
+      const r = cv.getBoundingClientRect();
+      const x = b.playX0 + 12, y = b.playY0 + 12;
+      cv.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1,
+        clientX: r.x + x, clientY: r.y + y, offsetX: x, offsetY: y }));
+    }, sePrev);
+    await page.waitForTimeout(250);
+  }
+  check('滑块右侧有播放按钮，且命中判定正确（初始 ▶，未播放）',
+        typeof seBox3.playX0 === 'number' && seBox3.playing === false
+        && (await page.evaluate(([x, y]) => window.__ggbpyDebug.playAt(x, y), [seBox3.playX0 + 12, seBox3.playY0 + 12])) === 'seS',
+        JSON.stringify({ playing: seBox3.playing, playX0: seBox3.playX0 }));
+  // 用合成 pointerdown 直接打在画布的播放框上：全量矩阵里对象列表面板可能覆盖该位置，
+  // 真实鼠标点击会落到列表行（实测踩到：启动了另一个滑块的播放）
+  const seFire = async () => await page.evaluate(([x, y]) => {
+    const cv = document.getElementById('cv');
+    const r = cv.getBoundingClientRect();
+    cv.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, cancelable: true, pointerId: 1,
+      clientX: r.x + x, clientY: r.y + y, offsetX: x, offsetY: y
+    }));
+  }, [seBox3.playX0 + 12, seBox3.playY0 + 12]);
+  await seFire();
+  await page.waitForTimeout(400);
+  const seP1 = await page.evaluate(() => window.__ggbpyDebug.playLabel());
+  const seB1 = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['seS'].playing);
+  check('点 ▶ 开始播放（图标切为 ⏸）', seP1 === 'seS' && seB1 === true,
+        'playLabel=' + seP1 + ' playing=' + seB1);
+  await seFire();
+  await page.waitForTimeout(400);
+  const seP2 = await page.evaluate(() => window.__ggbpyDebug.playLabel());
+  const seB2 = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['seS'].playing);
+  check('再点 → 暂停（图标切回 ▶）', seP2 === null && seB2 === false,
+        'playLabel=' + seP2 + ' playing=' + seB2);
   check('滑块范围编辑无新增 JS 错误', JS_ERRORS.length === seErrBefore,
         JS_ERRORS.slice(seErrBefore).join(';').slice(0, 60));
 

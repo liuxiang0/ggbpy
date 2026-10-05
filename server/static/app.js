@@ -300,6 +300,15 @@
     }
     return null;
   }
+  function sliderPlayAt(sx, sy) {
+    for (var k in widgetBoxes) {
+      if (!Object.prototype.hasOwnProperty.call(widgetBoxes, k)) continue;
+      var b = widgetBoxes[k];
+      if (b && b.kind === 'slider' && typeof b.playX0 === 'number'
+          && sx >= b.playX0 && sx <= b.playX1 && sy >= b.playY0 && sy <= b.playY1) return k;
+    }
+    return null;
+  }
   function sliderValueAt(label, wx) {
     var b = widgetBoxes[label];
     var el = findEl(label);
@@ -823,7 +832,8 @@
   // ---------- 交互 ----------
   canvas.addEventListener('pointerdown', function (ev) {
     ev.preventDefault();
-    if (playState) { clearInterval(playState.timer); playState = null; render(); }  // 画布交互自动停止播放
+    // 画布交互自动停止播放；但点在滑块右侧 ▶/⏸ 上时不先停（否则切换会变成「先停再启」）
+    if (playState && !sliderPlayAt(ev.offsetX, ev.offsetY)) { clearInterval(playState.timer); playState = null; render(); }
     // 控件优先：按下先记录，抬起时若未移动才执行动作（移动则视为拖动位置）
     var _wEl = widgetHit(ev.offsetX, ev.offsetY);
     if (_wEl) {
@@ -856,6 +866,12 @@
     if (macroPickMode) {
       var pkHit = hitAnyPoint(sx, sy) || hitObject(sx, sy, ['segment', 'circle', 'line', 'polygon', 'arc', 'text', 'vector', 'ray', 'conic', 'function']);
       if (pkHit) handleMacroPick(pkHit);
+      return;
+    }
+    var playHit = sliderPlayAt(sx, sy);          // 滑块右侧 ▶/⏸：点击切换播放
+    if (playHit && !selectMode) {
+      ev.preventDefault();
+      sliderPlay(playHit);
       return;
     }
     var sldHit = sliderAt(sx, sy);
@@ -1432,6 +1448,8 @@
     selectMode: function () { return !!selectMode; },
     chartBoxes: function () { return chartBoxes; },
     widgetBoxes: function () { return widgetBoxes; },
+    playLabel: function () { return playState ? playState.label : null; },
+    playAt: function (sx, sy) { return sliderPlayAt(sx, sy); },
     sliderAt: function (sx, sy) { return sliderAt(sx, sy); },
     dragState: function () { return drag ? { label: drag.label, slider: !!drag.slider, chart: !!drag.chart } : null; },
     sliderValue: function (label, wx) { return sliderValueAt(label, wx); },

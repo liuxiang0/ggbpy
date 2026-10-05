@@ -349,9 +349,31 @@ window.GGB_R2D = (function () {
           ctx.fillStyle = '#1d4ed8';
           ctx.fillText(e.label + ' = ' + fmtNum(e.val), (tk0 + tk1) / 2, tky - 9);
           ctx.restore();
+          // 播放/暂停按钮（轨道右侧）：点击在 ▶ 与 ⏸ 间切换（与对象列表的 ▶ 同一实现）
+          var _ps = env.get('playState');
+          var playing = !!(_ps && _ps.label === e.label);
+          var pbx = Math.max(tk0, tk1) + 18, pby = tky;
+          ctx.fillStyle = playing ? '#dc2626' : '#059669';
+          ctx.beginPath();
+          ctx.arc(pbx, pby, 10, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          if (playing) {                      // ⏸
+            ctx.fillRect(pbx - 4, pby - 5, 3, 10);
+            ctx.fillRect(pbx + 1, pby - 5, 3, 10);
+          } else {                            // ▶
+            ctx.beginPath();
+            ctx.moveTo(pbx - 3.5, pby - 5.5);
+            ctx.lineTo(pbx - 3.5, pby + 5.5);
+            ctx.lineTo(pbx + 5.5, pby);
+            ctx.closePath();
+            ctx.fill();
+          }
           var wsmap = env.get('widgetBoxes');
           if (wsmap) {
             wsmap[e.label] = { kind: 'slider', label: e.label,
+                               playing: playing,
+                               playX0: pbx - 12, playX1: pbx + 12, playY0: pby - 12, playY1: pby + 12,
                                x0: Math.min(tk0, tk1) - 10, x1: Math.max(tk0, tk1) + 10,
                                y0: tky - 14, y1: tky + 16, knobX: kx,
                                wx0: e.slider_x, wx1: e.slider_x + (e.slider_len || 3),
