@@ -231,7 +231,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **内核**：`Slider[最小值, 最大值, 步长?, (x,y)?, vertical?]`（也接受 `v` / `竖直`）→ `slider_vert`；`GeoNumber.draw()` 序列化；新命令 `SetSliderVertical[滑块, true/false]`（别名 滑块方向/竖直滑块）；`_regen_defn` 带上标志 → `.ggk` 往返一致
   - **前端**：`render2d` 按方向分支绘制（轨道沿 +y、min 在底、max 在顶、数值标注在左侧、**播放按钮在轨道底部**）；命中框新增 `axis`（x/y）与 `knobY`；`sliderValueAt(label, wx, wy)` 按轴取比例（拖动/播放语义不变）
   - **实测**：`vtS=Slider[0,10,1,(-2,2),vertical]` → 命中框 `axis=y`、轨道世界长 3、**播放按钮在轨道底部之下**（`playY0 > y1`）✓；值 5（区间 0..10）→ 滑钮**纵向居中**（`knobY == 中点`）✓；零新增 JS 错误 ✓
-  - **遗留（已写明在测试里）**：竖直滑块的**值拖动**未纳入用例覆盖（合成 pointerdown 驱动不稳，且播放按钮紧贴轨道底部易互相干扰）——轴感知取值由代码复用同一路径实现，待补 UI 级用例
+  - **遗留（已写明在测试里）**：竖直滑块的**值拖动本矩阵未覆盖** —— 但已用**单页探针验证通过**（轨道靠顶 → 值 10=max；靠底 → 0=min ✓）；在矩阵上下文里同一序列不生效（`activeTool` 已确认 `null`，怀疑前面用例遗留状态或面板遮挡，未定位）。取值路径 `sliderValueAt(label, wx, wy)` 按命中框 `axis` 取比例，x/y 共用同一实现
   - **命名坑（已修）**：命令表按「display name 小写 == key」分发，故 key 定为 `setslidervertical`，`SetSliderVertical[…]` 可在命令栏直接输入 ✓
   - 检测：2D 浏览器 129 → **132**（AA 段 3 条）
 - **第八十二批（2026-10-05 · 动画：速度/方向可调 + 多滑块同步）**：
