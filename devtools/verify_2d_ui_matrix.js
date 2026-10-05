@@ -705,6 +705,28 @@ function check(name, ok, detail) {
   await ctx2.close();
 
   // -------------------------------------------------------------------------
+  section('U. 画布滑块（线段 + 滑钮：渲染与拖动）');
+  const slErrBefore = JS_ERRORS.length;
+  await typeCmd('uS=Slider[0,10,1,(-2,2)]');
+  await page.waitForTimeout(450);
+  const slBox = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['uS'] || null);
+  check('滑块在画布上登记线段命中框（kind=slider）',
+        !!slBox && slBox.kind === 'slider' && (slBox.x1 - slBox.x0) > 100 && typeof slBox.wx0 === 'number',
+        JSON.stringify(slBox));
+  const slRect = await page.evaluate(() => { const r = document.getElementById('cv').getBoundingClientRect(); return { x: r.x, y: r.y }; });
+  const slY = slRect.y + (slBox.y0 + slBox.y1) / 2;
+  const slX0 = slRect.x + slBox.x0 + 10, slX1 = slRect.x + slBox.x1 - 10;
+  await page.mouse.move(slX0, slY);
+  await page.mouse.down();
+  await page.mouse.move(slX0 + (slX1 - slX0) * 0.7, slY, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+  const slEl = (((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === 'uS')[0];
+  check('拖动滑钮改变数值（≈70% → 7，按步长吸附）',
+        !!slEl && Math.abs(Number(slEl.val) - 7) < 1e-9, 'val=' + (slEl && slEl.val));
+  check('滑块拖动无新增 JS 错误', JS_ERRORS.length === slErrBefore,
+        JS_ERRORS.slice(slErrBefore).join(';').slice(0, 60));
+
   section('T. 交互控件（按钮/复选框/输入框：渲染 + 点击交互）');
   const wgErrBefore = JS_ERRORS.length;
   await typeCmd('wC=Circle[(0,0),2]');

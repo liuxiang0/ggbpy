@@ -49,6 +49,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   `Substitute[表达式|函数, 变量, 值]` → 数值或函数 · `SolveODE[微分方程]` → 通解文本 ·
   `IsFinite[数值|表达式]` → 布尔（`1/0`/`∞`/`0/0` 均为 False）· `SurfaceArea[立体|曲面]` → 表面积（球/锥/柱解析，网格按三角形求和）
   中文别名：求解方程 / 数值解 / 极限 / 部分分式 / 代入 / 微分方程 / 是否有限 / 表面积
+- **滑块在画布上就是一条线段**（GeoGebra 样式）：`Slider[最小值, 最大值, 步长?, (x,y)?]` 在图形区画成**轨道线段 + 可拖动滑钮**，
+  左右标注最小/最大值、上方标注 `名称 = 当前值`；**拖动滑钮即改值**（按步长吸附，与对象列表里的滑动条共用 `/api/drag`，松开即提交）；
+  省略位置时自动排布在左下方（每多一个滑块下移一行）
 - **交互控件（新「控件」工具组）**：工具面板新增 **控件** 分类 = `滑块`（沿用）/ `文本`（原在测量分类下，已移入）/ `插入图片` /
   `按钮` / `复选框` / `输入框`；画布上直接渲染并**可点击**：
   `Button["说明", "命令1;命令2", (x,y)?]`（点击逐行执行脚本）· `CheckBox["说明", 目标, (x,y)?]`（勾选切换目标**显示**）·
@@ -191,6 +194,13 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第六十八批（2026-10-05 · 滑块改为画布线段（GeoGebra 样式））**：
+  - **需求**：滑块希望像 GeoGebra 那样在**图形区画一条线段**（原实现只有对象列表里的 `<input type=range>` ✗）
+  - **内核**：`Slider[最小值, 最大值, 步长?, (x,y)?]` 新增可选位置（缺省自动排布：左下方逐行下移）与 `slider_len`（轨道世界长度，默认 3），并在 `GeoNumber.draw()` 中序列化 `slider_x/slider_y/slider_len`
+  - **前端**：`render2d` 绘制轨道线段 + 滑钮 + 最小/最大/当前值标注，并登记 `kind:"slider"` 命中框；`app.js` 新增 `sliderAt`/`sliderValueAt` 并在 `pointerdown/pointermove` 挂上拖动（复用面板滑块的 `/api/drag` push/release 语义，松开时 `loadState` 落定）
+  - **工具**：滑块工具把点击位置写进命令（`Slider[lo,hi,step,(x,y)]`）
+  - **实测（浏览器真实拖动）**：拖到轨道 70% → 值 `0 → 7`（步长 1 吸附）✓；`s1=Slider[0,10,1,(-5,3)]` 与 `f(x)=s1*x`、`s2=Slider[0,5,0.5,(-5,0)]` 与 `Circle[(0,0),s2]` 联动 ✓
+  - 检测：2D 内核 223 → **226**、2D API 56 → **58**、2D 浏览器 98 → **101**；视觉验证 `screenshots/canvas_slider.png`
 - **第六十七批（2026-10-05 · 新建「控件」工具组 + 按钮/复选框/输入框）**：
   - **工具面板重组**：原「滑块」分类升级为 **控件** 分类 = 滑块 · 文本 · 插入图片 · 按钮 · 复选框 · 输入框；**文本标注从「测量」移出**；插入图片从工具栏按钮改为**工具**（选中即打开文件选择，再点两个基点）
   - **三个新命令**（COMMANDS 180 → **183**）：`Button[说明, 脚本, (x,y)?]`（点击逐行执行脚本，多条用 `;` 分隔）· `CheckBox[说明, 目标, (x,y)?]`（切换目标显示）· `InputBox[目标, (x,y)?]`（编辑目标数值）；中文别名 按钮 / 复选框 / 输入框
@@ -470,7 +480,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 223 + 2D API 56 + 3D 496/181/142 + 2D 前端 98 + 代码质量 19 = 1618 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 226 + 2D API 58 + 3D 496/181/142 + 2D 前端 101 + 代码质量 19 = 1626 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

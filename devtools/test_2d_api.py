@@ -387,6 +387,21 @@ _elsK2 = {e.get("label"): e for e in state()}
 check("API：SetVisible 切换目标可见性（复选框的前端派生依据）",
       (_elsK2.get("cK") or {}).get("visible") is False, str((_elsK2.get("cK") or {}).get("visible")))
 
+# ---------------------------------------------------------------------------
+section("L. 画布滑块经 HTTP（几何字段 + /api/drag 改值）")
+
+clear()
+put("sL=Slider[0,10,1,(-2,2)]")
+_sEl = {e.get("label"): e for e in state()}.get("sL") or {}
+check("API：滑块返回 min/max/step 与 slider_x/y/len",
+      _sEl.get("min") == 0 and _sEl.get("max") == 10
+      and abs(float(_sEl.get("slider_x", 99)) + 2) < 1e-9 and float(_sEl.get("slider_len", 0)) == 3,
+      str({k: _sEl.get(k) for k in ("min", "max", "slider_x", "slider_y", "slider_len")}))
+post("/api/drag", {"label": "sL", "x": 6, "y": 0, "push": True})
+_sEl2 = {e.get("label"): e for e in state()}.get("sL") or {}
+check("API：/api/drag 更新滑块数值（画布拖动与面板共用同一端点）",
+      abs(float(_sEl2.get("val", -1)) - 6) < 1e-9, str(_sEl2.get("val")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

@@ -1130,6 +1130,25 @@ check("控件参数缺失/目标不存在 → 明确报错",
       and _wg.elements.get("cbx") is None and "找不到对象" in (_msg_c or ""),
       "%s | %s" % ((_msg_b or "")[:22], (_msg_c or "")[:22]))
 
+# ---------------------------------------------------------------------------
+section("Z10. 画布滑块（Slider 位置 + 线段几何）")
+
+_sl = Construction()
+_sl.process("sA=Slider[0,10,1,(-2,2)]")
+_sl.process("sB=Slider[0,5,(1,1)]")
+_sl.process("sC=Slider[-1,1]")
+_a, _b2, _c = _sl.elements["sA"], _sl.elements["sB"], _sl.elements["sC"]
+check("Slider 支持 (x,y) 位置并序列化 slider_x/y/len",
+      abs(_a.slider_x + 2) < 1e-9 and abs(_a.slider_y - 2) < 1e-9 and abs(_a.slider_len - 3) < 1e-9
+      and all(k in _a.draw((0, 0, 1, 1)) for k in ("slider_x", "slider_y", "slider_len", "min", "max", "step")),
+      "pos=(%s,%s) len=%s" % (_a.slider_x, _a.slider_y, _a.slider_len))
+check("省略步长时仍可带位置（Slider[0,5,(1,1)]）",
+      abs(_b2.slider_x - 1) < 1e-9 and abs(_b2.slider_y - 1) < 1e-9 and _b2.step and _b2.step > 0,
+      "pos=(%s,%s) step=%s" % (_b2.slider_x, _b2.slider_y, _b2.step))
+check("缺省位置自动排布（左上起逐行下移，互不重叠）",
+      _c.slider_x is not None and _c.slider_y is not None and _c.slider_y < _b2.slider_y,
+      "(%s,%s)" % (_c.slider_x, _c.slider_y))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

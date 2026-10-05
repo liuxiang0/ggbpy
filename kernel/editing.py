@@ -37,8 +37,17 @@ _COLOR_NAMES = {
 
 
 def _cmd_slider(cons, defn, args):
+    """Slider[最小值, 最大值, 步长?, (x,y)?] → 滑动条数值。
+
+    画布上按 GeoGebra 样式绘制成**线段 + 可拖动滑钮**（见前端 render2d）；
+    位置缺省时自动排布在左下方（每多一个滑块下移一行）。
+    """
+    args = list(args)
+    pos = None
+    if args and args[-1].strip().startswith("("):
+        pos = args.pop()
     if len(args) not in (2, 3):
-        raise GeoError("Slider 需要 最小值、最大值（可选步长）")
+        raise GeoError("Slider 需要 最小值、最大值（可选步长、可选位置 (x,y)）")
     lo = eval_number(cons, args[0])
     hi = eval_number(cons, args[1])
     step = eval_number(cons, args[2]) if len(args) == 3 else (hi - lo) / 100.0
@@ -48,6 +57,15 @@ def _cmd_slider(cons, defn, args):
         raise GeoError("步长必须为正")
     el = GeoNumber(label_of(defn), defn, lo)
     el.min, el.max, el.step = lo, hi, step
+    if pos is not None:
+        parts = [q.strip() for q in pos.strip()[1:-1].split(",")]
+        if len(parts) != 2:
+            raise GeoError("Slider 位置需要 (x,y)")
+        el.slider_x, el.slider_y = eval_number(cons, parts[0]), eval_number(cons, parts[1])
+    else:
+        n = sum(1 for e in cons.elements.values() if getattr(e, "min", None) is not None)
+        el.slider_x, el.slider_y = -6.0, -2.0 - 1.4 * n      # 自动排布（左下方逐行下移）
+    el.slider_len = 3.0                                      # 轨道世界长度
     return cons.add(el)
 
 def _cmd_setcoords(cons, defn, args):

@@ -291,6 +291,27 @@
   function t() { return _panels.t.apply(null, arguments); }
   function esc() { return _panels.esc.apply(null, arguments); }
   function fmtNum() { return _panels.fmtNum.apply(null, arguments); }
+  // 画布滑块（线段 + 滑钮）：命中与取值（与对象列表里的 range 控件共用 /api/drag 语义）
+  function sliderAt(sx, sy) {
+    for (var k in widgetBoxes) {
+      if (!Object.prototype.hasOwnProperty.call(widgetBoxes, k)) continue;
+      var b = widgetBoxes[k];
+      if (b && b.kind === 'slider' && sx >= b.x0 && sx <= b.x1 && sy >= b.y0 && sy <= b.y1) return k;
+    }
+    return null;
+  }
+  function sliderValueAt(label, wx) {
+    var b = widgetBoxes[label];
+    var el = findEl(label);
+    if (!b || !el || el.min === null || el.min === undefined) return 0;
+    var f = (wx - b.wx0) / ((b.wx1 - b.wx0) || 1);
+    f = Math.max(0, Math.min(1, f));
+    var v = el.min + f * ((el.max - el.min) || 0);
+    var st = el.step && el.step > 0 ? el.step : 0;
+    if (st > 0) v = Math.round(v / st) * st;
+    return Math.max(el.min, Math.min(el.max, v));
+  }
+
   function findEl() { return _panels.findEl.apply(null, arguments); }
   function findEl3d() { return _panels.findEl3d.apply(null, arguments); }
   function solidLabelName() { return _panels.solidLabelName.apply(null, arguments); }
@@ -815,6 +836,15 @@
       if (pkHit) handleMacroPick(pkHit);
       return;
     }
+    var sldHit = sliderAt(sx, sy);
+    if (sldHit && !selectMode && !addSelModifier(ev)) {
+      drag = { label: sldHit, slider: true };
+      dragPending = false;
+      canvas.style.cursor = 'ew-resize';
+      canvas.setPointerCapture(ev.pointerId);
+      api('POST', '/api/drag', { label: sldHit, x: sliderValueAt(sldHit, wxp(sx)), y: 0, push: true }, function () {});
+      return;
+    }
     var label = hitFreePoint(sx, sy);
     var chartHit = label ? null : chartAt(sx, sy);
     if (chartHit && !selectMode && !addSelModifier(ev)) {
@@ -946,6 +976,13 @@
         view.ymax = view.ymin + cssH / scale;
         render();
       }
+      return;
+    }
+    if (drag && drag.slider) {
+      var _sv = sliderValueAt(drag.label, wxp(ev.offsetX));
+      api('POST', '/api/drag', { label: drag.label, x: _sv, y: 0, push: false }, function (d) {
+        if (d && d.elements) { elements = d.elements; render(); }
+      });
       return;
     }
     if (drag) {
@@ -1293,6 +1330,9 @@
     selectMode: function () { return !!selectMode; },
     chartBoxes: function () { return chartBoxes; },
     widgetBoxes: function () { return widgetBoxes; },
+    sliderAt: function (sx, sy) { return sliderAt(sx, sy); },
+    dragState: function () { return drag ? { label: drag.label, slider: !!drag.slider, chart: !!drag.chart } : null; },
+    sliderValue: function (label, wx) { return sliderValueAt(label, wx); },
     faceBudget: function () { return MESH_FACE_BUDGET; },
     cacheSize: function () { return Object.keys(meshFaceCache).length; },
     projCalls: function () { return dbgProjCalls; },

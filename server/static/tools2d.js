@@ -575,7 +575,7 @@ window.GGB_T2D = (function () {
           if (isNaN(slo) || isNaN(shi) || shi <= slo) { setMsg(lang === 'en' ? 'Invalid min/max' : '无效的最小/最大值', true); resetTool(); return; }
           var scmd = 'Slider[' + slo + ',' + shi;
           if (!isNaN(sstep) && sstep > 0) scmd += ',' + sstep;
-          scmd += ']';
+          scmd += ',(' + wxp(sx).toFixed(3) + ',' + wyp(sy).toFixed(3) + ')]';
           postInput(scmd, function (ok) { if (ok) resetTool(); });
           return;
         }

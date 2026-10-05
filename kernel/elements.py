@@ -368,6 +368,9 @@ class GeoNumber(GeoElement):
         d["value"] = "= " + _fmt(self.value)
         if self.min is not None:
             d["min"], d["max"], d["step"] = self.min, self.max, self.step
+            d["slider_x"] = getattr(self, "slider_x", None)
+            d["slider_y"] = getattr(self, "slider_y", None)
+            d["slider_len"] = getattr(self, "slider_len", 3.0)
         return d
 
 

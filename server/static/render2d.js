@@ -318,6 +318,45 @@ window.GGB_R2D = (function () {
           ctx.textBaseline = 'middle';
           ctx.fillText(fmtAngleDeg(e.deg), lx, ly);
         }
+        if (e.kind === 'number' && e.min !== null && e.min !== undefined
+            && e.slider_x !== null && e.slider_x !== undefined) {
+          // 滑动条：按 GeoGebra 样式画成线段 + 可拖动滑钮（min / 当前值 / max 标注）
+          var tk0 = sxp(e.slider_x), tk1 = sxp(e.slider_x + (e.slider_len || 3)), tky = syp(e.slider_y);
+          var span = (e.max - e.min) || 1;
+          var frac = Math.max(0, Math.min(1, (e.val - e.min) / span));
+          var kx = tk0 + (tk1 - tk0) * frac;
+          ctx.save();
+          ctx.strokeStyle = '#94a3b8';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(tk0, tky);
+          ctx.lineTo(tk1, tky);
+          ctx.stroke();
+          ctx.fillStyle = '#2563eb';
+          ctx.beginPath();
+          ctx.arc(kx, tky, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = '#334155';
+          ctx.font = '12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.fillText(fmtNum(e.min), tk0, tky + 9);
+          ctx.fillText(fmtNum(e.max), tk1, tky + 9);
+          ctx.textBaseline = 'bottom';
+          ctx.fillStyle = '#1d4ed8';
+          ctx.fillText(e.label + ' = ' + fmtNum(e.val), (tk0 + tk1) / 2, tky - 9);
+          ctx.restore();
+          var wsmap = env.get('widgetBoxes');
+          if (wsmap) {
+            wsmap[e.label] = { kind: 'slider', label: e.label,
+                               x0: Math.min(tk0, tk1) - 10, x1: Math.max(tk0, tk1) + 10,
+                               y0: tky - 14, y1: tky + 16,
+                               wx0: e.slider_x, wx1: e.slider_x + (e.slider_len || 3) };
+          }
+        }
         if (e.kind === 'button' || e.kind === 'checkbox' || e.kind === 'inputbox') {
           // 交互控件（Button / CheckBox / InputBox）：锚点在左下角；实时态从绑定对象派生
           var wbx = sxp(e.x), wby = syp(e.y);
