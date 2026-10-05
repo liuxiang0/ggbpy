@@ -434,7 +434,7 @@ check("嵌套常量随迁且 re-export 一致",
       C._NESTED_CALL_RE is CU._NESTED_CALL_RE and C._NESTED_MAX_DEPTH == CU._NESTED_MAX_DEPTH, "")
 check("commands 经 nested 模块完成嵌套求值钩子注入",
       "from .nested import" in cmd_src and "set_nested_evaluator(_eval_nested)" not in cmd_src, "")
-check("cmd_util.py 规模合理（120–340 行）", 120 <= len(cu_src.splitlines()) <= 340,
+check("cmd_util.py 规模合理（120–420 行；新增「表达式依赖」助手，后续可拆出 exprdeps）", 120 <= len(cu_src.splitlines()) <= 420,
       str(len(cu_src.splitlines())))
 check("commands.py 因拆分继续下降（< 6200）", len(cmd_src.splitlines()) < 6200, str(len(cmd_src.splitlines())))
 

@@ -17,7 +17,7 @@ from . import schemas
 from .cmd_util import (  # 命令层共享工具（自本模块抽出）
     _nested_depth, label_of, _label_of, _mk, _auto, _resolve, _lookup, _tuple_parts_any, _list_arg,
     _point_arg, _num_deps, _num_list_items, _num_series, _elem_or_point, _is_segment_el,
-    list_literal_state
+    list_literal_state, point_expr_state, numeric_expr_state
 )
 from .cmd_util import set_nested_evaluator
 # 微积分/符号计算命令已抽到 kernel/calculus.py；re-export 保持调用方兼容
@@ -1049,16 +1049,26 @@ def process_line(cons, line: str) -> List:
         return [_mk(cons, GeoNumber, "number", defn, [L], fn)]
 
     if kind == "point":
+        # 分量引用已有元素（如 A=(s,0)）→ 受控点：保留原始定义式并挂依赖（随滑块移动、不可拖动）
+        _pdeps, _pfn = point_expr_state(cons, line)
         if len(payload) == 3:
             x, y, z = payload
             if label is None:
                 label = cons.auto_label("point")
-            el = GeoPoint(label, label + "=(" + _fmt(x) + "," + _fmt(y) + "," + _fmt(z) + ")", x, y, True, z)
+            if _pdeps and _pfn is not None:
+                el = GeoPoint(label, line.strip(), x, y, False, z)
+                el.set_deps(_pdeps, _pfn)
+            else:
+                el = GeoPoint(label, label + "=(" + _fmt(x) + "," + _fmt(y) + "," + _fmt(z) + ")", x, y, True, z)
             return [cons.add(el)]
         x, y = payload
         if label is None:
             label = cons.auto_label("point")
-        el = GeoPoint(label, label + "=(" + _fmt(x) + "," + _fmt(y) + ")", x, y)
+        if _pdeps and _pfn is not None:
+            el = GeoPoint(label, line.strip(), x, y, False)
+            el.set_deps(_pdeps, _pfn)
+        else:
+            el = GeoPoint(label, label + "=(" + _fmt(x) + "," + _fmt(y) + ")", x, y)
         return [cons.add(el)]
 
     if kind == "ineq_y":
@@ -1100,6 +1110,12 @@ def process_line(cons, line: str) -> List:
     if kind == "number":
         if label is None:
             label = cons.auto_label("number")
+        # 表达式引用已有数值元素（如 n=s*2）→ 受控数值（保留定义式并挂依赖）
+        _ndeps, _nfn = numeric_expr_state(cons, line)
+        if _ndeps and _nfn is not None:
+            el = GeoNumber(label, line.strip(), payload, False)
+            el.set_deps(_ndeps, _nfn)
+            return [cons.add(el)]
         el = GeoNumber(label, label + "=" + _fmt(payload), payload)
         return [cons.add(el)]
 

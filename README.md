@@ -49,6 +49,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   `Substitute[表达式|函数, 变量, 值]` → 数值或函数 · `SolveODE[微分方程]` → 通解文本 ·
   `IsFinite[数值|表达式]` → 布尔（`1/0`/`∞`/`0/0` 均为 False）· `SurfaceArea[立体|曲面]` → 表面积（球/锥/柱解析，网格按三角形求和）
   中文别名：求解方程 / 数值解 / 极限 / 部分分式 / 代入 / 微分方程 / 是否有限 / 表面积
+- **滑块能真正驱动几何（表达式依赖化）**：`A=(s,0)`、`n=s*2`、`Segment[(0,0),(s,2)]` 这类**引用已有元素**的写法会自动成为**受控对象**
+  （声明依赖、随滑块重算、不可直接拖动；保留原始定义式 → `.ggk` 重放后依然跟随）；含元素引用时才是受控，
+  **纯常量**（`A=(1,2)`、`n=3`）仍是自由可拖动的对象（行为不变）
 - **滑块两种拖动**：拖**滑钮** = 改数值（按步长吸附）；拖**轨道** = 移动整条滑块（锚点，数值不变）—— 同样经 `SetWidgetPos` 落定
 - **滑块的定义与数值分别保存**：拖动滑钮或 `SetValue` **不会改写 `Slider[…]` 定义**（否则会退化成普通数值、丢失 min/max 与画布线段）；
   当前值由 **`.ggk` v5 的 `values` 字段**保存/恢复（旧 v4 文件缺该字段 → 回落到定义里的初值，向后兼容）
@@ -199,6 +202,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第七十一批（2026-10-05 · 表达式依赖化：滑块真正驱动几何）**：
+  - **动机**：实测发现滑块能驱动 `Circle[(0,0),s]`（元素参数 ✓）与动态文本 ✓，但 **`A=(s,0)`、`n=s*2`、`Segment[(0,0),(s,0)]` 不跟随** ✗ —— 求值后固化成自由对象，滑块等于没用
+  - **修复**：新增 `cmd_util.point_expr_state` / `numeric_expr_state`（与既有 `list_literal_state` 同一思路：**从原始行文本**取分量表达式 → 收集引用的元素为依赖 → 重算时按当前值重新求值），并在 `commands.process_line` 的点/数值分支接入；`_point_arg` 的**字面量坐标**同样依赖化（覆盖 `Segment[(0,0),(s,2)]`）
+  - **语义（与 GeoGebra 一致）**：含元素引用 → **受控对象**（`free=False`，不可直接拖动，保留原始定义式）；**纯常量 → 自由对象**（可拖动，行为零变化）
+  - **实测**：`s=3→7` 时 `A=(s,0)` 的 x 3→7 ✓、`Segment[(0,0),(s,2)]` 端点 x 3→7 ✓、`n=s*2` 6→14 ✓、圆半径 3→7 ✓（回归）、`P=(1,2)` 仍自由 ✓、`.ggk` 往返后依然跟随 ✓
+  - 检测：2D 内核 236 → **242**、2D API 63 → **66**
 - **第七十批（2026-10-05 · 控件/滑块可拖动位置）**：
   - **新增命令**（COMMANDS 183 → **184**）：`SetWidgetPos[控件|滑动条, (x,y)]`（中文别名 控件位置 / 移动控件）—— 移动锚点并**同步重写 defn**（`Button[…]`/`CheckBox[…]`/`InputBox[…]`/`Slider[…]`），滑块**数值不受影响**（仍由 `.ggk` v5 的 `values` 保存）
   - **交互分流（关键设计）**：控件的**动作从 pointerdown 推迟到 pointerup**，并加 4px 移动阈值 —— 于是「**点击 = 动作**、**拖动 = 移位**」互不干扰；实测**拖动按钮不会执行脚本**、**点击仍会执行**
@@ -497,7 +506,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 236 + 2D API 63 + 3D 496/181/142 + 2D 前端 107 + 代码质量 19 = 1647 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 242 + 2D API 66 + 3D 496/181/142 + 2D 前端 107 + 代码质量 19 = 1656 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

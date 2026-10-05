@@ -1215,6 +1215,36 @@ check(".ggk 往返保留控件新位置与滑块数值",
       and "(2,3)" in _sw2.elements["bW"].defn,
       "%r 值=%.1f" % (_sw2.elements["slW"].defn, _sw2.elements["slW"].value))
 
+# ---------------------------------------------------------------------------
+section("Z13. 表达式依赖：受控点/数值/字面量坐标随滑块重算")
+
+_ex = Construction()
+_ex.process("sX=Slider[0,10,1,(0,0)]")
+_ex.process("SetValue[sX, 3]")
+_ex.process("AX=(sX,0)")                       # 受控点
+_ex.process("sgX=Segment[(0,0),(sX,2)]")       # 字面量坐标里引用滑块
+_ex.process("nX=sX*2")                         # 受控数值
+_ex.process("PX=(1,2)")                        # 纯常量 → 自由点
+_ex.process("cxX=Circle[(0,0),sX]")            # 元素参数（原本就跟随，回归）
+_B = (round(_ex.elements["AX"].x, 3), round(_ex.elements["sgX"].x2, 3),
+      round(_ex.elements["nX"].value, 3), round(_ex.elements["cxX"].r, 3))
+_ex.process("SetValue[sX, 7]")
+_A = (round(_ex.elements["AX"].x, 3), round(_ex.elements["sgX"].x2, 3),
+      round(_ex.elements["nX"].value, 3), round(_ex.elements["cxX"].r, 3))
+check("受控点 A=(s,0) 随滑块重算（3 → 7）", _B[0] == 3.0 and _A[0] == 7.0, "%s → %s" % (_B[0], _A[0]))
+check("字面量坐标 (s,2) 随滑块重算（Segment 端点 3 → 7）", _B[1] == 3.0 and _A[1] == 7.0, "%s → %s" % (_B[1], _A[1]))
+check("受控数值 n=s*2 随滑块重算（6 → 14）", _B[2] == 6.0 and _A[2] == 14.0, "%s → %s" % (_B[2], _A[2]))
+check("元素参数（圆半径）本就跟随（回归）", _B[3] == 3.0 and _A[3] == 7.0, "%s → %s" % (_B[3], _A[3]))
+check("受控点不可直接拖动、纯常量点仍自由",
+      _ex.elements["AX"].free is False and _ex.elements["PX"].free is True
+      and _ex.elements["AX"].defn == "AX=(sX,0)", "%r free=%s" % (_ex.elements["AX"].defn, _ex.elements["AX"].free))
+_dex = _json_mod.loads(_ex.save_json())
+_ex2 = Construction()
+_ex2.load_json(_json_mod.dumps(_dex))
+_ex2.process("SetValue[sX, 5]")
+check(".ggk 往返后受控点仍然跟随（AX.x → 5）", round(_ex2.elements["AX"].x, 3) == 5.0,
+      str(round(_ex2.elements["AX"].x, 3)))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

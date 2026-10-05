@@ -442,6 +442,24 @@ check("API：移动滑块后仍是滑动条且数值保留为 9",
       and (_elsN.get("slN") or {}).get("min") == 0 and "Slider[" in str((_elsN.get("slN") or {}).get("defn")),
       "val=%s min=%s" % ((_elsN.get("slN") or {}).get("val"), (_elsN.get("slN") or {}).get("min")))
 
+# ---------------------------------------------------------------------------
+section("O. 表达式依赖经 HTTP（拖动滑块 → 受控点/线段跟随）")
+
+clear()
+put("sO=Slider[0,10,1,(0,0)]")
+put("AO=(sO,0)")
+put("sgO=Segment[(0,0),(sO,2)]")
+post("/api/drag", {"label": "sO", "x": 8, "y": 0, "push": True})
+_elsO = {e.get("label"): e for e in state()}
+check("API：拖动滑块后受控点跟随（AO.x = 8）",
+      abs(float((_elsO.get("AO") or {}).get("x", -1)) - 8) < 1e-9,
+      str((_elsO.get("AO") or {}).get("x")))
+check("API：字面量坐标线段端点跟随（sgO.x2 = 8）",
+      abs(float((_elsO.get("sgO") or {}).get("x2", -1)) - 8) < 1e-9,
+      str((_elsO.get("sgO") or {}).get("x2")))
+check("API：受控点定义式保留（AO=(sO,0)，供 .ggk 重放）",
+      str((_elsO.get("AO") or {}).get("defn")) == "AO=(sO,0)", str((_elsO.get("AO") or {}).get("defn")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

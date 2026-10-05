@@ -170,9 +170,19 @@ def _point_arg(cons, s: str):
         parts = _tuple_parts_any(s)
         vals = [eval_number(cons, p) for p in parts]
         z = vals[2] if len(vals) == 3 else None
-        # 匿名辅助点：不注册进构造（不可见、不参与撤销/序列化），仅作依赖
+        # 匿名辅助点：不注册进构造（不可见、不参与撤销/序列化），仅作依赖。
+        # 分量引用已有元素（如 (s,0)）→ 挂依赖，随滑块重算（否则会固化成一次求值）。
+        _deps = _ref_deps(cons, parts)
         el = GeoPoint("_h", s, vals[0], vals[1], True, z)
         el.visible = False
+        if _deps:
+
+            def _state(_d, _parts=parts):
+                vs = [eval_number(cons, q) for q in _parts]
+                return {"x": vs[0], "y": vs[1], "z": vs[2] if len(vs) == 3 else None}
+
+            el.free = False
+            el.set_deps(_deps, _state)
         return el
     raise GeoError("找不到点 " + s)
 
@@ -291,3 +301,74 @@ def list_literal_state(cons, line: str, itemkind: str):
     if not m:
         return [], None
     return _list_state_from_parts(cons, _split_brace(tokenize(m.group(1))), itemkind)
+
+
+def _ref_deps(cons, exprs):
+    """从若干表达式里收集引用的已有元素（按出现顺序去重）。"""
+    import re as _re
+    deps, seen = [], set()
+    for e in exprs:
+        el = cons.elements.get(str(e).strip())
+        if el is not None and id(el) not in seen:
+            seen.add(id(el))
+            deps.append(el)
+        for tok in _re.findall(r"[A-Za-z_][A-Za-z0-9_]*", str(e)):
+            el2 = cons.elements.get(tok)
+            if el2 is not None and id(el2) not in seen:
+                seen.add(id(el2))
+                deps.append(el2)
+    return deps
+
+
+def point_expr_state(cons, line: str):
+    """``A=(expr_x, expr_y[, expr_z])`` 分量引用已有元素 → ``(deps, state_fn)``；否则 ``([], None)``。
+
+    GeoGebra 语义：``A=(s,0)`` 是**受控点**（随滑块移动、不可直接拖动）；
+    ``A=(1,2)`` 仍是自由点（可拖动）。纯常量时不改变原行为。
+    """
+    import re as _re
+
+    from .parser import _tuple_parts_str, eval_number
+
+    m = _re.search(r"=\s*(\(.*\))\s*$", line, _re.S)
+    if not m:
+        return [], None
+    try:
+        parts = _tuple_parts_str(m.group(1))
+    except GeoError:
+        return [], None
+    if len(parts) not in (2, 3):
+        return [], None
+    deps = _ref_deps(cons, parts)
+    if not deps:
+        return [], None
+
+    def state(_d):
+        vals = [eval_number(cons, q) for q in parts]
+        if len(vals) == 3:
+            return {"x": vals[0], "y": vals[1], "z": vals[2]}
+        return {"x": vals[0], "y": vals[1]}
+
+    return deps, state
+
+
+def numeric_expr_state(cons, line: str):
+    """``n=expr`` 且 expr 引用已有数值元素 → ``(deps, state_fn)``；否则 ``([], None)``。"""
+    import re as _re
+
+    from .parser import eval_number
+
+    m = _re.search(r"=\s*(.+)$", line, _re.S)
+    if not m:
+        return [], None
+    expr = m.group(1).strip()
+    if not expr or expr.startswith(("(", "{")):      # 点/列表各有处理
+        return [], None
+    deps = [d for d in _ref_deps(cons, [expr]) if getattr(d, "kind", "") in ("number", "angle")]
+    if not deps:
+        return [], None
+
+    def state(_d):
+        return {"value": float(eval_number(cons, expr))}
+
+    return deps, state
