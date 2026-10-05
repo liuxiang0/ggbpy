@@ -341,8 +341,31 @@ check("API：Delaunay → itemkind=polygon 列表（4 个三角形，每项 3 �
 check("API：Voronoi → 5 个元胞（元胞均有界）",
       _vor.get("itemkind") == "polygon" and len(_vor.get("items") or []) == 5,
       "n=%s" % len(_vor.get("items") or []))
-check("API：多边形列表带中文摘要 value（{N 个多边形}）",
-      str(_del.get("value") or "").endswith("个多边形}"), str(_del.get("value")))
+check("API：多边形列表带摘要 value（数量 + 顶点范围 + 总面积）",
+      "4 个多边形" in str(_del.get("value")) and "总面积" in str(_del.get("value")),
+      str(_del.get("value")))
+
+# ---------------------------------------------------------------------------
+section("J. 剖分信息经 HTTP（面积/质心随依赖刷新）")
+
+clear()
+put("A2=(0,0)")
+put("B2=(4,0)")
+put("C2=(4,4)")
+put("D2=(0,4)")
+put("VV2=Voronoi[{A2,B2,C2,D2}]")
+_vel = {e.get("label"): e for e in state()}.get("VV2") or {}
+check("API：Voronoi 返回 areas/centroids（4 个元胞）",
+      len(_vel.get("areas") or []) == 4 and len(_vel.get("centroids") or []) == 4,
+      "areas=%s" % (len(_vel.get("areas") or []),))
+check("API：摘要 value 含数量与总面积",
+      "4 个多边形" in str(_vel.get("value")) and "总面积" in str(_vel.get("value")), str(_vel.get("value")))
+_areas_before = [round(float(v), 4) for v in (_vel.get("areas") or [])]
+put("SetCoords[A2, -3, -3]")
+_vel2 = {e.get("label"): e for e in state()}.get("VV2") or {}
+check("API：移动点后元胞面积变化（内联列表 + memo 修复链路）",
+      [round(float(v), 4) for v in (_vel2.get("areas") or [])] != _areas_before,
+      "%s → %s" % (_areas_before[:2], [round(float(v), 4) for v in (_vel2.get("areas") or [])][:2]))
 
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))

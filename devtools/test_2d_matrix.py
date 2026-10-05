@@ -1026,6 +1026,47 @@ check("坐标元组列表不受影响（回归）",
       [list(x) for x in _pl.elements["LC"].items] == [[1.0, 2.0], [3.0, 4.0]]
       and _pl.elements["LC"].itemkind == "point", "")
 
+# ---------------------------------------------------------------------------
+section("Z7. 剖分信息（面积/质心/摘要）与内联列表动态性（含 memo 修复）")
+
+_gi = Construction()
+for _lab, _xy in (("A", (0, 0)), ("B", (4, 0)), ("C", (4, 4)), ("D", (0, 4)), ("M", (2, 2))):
+    _gi.process("%s=(%d,%d)" % (_lab, _xy[0], _xy[1]))
+_gi.process("VV=Voronoi[{A,B,C,D,M}]")
+_gi.process("TT=Delaunay[{A,B,C,D,M}]")
+_vd = _gi.elements["VV"].draw((0, 0, 1, 1))
+_td = _gi.elements["TT"].draw((0, 0, 1, 1))
+check("Voronoi 序列化含每个元胞的面积与质心（5 个）",
+      len(_vd.get("areas", [])) == 5 and len(_vd.get("centroids", [])) == 5
+      and abs(sum(_vd["areas"]) - 5.2 * 5.2) < 1e-6,
+      "areas=%s" % [round(v, 3) for v in _vd.get("areas", [])])
+check("Voronoi 摘要含数量/顶点范围/总面积",
+      "5 个多边形" in _vd.get("value", "") and "总面积 27.04" in _vd.get("value", ""), _vd.get("value"))
+check("Delaunay 摘要为 4 个三角形、总面积 16",
+      "4 个多边形（3 顶点）" in _td.get("value", "") and "总面积 16" in _td.get("value", ""), _td.get("value"))
+
+# 内联点标签列表 → 依赖变化时下游命令必须重算（曾因 memo 对不可见列表签名退化而失效）
+_in = Construction()
+_in.process("P=(0,0)")
+_in.process("Q=(2,0)")
+_in.process("R=(1,2)")
+_in.process("VI=Voronoi[{P,Q,R}]")
+_first = [list(map(float, poly)) for poly in _in.elements["VI"].items[0]]
+_in.process("SetCoords[P, -2, -1]")
+_second = [list(map(float, poly)) for poly in _in.elements["VI"].items[0]]
+check("内联点标签列表驱动 Voronoi 重算（memo 修复后随点移动刷新）",
+      _first != _second and abs(float(_second[0][0]) + 2.6) < 1e-6,
+      "%s → %s" % ([round(v, 2) for v in _first[0]], [round(v, 2) for v in _second[0]]))
+
+_in2 = Construction()
+_in2.process("k=2")
+_in2.process("SI=Sum[{k, k*10}]")
+_before_sum = _in2.elements["SI"].value
+_in2.process("SetValue[k, 5]")
+check("内联数值列表驱动 Sum 重算（2+20=22 → 5+50=55）",
+      abs(_before_sum - 22.0) < 1e-9 and abs(_in2.elements["SI"].value - 55.0) < 1e-9,
+      "%s → %s" % (_before_sum, _in2.elements["SI"].value))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

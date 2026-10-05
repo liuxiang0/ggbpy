@@ -54,6 +54,8 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   两者都返回**多边形列表**（对象列表显示为 `{N 个多边形}`、画布半透明填充 + 描边）；
   入参支持三种形态：内联点列表（值快照）、**多边形**（随顶点变化重算）、**变参点元素**（随拖动重算）
   中文别名：三角剖分 / 德劳内 / 泰森多边形 / 沃罗诺伊
+  **剖分信息**：每个多边形都带**面积与质心**（序列化 `areas`/`centroids`），画布上**在质心标注面积**（≤30 个时），
+  对象列表摘要为 `{N 个多边形（顶点范围），总面积 A}`（如 Voronoi → `{5 个多边形（4–5 顶点），总面积 27.04}`）
 
 ### CAS 符号计算（右侧面板）
 - CAS 面板内置**命令面板**（11 个命令按钮，点击插入模板、光标自动停在括号内）；`#N` 可点击引用前序单元；`a:=5` 创建数值、`f(x):=x^2` 创建函数（结果可 `:=` 联动到绘图区）；命令：`Expand` `Factor` `Simplify` `Solve` `NSolve` `Limit` `Derivative` `Integral` `SolveODE` `PartialFractions` `Substitute`；帮助面板 `?` 中也有入口
@@ -78,6 +80,8 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **列表字面量依赖化（已修）**：`L={n, n*10+2}` 这类**含元素引用**的列表字面量现在会**声明依赖并随依赖重算**（`SetValue[n,3]` → `L=[3,32,35]`，
   且 `Sum[L]`、`StemPlot[L]` 等消费方同步刷新）；**纯常量列表保持静态快照**（行为不变）。**列表也接受点标签**：`{A,B}`、`{A,B,M}`、三维点 `{P3,Q3}` 均可（`itemkind` 自动为 point / point3d），
   且**随点移动自动重算**（含列表里的派生点）；给点加括号 `{(A),(B)}` 会提示改用 `{A,B}`；点标签与坐标混用、二维与三维混用都给明确报错
+  **命令参数里的内联列表同样动态**：`Voronoi[{A,B,C}]`、`Delaunay[{A,B,C,D}]`、`Sum[{n, n*10}]` 都随依赖刷新
+  （内联匿名列表也会挂依赖并重算 —— 曾因计算记忆对**不可见列表**的签名退化而失效，第六十五批已修）
 - **剖分的边界**：`Delaunay` 至少 3 点、共线/重合点集报「点集退化」（scipy Qhull）；`Voronoi` 至少 2 点、**重合点明确报错**、
   元胞用点集外扩 15% 的包围盒裁剪（因此**无界元胞问题被规避**，面积和 = 包围盒面积）；两者都只接受二维点/多边形· `NSolve` 在默认区间 `[-60, 60]` 内找实根，找不到即报错 ·
   `Limit` 结果为 ∞/不存在时**明确报错**（不返回假数值）· `SolveODE` 只给 **sympy dsolve 通解文本**（含常数 `c1`，暂不支持初值条件 → 函数）·
@@ -89,9 +93,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 #### 2D 检测矩阵（可重复执行）
 
-- `devtools/test_2d_matrix.py`（内核 209 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
-- `devtools/test_2d_api.py`（51 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
-- `devtools/verify_2d_ui_matrix.js`（85 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
+- `devtools/test_2d_matrix.py`（内核 214 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
+- `devtools/test_2d_api.py`（54 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
+- `devtools/verify_2d_ui_matrix.js`（89 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
 - `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
 - `devtools/bench_undo.py`（性能）：撤销/重做压测（快照字节数、snapshot/restore 耗时、记忆冷/热对照、LRU）
 
@@ -179,6 +183,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第六十五批（2026-10-05 · 剖分可读性 + 修复「内联列表依赖不生效」的 memo 缺陷）**：
+  - **剖分信息可视化**：`GeoList(itemkind=polygon)` 的序列化新增**每个多边形的面积（shoelace）与质心**，摘要改为 `{N 个多边形（顶点范围），总面积 A}`；前端在**质心标注面积**（≤30 个时）
+  - **打通命令参数内联列表的动态性**：`_list_arg` 也接受点标签，并把「依赖+重算」核心抽成 `_list_state_from_parts`（赋值语句与内联列表共用）→ `Voronoi[{A,B,C}]`、`Sum[{n, n*10}]` 都能随依赖刷新
+  - **修掉一个影响面广的真 bug（计算记忆）**：匿名内联列表 `visible=False` → `GeoElement.draw()` 返回 `None` → `memo._state_sig` 对它的指纹**退化成常量** → 依赖它的对象（Voronoi/Sum/StemPlot…）命中**过期缓存**不更新。修法：`_state_sig` 对 `kind == "list"` 给出显式签名（itemkind + 数量 + 顶点形状 + 数值校验和），不再依赖 `draw()` 输出
+  - **实测**：`Sum[{k,k*10}]` 在 `k=2→5` 后 **22 → 55** ✓；`Voronoi[{P,Q,R}]` 在 `SetCoords[P,-2,-1]` 后首元胞 `[[0,0],[1,0]…]` → `[[-2.6,-1.6],[0.28,-1.6]…]` ✓；注册列表回归 9 → 12 ✓
+  - 检测：2D 内核 209 → **214**、2D API 51 → **54**、2D 浏览器 85 → **89**；视觉验证 `screenshots/tessellation_area.png`
 - **第六十四批（2026-10-05 · 列表字面量接受点标签：`{A,B}` / `{P3,Q3}`）**：
   - **问题**（第六十三批记录的解析层边界）：`{A,B}` 报「对象 A 不是数值」、`{(A),(B)}` 报「元组需要两个或三个分量」→ 列表里无法直接放点元素
   - **修复**：`parser.py` 新增 `_list_point_items`（整份列表都是点标签时取各点坐标，`itemkind` 按有无 `z` 判定 point / point3d）；`{` 与 `[` 两个列表分支都接入；另加 `_reject_mixed_point_list`（点标签与坐标混用 → 明确指引）与「加括号」友好提示
@@ -439,7 +449,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 209 + 2D API 51 + 3D 496/181/142 + 2D 前端 85 + 代码质量 19 = 1586 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 214 + 2D API 54 + 3D 496/181/142 + 2D 前端 89 + 代码质量 19 = 1598 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

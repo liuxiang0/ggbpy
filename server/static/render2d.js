@@ -372,6 +372,18 @@ window.GGB_R2D = (function () {
             ctx.fill();
             ctx.stroke();
           }
+          // 面积标注（每个多边形的质心；数量多时不标注，避免糊成一片）
+          if (e.areas && e.areas.length === e.items.length && e.items.length <= 30) {
+            ctx.fillStyle = 'rgba(30,58,138,0.85)';
+            ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            for (var ai = 0; ai < e.items.length; ai++) {
+              var ct = (e.centroids && e.centroids[ai]) || null;
+              if (!ct) continue;
+              ctx.fillText(Number(e.areas[ai]).toFixed(2), sxp(ct[0]), syp(ct[1]));
+            }
+          }
           ctx.restore();
         }
         if (e.kind === 'locus' && e.pts && e.pts.length >= 2) {

@@ -705,6 +705,30 @@ function check(name, ok, detail) {
   await ctx2.close();
 
   // -------------------------------------------------------------------------
+  section('R. 剖分面积标注 + 内联列表动态链（memo 修复）');
+  const tessErr2 = JS_ERRORS.length;
+  await typeCmd('ZAx=(0,0)');
+  await typeCmd('ZBx=(4,0)');
+  await typeCmd('ZCx=(4,4)');
+  await typeCmd('ZDx=(0,4)');
+  await typeCmd('ZV=Voronoi[{ZAx,ZBx,ZCx,ZDx}]');
+  await page.waitForTimeout(400);
+  const zv1 = await byLabel('ZV');
+  check('内联点标签列表 Voronoi 经 HTTP 返回 areas/centroids',
+        !!zv1 && (zv1.areas || []).length === 4 && (zv1.centroids || []).length === 4,
+        JSON.stringify(zv1 && { a: (zv1.areas || []).length, c: (zv1.centroids || []).length }));
+  check('摘要 value 含数量与总面积', !!zv1 && /4 个多边形/.test(zv1.value) && /总面积/.test(zv1.value),
+        zv1 && zv1.value);
+  const zvAreas1 = (zv1 && zv1.areas ? zv1.areas.map((v) => Number(v).toFixed(3)) : []).join(',');
+  await typeCmd('SetCoords[ZAx,-3,-3]');
+  await page.waitForTimeout(450);
+  const zv2 = await byLabel('ZV');
+  const zvAreas2 = (zv2 && zv2.areas ? zv2.areas.map((v) => Number(v).toFixed(3)) : []).join(',');
+  check('移动点后面积随内联列表刷新（memo 修复链路）', zvAreas1 !== zvAreas2 && zvAreas2 !== '',
+        zvAreas1 + ' → ' + zvAreas2);
+  check('面积标注渲染无新增 JS 错误', JS_ERRORS.length === tessErr2,
+        JS_ERRORS.slice(tessErr2).join(';').slice(0, 60));
+
   section('Q. 点标签列表 {A,B}（解析层新能力）');
   const plErrBefore = JS_ERRORS.length;
   await typeCmd('PAx=(1,1)');

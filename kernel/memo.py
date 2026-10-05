@@ -74,6 +74,25 @@ def _state_sig(el) -> Tuple:
             return ("num", round(float(v), 12))
         except (ValueError, TypeError):  # 值无法转为浮点（None/字符串/复数）：用 repr 作为键
             return ("num", repr(v))
+    if kind == "list":
+        # 列表可能**不可见**（如命令参数里的内联列表 `_hl`）→ draw() 返回 None，
+        # 若沿用通用路径会得到常量指纹，使依赖者误命中过期缓存（实测 Voronoi/Sum 不刷新）。
+        # 因此这里直接用 items/itemkind 构造有界指纹。
+        items = getattr(el, "items", []) or []
+        acc, cnt, shape = 0.0, 0, 0
+        for it in items[:200]:
+            if isinstance(it, bool):
+                continue
+            if isinstance(it, (int, float)):
+                acc += float(it)
+                cnt += 1
+            elif isinstance(it, (list, tuple)):
+                shape = max(shape, len(it))
+                for x in it[:4]:
+                    if isinstance(x, (int, float)) and not isinstance(x, bool):
+                        acc += float(x)
+                        cnt += 1
+        return ("list", getattr(el, "itemkind", ""), len(items), shape, round(acc, 9), cnt)
     if kind == "boolean":
         return ("bool", bool(getattr(el, "value", None)))
     if kind == "complex":

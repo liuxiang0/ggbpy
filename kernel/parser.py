@@ -364,6 +364,8 @@ def _list_point_items(cons, parts):
     与 ``(x,y)`` 字面量同构（items 为坐标元组），因此渲染/序列化/依赖重算全部复用既有链路；
     坐标在此只做**初值**，真正的动态刷新由 ``cmd_util.list_literal_state`` 的依赖重算负责。
     """
+    if not parts:
+        return None
     objs = []
     for pp in parts:
         el = cons.elements.get(pp.strip())

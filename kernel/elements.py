@@ -800,7 +800,22 @@ class GeoList(GeoElement):
         elif self.itemkind == "polygon":
             # 多边形列表（Delaunay 三角剖分 / Voronoi 元胞）：items 为若干顶点数组
             d["items"] = [[[float(x), float(y)] for x, y in poly] for poly in self.items]
-            d["value"] = "{%d 个多边形}" % len(self.items)
+            # 每个多边形的面积（shoelace）与质心（顶点平均），供前端在图上标注
+            areas, cents, vmin, vmax = [], [], None, None
+            for poly in self.items:
+                areas.append(_poly_area2(poly))
+                cents.append(_poly_centroid(poly))
+                n = len(poly)
+                vmin = n if vmin is None else min(vmin, n)
+                vmax = n if vmax is None else max(vmax, n)
+            d["areas"] = areas
+            d["centroids"] = cents
+            if self.items:
+                d["value"] = "{%d 个多边形（%s 顶点），总面积 %s}" % (
+                    len(self.items), str(vmin) if vmin == vmax else "%d–%d" % (vmin, vmax),
+                    _fmt(sum(areas)))
+            else:
+                d["value"] = "{0 个多边形}"
         else:
             d["items"] = list(self.items)
             d["value"] = "{" + ", ".join(_fmt(v) for v in self.items) + "}"
@@ -944,6 +959,26 @@ class Geo3D(GeoElement):
 # ---------------------------------------------------------------------------
 # 第二优先级补充：直方图 / 文本 / 轨迹
 # ---------------------------------------------------------------------------
+
+def _poly_area2(poly) -> float:
+    """多边形面积（shoelace，取绝对值）。"""
+    acc = 0.0
+    n = len(poly)
+    for i in range(n):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % n]
+        acc += float(x1) * float(y2) - float(x2) * float(y1)
+    return abs(acc) / 2.0
+
+
+def _poly_centroid(poly):
+    """多边形质心（顶点平均，足够用于标注；退化时返回首个顶点）。"""
+    if not poly:
+        return [0.0, 0.0]
+    xs = sum(float(q[0]) for q in poly) / len(poly)
+    ys = sum(float(q[1]) for q in poly) / len(poly)
+    return [xs, ys]
+
 
 class GeoChart2D(GeoElement):
     """二维统计图基类：带世界坐标 ``offset``，可整体拖动/平移。

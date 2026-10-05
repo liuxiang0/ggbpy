@@ -123,7 +123,7 @@ def _list_arg(cons, s):
     el = _lookup(cons, s)
     if el is None and s.startswith("{"):
         # 内联列表 → 匿名列表（不注册，仅作依赖）
-        from .parser import _split_brace, tokenize
+        from .parser import _list_point_items, _reject_mixed_point_list, _split_brace, tokenize
         parts = _split_brace(tokenize(s))
         if parts and parts[0].startswith("("):
             items = []
@@ -138,9 +138,19 @@ def _list_arg(cons, s):
                 items.append(tuple(eval_number(cons, q) for q in tp))
             el = GeoList("_hl", s, items, kind3)
         else:
-            items = [eval_number(cons, p) for p in parts]
-            el = GeoList("_hl", s, items, "number")
+            pt_items = _list_point_items(cons, parts)      # {A,B} / {A3,B3}
+            if pt_items is not None:
+                el = GeoList("_hl", s, pt_items[0], pt_items[1])
+            else:
+                _reject_mixed_point_list(cons, parts)
+                items = [eval_number(cons, p) for p in parts]
+                el = GeoList("_hl", s, items, "number")
         el.visible = False
+        # 依赖化：内联列表含元素引用时随依赖重算（匿名列表也在依赖图中，会驱动下游命令刷新）
+        deps, state_fn = _list_state_from_parts(cons, parts, el.itemkind)
+        if deps and state_fn is not None:
+            el.free = False
+            el.set_deps(deps, state_fn)
         return el
     if el is None:
         raise GeoError("找不到对象 " + s)
@@ -207,25 +217,17 @@ def _is_segment_el(el) -> bool:
     return el.kind == "segment" or (el.kind == "geo3d" and getattr(el, "objtype", "") == "segment")
 
 
-def list_literal_state(cons, line: str, itemkind: str):
-    """列表字面量依赖化：``L={n, n*10+2}`` → ``(deps, state_fn)``。
+def _list_state_from_parts(cons, parts, itemkind: str):
+    """由**已拆分的列表项**构造 ``(deps, state_fn)``（赋值语句与命令内联列表共用）。
 
-    背景：列表字面量原先只保存**求值后的快照**（无 deps），于是含滑块/变量的列表
-    （``L={n, n*10+2}``）不随依赖更新 —— 经列表传递的 DAG 链断开。
-
-    规则：
-    - 只处理**每一项都可重算**的字面量：数值表达式 / 点标签 / ``(x,y[,z])`` 元组；
-    - **纯常量列表**（不含元素引用）返回 ``([], None)`` → 保持原有静态语义（行为不变）；
-    - 依赖按出现顺序去重；重算失败时抛 GeoError（元素进入 error 状态，与其它命令一致）。
+    - 依赖：整项是元素标签 → 依赖；表达式里引用的构造内元素 → 依赖（按出现顺序去重）
+    - state_fn：重算时逐项重新求值（数值表达式 / 点标签 / (x,y[,z]) 元组）
+    - 纯常量（无依赖）→ ``([], None)``，调用方保持静态语义
     """
     import re as _re
 
-    from .parser import _split_brace, eval_number, tokenize
+    from .parser import eval_number
 
-    m = _re.search(r"=\s*(\{.*\})\s*$", line, _re.S)
-    if not m:
-        return [], None
-    parts = _split_brace(tokenize(m.group(1)))
     if not parts:
         return [], None
 
@@ -239,11 +241,11 @@ def list_literal_state(cons, line: str, itemkind: str):
 
     for part in parts:
         pt = part.strip()
-        _add(cons.elements.get(pt))                       # 整项是元素标签（数值/点）
+        _add(cons.elements.get(pt))
         frags = _tuple_parts_any(pt) if (pt.startswith("(") and pt.endswith(")")) else [pt]
         for frag in frags:
             for tok in _re.findall(r"[A-Za-z_][A-Za-z0-9_]*", frag):
-                _add(cons.elements.get(tok))              # 表达式里引用的元素
+                _add(cons.elements.get(tok))
     if not deps:
         return [], None
 
@@ -251,11 +253,12 @@ def list_literal_state(cons, line: str, itemkind: str):
         pt = part.strip()
         el = cons.elements.get(pt)
         if el is not None and el.kind in ("point", "point3d"):
-            if itemkind == "point3d":
-                return [float(el.x), float(el.y), float(getattr(el, "z", 0.0))]
+            if getattr(el, "z", None) is not None:
+                return [float(el.x), float(el.y), float(el.z)]
             return [float(el.x), float(el.y)]
         if pt.startswith("(") and pt.endswith(")"):
-            return [eval_number(cons, c) for c in (_tuple_parts_any(pt) or [])]
+            vals = [eval_number(cons, c) for c in (_tuple_parts_any(pt) or [])]
+            return tuple(vals)
         if el is not None and el.kind == "number":
             return float(el.value)
         return eval_number(cons, pt)
@@ -272,3 +275,19 @@ def list_literal_state(cons, line: str, itemkind: str):
         return {"items": items, "itemkind": itemkind}
 
     return deps, state
+
+
+def list_literal_state(cons, line: str, itemkind: str):
+    """列表字面量依赖化：``L={n, n*10+2}`` → ``(deps, state_fn)``。
+
+    薄封装：从整行取出 ``{...}`` 后委托 ``_list_state_from_parts``（与命令内联列表共用核心）。
+    纯常量列表返回 ``([], None)`` → 调用方保持原有静态快照语义。
+    """
+    import re as _re
+
+    from .parser import _split_brace, tokenize
+
+    m = _re.search(r"=\s*(\{.*\})\s*$", line, _re.S)
+    if not m:
+        return [], None
+    return _list_state_from_parts(cons, _split_brace(tokenize(m.group(1))), itemkind)
