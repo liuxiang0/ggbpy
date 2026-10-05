@@ -328,26 +328,6 @@ window.GGB_T2D = (function () {
           postInput(acmd + aHit + ']', function (ok) { if (ok) resetTool(); });
           return;
         }
-        // 视图工具：放大/缩小/复位（不创建对象）
-        if (activeTool === 'zoomin' || activeTool === 'zoomout' || activeTool === 'home') {
-          if (activeTool === 'home') {
-            view.xmin = -8; view.xmax = 8; view.ymin = -8; view.ymax = 8; env.set('scale', 60);
-          } else {
-            var zf = activeTool === 'zoomin' ? 1.3 : 1 / 1.3;
-            var zwx = wxp(sx), zwy = wyp(sy);
-            env.get('scale') *= zf;
-            env.set('scale', Math.max(2, Math.min(200000, env.get('scale'))));
-            view.xmin = zwx - sx / env.get('scale');
-            view.xmax = view.xmin + cssW / env.get('scale');
-            view.ymin = zwy - (cssH - sy) / env.get('scale');
-            view.ymax = view.ymin + cssH / env.get('scale');
-          }
-          render();
-          clearTimeout(canvas._zw);
-          canvas._zw = setTimeout(loadState, 180);
-          resetTool();
-          return;
-        }
         if (activeTool === 'perp' || activeTool === 'parallel') {
           if (toolSel.length === 0) {
             var ll = hitObject(sx, sy, ['line', 'segment', 'ray']);

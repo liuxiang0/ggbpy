@@ -32,9 +32,6 @@ window.GGB_DATA.TOOLS = {
     angle: { hints: ['① 点击角的一条边上的点', '② 点击角的顶点（∠符号中心）', '③ 点击角的另一条边上的点'], en: ['Click the start point', 'Click the vertex (angle center)', 'Click the end point'] },
     area: { hints: ['点击 多边形/圆/椭圆 求面积'], en: ['Click a polygon/circle/ellipse for its area'] },
     perimeter: { hints: ['点击 多边形 或 圆 求周长'], en: ['Click a polygon or circle for its perimeter'] },
-    zoomin: { hints: ['单击画布：以点击处为中心放大'], en: ['Click canvas to zoom in centered here'] },
-    zoomout: { hints: ['单击画布：以点击处为中心缩小'], en: ['Click canvas to zoom out centered here'] },
-    home: { hints: ['单击画布：复位到默认视图'], en: ['Click canvas to reset the default view'] },
     intersect: { hints: ['点击第一个对象（线/圆/曲线/函数）', '点击第二个对象'], en: ['Click first object (line/circle/curve/function)', 'Click second object'] },
     line: { hints: ['点击直线上第一点', '点击直线上第二点'], en: ['Click first point', 'Click second point'] },
     semicircle: { hints: ['点击直径端点 A', '点击直径端点 B'], en: ['Click diameter endpoint A', 'Click diameter endpoint B'] },
@@ -115,7 +112,6 @@ window.GGB_DATA.TOOL_CATS = [
               'barchart3d', 'scatterplot3d', 'surfacechart3d', 'stemplot'] },
     { id: 'widgets', zh: '控件', en: 'Widgets', icon: 'sliders.png', def: 'slider',
       tools: ['slider', 'text', 'image', 'button', 'checkbox', 'inputbox'] },
-    { id: 'd3', zh: '3D', en: '3D', icon: 'sliders.png', def: 'pt3d', tools: ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone3d', 'cylinder3d', 'prism3d', 'pyramid3d', 'tetra3d', 'octa3d', 'hexa3d', 'icosa3d', 'dodeca3d'] },
-    { id: 'viewpoint', zh: '视图', en: 'View', icon: 'viewpoint.png', def: 'zoomin', tools: ['zoomin', 'zoomout', 'home'] }
+    { id: 'd3', zh: '3D', en: '3D', icon: 'sliders.png', def: 'pt3d', tools: ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone3d', 'cylinder3d', 'prism3d', 'pyramid3d', 'tetra3d', 'octa3d', 'hexa3d', 'icosa3d', 'dodeca3d'] }
   ];;
 

@@ -1964,6 +1964,31 @@
     };
     rd.readAsArrayBuffer(f);
   });
+  // 视图按钮（即时生效）：以**画布中心**为锚点缩放，锚点处的世界坐标保持不动
+  function viewZoom(factor) {
+    var cx = cssW / 2, cy = cssH / 2;
+    var wx = wxp(cx), wy = wyp(cy);
+    scale = Math.max(2, Math.min(200000, scale * factor));
+    view.xmin = wx - cx / scale;
+    view.xmax = view.xmin + cssW / scale;
+    view.ymin = wy - (cssH - cy) / scale;
+    view.ymax = view.ymin + cssH / scale;
+    render();
+  }
+  function viewHome() {
+    // 与启动视图一致：纵向恰好容纳 -8..8，横向按画布宽度铺满、原点居中
+    // （旧实现把 xmax/ymax 写死为 ±8，与画布尺寸不一致 → 原点不居中）
+    scale = Math.max(2, cssH / 16);
+    view.ymin = -8;
+    view.ymax = -8 + cssH / scale;
+    view.xmin = -cssW / 2 / scale;
+    view.xmax = view.xmin + cssW / scale;
+    render();
+  }
+  btn('btn-zoomin', function () { viewZoom(1.3); setMsg(t('tool_zoomin'), false); });
+  btn('btn-zoomout', function () { viewZoom(1 / 1.3); setMsg(t('tool_zoomout'), false); });
+  btn('btn-home', function () { viewHome(); setMsg(t('tool_home'), false); });
+
   btn('btn-image', function () {
     document.getElementById('imgfile').click();
   });

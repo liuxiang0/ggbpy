@@ -873,6 +873,43 @@ function check(name, ok, detail) {
   check('控件渲染/交互无新增 JS 错误', JS_ERRORS.length === wgErrBefore,
         JS_ERRORS.slice(wgErrBefore).join(';').slice(0, 60));
 
+  section('X. 视图按钮（顶部放大/缩小/复位，即时生效）');
+  const vbErrBefore = JS_ERRORS.length;
+  const scaleOf = async () => await page.evaluate(() => {
+    const a = window.__ggbpyDebug.toScreen(0, 0), c = window.__ggbpyDebug.toScreen(1, 0);
+    return c.x - a.x;
+  });
+  const centerWorld = async () => await page.evaluate(() => {
+    const r = document.getElementById('cv').getBoundingClientRect();
+    const a = window.__ggbpyDebug.toScreen(0, 0), b = window.__ggbpyDebug.toScreen(1, 0);
+    const sc = b.x - a.x;
+    return { wx: (r.width / 2 - a.x) / sc };
+  });
+  const hasBtns = !!(await page.$('#btn-zoomin')) && !!(await page.$('#btn-zoomout')) && !!(await page.$('#btn-home'));
+  check('顶栏存在放大/缩小/复位三个按钮', hasBtns, String(hasBtns));
+  const vs0 = await scaleOf();
+  await page.click('#btn-zoomin');
+  await page.waitForTimeout(220);
+  const vs1 = await scaleOf();
+  const vc1 = await centerWorld();
+  check('放大即时 ×1.3，且以画布中心为锚点（中心世界坐标不动）',
+        Math.abs(vs1 / vs0 - 1.3) < 0.02 && Math.abs(vc1.wx) < 0.08,
+        'scale ' + vs0.toFixed(2) + '→' + vs1.toFixed(2) + ' wx=' + vc1.wx.toFixed(3));
+  await page.click('#btn-zoomout');
+  await page.waitForTimeout(220);
+  const vs2 = await scaleOf();
+  check('缩小即时 ×1/1.3（回到原比例）', Math.abs(vs2 - vs0) < 0.6,
+        vs1.toFixed(2) + '→' + vs2.toFixed(2) + '（基准 ' + vs0.toFixed(2) + '）');
+  await page.click('#btn-home');
+  await page.waitForTimeout(220);
+  const vs3 = await scaleOf();
+  const vc3 = await centerWorld();
+  check('复位即时回到启动视图（比例回基准、原点居中）',
+        Math.abs(vs3 - vs0) < 0.6 && Math.abs(vc3.wx) < 0.08,
+        'scale=' + vs3.toFixed(2) + '（基准 ' + vs0.toFixed(2) + '）wx=' + vc3.wx.toFixed(3));
+  check('视图按钮无新增 JS 错误', JS_ERRORS.length === vbErrBefore,
+        JS_ERRORS.slice(vbErrBefore).join(';').slice(0, 60));
+
   section('S. 角度有向 0..360°：优角绘制到反射扇区');
   const angErrBefore = JS_ERRORS.length;
   await typeCmd('XAx=(2,0)');

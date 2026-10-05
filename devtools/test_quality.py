@@ -104,8 +104,8 @@ def main() -> int:
         bullets = [l for l in sec.splitlines() if l.startswith("- **")]
         check("2D 限制章节条目 ≥ 8（覆盖撤销/记忆/嵌套/统计图/工具等）", len(bullets) >= 8,
               "n=%d" % len(bullets))
-        check("2D 限制章节锚定关键上限（撤销 200 / 嵌套 4 层 / 203 词条 / 12 分类）",
-              all(k in sec for k in ("UNDO_LIMIT = 200", "4 层", "203", "12 个分类")), "")
+        check("2D 限制章节锚定关键上限（撤销 200 / 嵌套 4 层 / 203 词条 / 11 分类）",
+              all(k in sec for k in ("UNDO_LIMIT = 200", "4 层", "203", "11 个分类")), "")
 
     print("\n=== E. 回顾文档闭环状态（REVIEW_12_BATCHES.md §0） ===")
     rev = (ROOT / "REVIEW_12_BATCHES.md").read_text(encoding="utf-8")
