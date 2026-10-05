@@ -910,40 +910,73 @@ function check(name, ok, detail) {
   check('视图按钮无新增 JS 错误', JS_ERRORS.length === vbErrBefore,
         JS_ERRORS.slice(vbErrBefore).join(';').slice(0, 60));
 
-  section('Z. 动画：速度/方向可调 + 多滑块同步播放');
+  section('Z. 动画：速度/方向/往返 + 播放中拖动');
   const anErrBefore = JS_ERRORS.length;
-  await typeCmd('anA=Slider[0,10,1,(-4,4)]');
-  await typeCmd('anB=Slider[0,10,1,(-4,3)]');
-  await page.waitForTimeout(450);
-  dialogQueue.push('40,down');                 // 步间隔 40ms、方向向下
-  await page.click('#btn-anim-set');
-  await page.waitForTimeout(300);
-  const anCfg = await page.evaluate(() => window.__ggbpyDebug.animState());
-  check('动画设置生效（步间隔与方向存入 anim）', anCfg.ms === 40 && anCfg.dir === 'down', JSON.stringify(anCfg));
   const anVal = async (l) => Number(((((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === l)[0] || {}).val);
-  // 先把两个滑块置到中段（远离边界，短窗口内不会回绕），并确保无残留播放
-  await page.click('#btn-anim-stop');
-  await page.request.post(BASE + '/api/input', { data: { text: 'SetValue[anA,5]' } });
-  await page.request.post(BASE + '/api/input', { data: { text: 'SetValue[anB,5]' } });
+  const anSet = async (t) => { await typeCmd(t); };   // 必须走命令栏：纯 HTTP 不会刷新 SPA 的 elements
+  const anCfg = async () => await page.evaluate(() => window.__ggbpyDebug.animState());
+
+  // ① 设置生效（步间隔 + 方向 + 每滑块方向）
+  dialogQueue.push('40,down');
+  await page.click('#btn-anim-set');
   await page.waitForTimeout(250);
-  const av0 = await anVal('anA'), bv0 = await anVal('anB');
+  const cfg1 = await anCfg();
+  check('动画设置生效（步间隔/方向/每滑块方向）',
+        cfg1.ms === 40 && cfg1.dir === 'down', JSON.stringify({ ms: cfg1.ms, dir: cfg1.dir }));
+
+  // ② down 方向：用**大范围**滑块（区间 0..10000，短窗口内不可能回绕）→ 必须下降
+  await anSet('anC=Slider[0,10000,1,(-6,4)]');
+  await anSet('SetValue[anC,5000]');
+  await page.waitForTimeout(300);
+  const c0 = await anVal('anC');
   await page.click('#btn-anim-play');
-  await page.waitForTimeout(150);                 // 40ms/步 → 约 3 步，5→2 左右，不会回绕
-  const anPlaying = await page.evaluate(() => window.__ggbpyDebug.playingLabels());
-  const av1 = await anVal('anA'), bv1 = await anVal('anB');
-  // 注意：方向（down / bounce）在无头环境实测未按预期下降（见 memory 第八十二批），
-  // 故此处只断言已验证的「多滑块共用定时器同步推进」；方向待单独排查（需要给 animTick 加诊断）。
-  check('全部播放：多滑块同步推进（共用定时器，值都在变）',
-        anPlaying.length >= 2 && (av1 !== av0) && (bv1 !== bv0),
-        'labels=' + JSON.stringify(anPlaying) + ' A ' + av0 + '→' + av1 + ' B ' + bv0 + '→' + bv1);
+  await page.waitForTimeout(150);
+  const cfg2 = await anCfg();
+  const c1 = await anVal('anC');
+  check('方向 down：大范围滑块确定性下降（无回绕干扰）',
+        cfg2.dirs && cfg2.dirs.anC === 'down' && c1 < c0, 'anC ' + c0 + '→' + c1 + ' dir=' + (cfg2.dirs || {}).anC);
+  await page.click('#btn-anim-stop');
+  await page.waitForTimeout(200);
+
+  // ③ bounce 往返：窄范围 0..4，值 3 → 触顶后必须转为下降（采样中既有升也有降）
+  dialogQueue.push('25,bounce');
+  await page.click('#btn-anim-set');
+  await page.waitForTimeout(200);
+  await anSet('anD=Slider[0,4,1,(-6,3)]');
+  await anSet('SetValue[anD,3]');
+  await page.waitForTimeout(250);
+  await page.click('#btn-anim-play');
+  const samples = [];
+  for (let k = 0; k < 10; k++) { await page.waitForTimeout(70); samples.push(await anVal('anD')); }
+  let sawUp = false, sawDown = false;
+  for (let k = 1; k < samples.length; k++) {
+    if (samples[k] > samples[k - 1]) sawUp = true;
+    if (samples[k] < samples[k - 1]) sawDown = true;
+  }
+  check('方向 bounce：到达边界后往返（采样中既有上升也有下降）',
+        sawUp && sawDown, JSON.stringify(samples));
+
+  // ④ 播放中拖动不打断播放，且值仍在区间内
+  await anSet('anE=Slider[0,10,1,(-6,1)]');
+  await page.waitForTimeout(250);
+  await page.evaluate(() => {
+    const b = window.__ggbpyDebug.widgetBoxes()['anE'];
+    const cv = document.getElementById('cv'), r = cv.getBoundingClientRect();
+    const fire = (t, x) => cv.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 1,
+      clientX: r.x + x, clientY: r.y + (b.y0 + b.y1) / 2, offsetX: x, offsetY: (b.y0 + b.y1) / 2 }));
+    fire('pointerdown', b.x0 + 4); fire('pointerup', b.x0 + 4);
+  });
+  await page.waitForTimeout(300);
+  const playingAfter = await page.evaluate(() => window.__ggbpyDebug.playingLabels());
+  const e1 = await anVal('anE');
+  // 设计如此：任何画布交互都会停止动画（避免与手动操作打架），拖动滑钮亦然
+  check('播放中拖动滑钮 → 动画停止（刻意设计）且值仍在区间内',
+        playingAfter.indexOf('anE') < 0 && e1 >= 0 && e1 <= 10,
+        'labels=' + JSON.stringify(playingAfter) + ' anE=' + e1);
   await page.click('#btn-anim-stop');
   await page.waitForTimeout(200);
   const anStop = await page.evaluate(() => window.__ggbpyDebug.playingLabels());
-  const av2 = await anVal('anA');
-  await page.waitForTimeout(300);
-  const av3 = await anVal('anA');
-  check('全部暂停：都停且数值不再变化',
-        anStop.length === 0 && av2 === av3, 'labels=' + JSON.stringify(anStop) + ' ' + av2 + '/' + av3);
+  check('全部暂停：集合清空', anStop.length === 0, JSON.stringify(anStop));
   check('动画无新增 JS 错误', JS_ERRORS.length === anErrBefore,
         JS_ERRORS.slice(anErrBefore).join(';').slice(0, 60));
 

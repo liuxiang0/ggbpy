@@ -1491,7 +1491,11 @@
     widgetBoxes: function () { return widgetBoxes; },
     playLabel: function () { return playingLabels()[0] || null; },
     playingLabels: function () { return playingLabels(); },
-    animState: function () { return { ms: anim.ms, dir: anim.dir }; },
+    animState: function () {
+      var dirs = {};
+      if (playState) { var ks = Object.keys(playState.labels); for (var i = 0; i < ks.length; i++) dirs[ks[i]] = playState.labels[ks[i]]; }
+      return { ms: anim.ms, dir: anim.dir, dirs: dirs };
+    },
     playAt: function (sx, sy) { return sliderPlayAt(sx, sy); },
     sliderAt: function (sx, sy) { return sliderAt(sx, sy); },
     dragState: function () { return drag ? { label: drag.label, slider: !!drag.slider, chart: !!drag.chart } : null; },

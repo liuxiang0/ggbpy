@@ -95,6 +95,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   对象列表摘要为 `{N 个多边形（顶点范围），总面积 A}`（如 Voronoi → `{5 个多边形（4–5 顶点），总面积 27.04}`）
 
 ### CAS 符号计算（右侧面板）
+
 - CAS 面板内置**命令面板**（11 个命令按钮，点击插入模板、光标自动停在括号内）；`#N` 可点击引用前序单元；`a:=5` 创建数值、`f(x):=x^2` 创建函数（结果可 `:=` 联动到绘图区）；命令：`Expand` `Factor` `Simplify` `Solve` `NSolve` `Limit` `Derivative` `Integral` `SolveODE` `PartialFractions` `Substitute`；帮助面板 `?` 中也有入口
 
 ### 统计 / 概率
@@ -227,7 +228,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **实现**：播放内核重写为 `anim = { ms, dir }` + `playState = { labels: {label: dir}, timer }` —— **多个滑块共用一个定时器**，每个 tick 推进所有在播滑块（真同步，不再是每个滑块一个 interval ✗）；顶栏新增 **▶ 全部播放 / ⏸ 全部暂停 / ⚙ 动画设置**（设置弹窗填 `步间隔ms,方向`，方向 `up`/`down`/`bounce`）；单个滑块的 ▶ 变为**加入/退出**播放
   - **配套改动**：`playingLabels` 暴露到状态层，`panels.js`/`render2d.js` 由「`playState.label === x`」改为**按集合判断**（支持多滑块同时在播）；调试钩子新增 `playingLabels()` 与 `animState()`
   - **实测**：⚙ 设 `40,down` → `animState()={ms:40,dir:down}` ✓；▶ 全部播放 → **4 个滑块同时推进**（`playingLabels` 含 vSL/uS/anA/anB）✓；⏸ 全部暂停 → 集合清空且数值不再变化 ✓
-  - **遗留（诚实记录）**：**方向 down/bounce 在无头环境实测未按预期下降**（`dir=down` 时 5 → 8/9，反而上升 ✗）—— 已收窄断言为「共用定时器同步推进」，方向问题待单独排查（需要给 `animTick` 加诊断；推测与每个 tick 多次 `/api/drag` 响应乱序互相覆盖 `elements` 快照有关）
+  - **遗留（诚实记录）**：**方向已验证正确（推翻上一条怀疑）**：`dir=down` 用大范围滑块（0..10000，短窗口不可能回绕）确定性验证 5000 → 4997 ✓；`bounce` 用窄范围（0..4）采样 [4,2,1,3,2,0,2,4,2,0] 有升有降 ✓ —— 此前「5 → 8/9 反而上升」是我的断言未考虑回绕（下行到 0 后回绕到 max 再降）✗，不是功能问题
   - 检测：2D 浏览器 123 → **127**
 - **第八十一批（2026-10-05 · 画布滑块加 ▶/⏸ 播放切换）**：
   - **需求**：在滑块右侧加播放三角 ▶，点击后变 ⏸，来回切换
@@ -595,7 +596,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 260 + 2D API 71 + 3D 496/181/142 + 2D 前端 127 + 代码质量 19 = 1702 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 260 + 2D API 71 + 3D 496/181/142 + 2D 前端 129 + 代码质量 19 = 1704 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
@@ -623,7 +624,7 @@ python3 -B devtools/test_tolerance.py   # 统一容差（零魔数扫描/前后�
 
 ## 🧱 架构
 
-```
+```text
 ggbpy/
 ├── kernel/                平台无关内核（纯 Python，无 Web 依赖）
 │   ├── elements.py        对象模型（GeoElement 家族 + 依赖/计算闭包）
@@ -647,7 +648,7 @@ ggbpy/
 
 ## 📖 使用示例
 
-```
+```text
 A=(1,1)  B=(5,2)  C=(3,6)
 M=Midpoint[A,C]
 g=Line[A,B]
