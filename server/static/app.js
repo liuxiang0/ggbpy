@@ -2011,6 +2011,30 @@
       api('POST', '/api/drag', { label: t.getAttribute('data-label'), x: parseFloat(t.value), y: 0, push: true }, function () {});
     }
   });
+  // 对象列表行双击（控件行）→ 同一编辑器。
+  // 注意：原生 dblclick 不可靠 —— 第一次点击会重渲染列表，第二次落在新节点上。
+  // 因此按 data-label 手动计时检测（跨重渲染有效）；.df 单元格仍让给既有行内编辑。
+  var rowClick = { label: null, t: 0 };
+  listEl.addEventListener('pointerdown', function (ev) {
+    var t = ev.target;
+    var row = t && t.closest ? t.closest('.obj') : null;
+    if (!row) return;
+    if (t.closest('.df')) return;
+    var lab = row.getAttribute('data-label');
+    var rEl = findEl(lab);
+    if (!rEl || (rEl.kind !== 'button' && rEl.kind !== 'checkbox' && rEl.kind !== 'inputbox')) return;
+    var now = new Date().getTime();
+    if (rowClick.label === lab && now - rowClick.t < 450) {
+      rowClick.label = null;
+      rowClick.t = 0;
+      ev.preventDefault();
+      editWidget(rEl);
+    } else {
+      rowClick.label = lab;
+      rowClick.t = now;
+    }
+  });
+
   listEl.addEventListener('input', function (ev) {
     var t = ev.target;
     if (t && t.classList && t.classList.contains('slider')) {

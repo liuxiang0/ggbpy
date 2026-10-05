@@ -793,6 +793,20 @@ function check(name, ok, detail) {
         edEl.caption === '新说明' && String(edEl.script).indexOf('edA=(2,2)') >= 0
         && String(edEl.defn).indexOf('新说明') >= 0,
         JSON.stringify({ caption: edEl.caption, script: edEl.script, defn: edEl.defn }));
+  // 对象列表行双击 → 同一编辑器
+  await typeCmd('edB2=Button["旧行说明", "edA2=(1,1)", (-3,3)]');
+  await page.waitForTimeout(450);
+  dialogQueue.push('行内新说明');
+  dialogQueue.push('edA2=(5,5)');
+  const edSel = '#objlist .obj[data-label="edB2"] .kd';
+  await page.click(edSel);          // 第一次点击（列表会重渲染）
+  await page.waitForTimeout(120);
+  await page.click(edSel);          // 第二次点击 → 计时判定为双击
+  await page.waitForTimeout(700);
+  const edEl2 = (((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === 'edB2')[0] || {};
+  check('双击对象列表行改说明/脚本（与画布双击同一编辑器）',
+        edEl2.caption === '行内新说明' && String(edEl2.script).indexOf('edA2=(5,5)') >= 0,
+        JSON.stringify({ caption: edEl2.caption, script: edEl2.script }));
   check('就地编辑无新增 JS 错误', JS_ERRORS.length === edErrBefore,
         JS_ERRORS.slice(edErrBefore).join(';').slice(0, 60));
 
