@@ -807,6 +807,31 @@ function check(name, ok, detail) {
   check('双击对象列表行改说明/脚本（与画布双击同一编辑器）',
         edEl2.caption === '行内新说明' && String(edEl2.script).indexOf('edA2=(5,5)') >= 0,
         JSON.stringify({ caption: edEl2.caption, script: edEl2.script }));
+  // .df 定义式单元格：合成两次 pointerdown 驱动「计时双击」路径。
+  // （真实鼠标点击在列表重渲染下会落到其它行/元素，Playwright 的坐标与元素解析都无法稳定命中，
+  //   因此该路径由本用例直接驱动；上方控件行用例仍用真实点击。）
+  await typeCmd('edN=3');
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    const df = document.querySelector('#objlist .obj[data-label="edN"] .df');
+    df.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+    return new Promise((res) => setTimeout(() => {
+      df.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+      res(true);
+    }, 120));
+  });
+  await page.waitForTimeout(350);
+  const dfInput = await page.$('#objlist .obj[data-label="edN"] .df input.df-edit');
+  check('计时双击 .df 打开行内定义编辑（原生 dblclick 失效已修）', !!dfInput, String(!!dfInput));
+  if (dfInput) {
+    await dfInput.fill('edN=7');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(600);
+    const edN = (((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === 'edN')[0] || {};
+    check('行内编辑回车提交生效（edN=3 → 7）', Math.abs(Number(edN.val) - 7) < 1e-9, 'val=' + edN.val);
+  } else {
+    check('行内编辑回车提交生效（edN=3 → 7）', false, '未打开输入框');
+  }
   check('就地编辑无新增 JS 错误', JS_ERRORS.length === edErrBefore,
         JS_ERRORS.slice(edErrBefore).join(';').slice(0, 60));
 

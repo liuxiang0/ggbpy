@@ -2019,16 +2019,18 @@
     var t = ev.target;
     var row = t && t.closest ? t.closest('.obj') : null;
     if (!row) return;
-    if (t.closest('.df')) return;
     var lab = row.getAttribute('data-label');
-    var rEl = findEl(lab);
-    if (!rEl || (rEl.kind !== 'button' && rEl.kind !== 'checkbox' && rEl.kind !== 'inputbox')) return;
+    var df = t.closest('.df');
+    var rEl = df ? null : findEl(lab);
+    var isWidget = !!rEl && (rEl.kind === 'button' || rEl.kind === 'checkbox' || rEl.kind === 'inputbox');
+    if (!df && !isWidget) return;
     var now = new Date().getTime();
     if (rowClick.label === lab && now - rowClick.t < 450) {
       rowClick.label = null;
       rowClick.t = 0;
       ev.preventDefault();
-      editWidget(rEl);
+      if (df) startDefnEdit(df);
+      else editWidget(rEl);
     } else {
       rowClick.label = lab;
       rowClick.t = now;
@@ -2124,8 +2126,7 @@
   });
 
   // 表达式列表行内编辑：双击定义文本直接修改（Enter 提交 / Esc 取消 / 失焦提交）
-  listEl.addEventListener('dblclick', function (ev) {
-    var df = ev.target.closest ? ev.target.closest('.df') : null;
+  function startDefnEdit(df) {
     if (!df || df.querySelector('input')) return;
     var row = df.closest('.obj');
     if (!row) return;
@@ -2154,6 +2155,12 @@
     inp.addEventListener('blur', function () { finish(false); });  // 失焦取消（Enter 才提交）
     inp.addEventListener('click', function (e2) { e2.stopPropagation(); });
     inp.addEventListener('pointerdown', function (e2) { e2.stopPropagation(); });
+  }
+
+  // 原生 dblclick 兜底（列表重渲染时通常不触发，见下方 pointerdown 计时判定）
+  listEl.addEventListener('dblclick', function (ev) {
+    var df = ev.target && ev.target.closest ? ev.target.closest('.df') : null;
+    if (df) startDefnEdit(df);
   });
 
   // ---------- 编辑栏 ----------
