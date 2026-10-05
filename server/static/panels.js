@@ -96,6 +96,7 @@ window.GGB_PANELS = (function () {
           if (e.kind === 'number' && e.min !== undefined && e.min !== null) {
             var pbSym = (playState && playState.label === e.label) ? '⏸' : '▶';
             s += '<button class="pb" data-pb="' + e.label + '">' + pbSym + '</button>';
+            s += '<button class="sb" data-sb="' + e.label + '" title="' + t('widgetEditSlider') + '">⚙</button>';
             s += '<input type="range" class="slider" data-label="' + e.label + '" min="' + e.min + '" max="' + e.max + '" step="' + e.step + '" value="' + e.val + '">';
           } else if (e.value) s += '<span class="vl">' + esc(e.value) + '</span>';
           s += '<span class="df">' + esc(e.defn) + '</span>';

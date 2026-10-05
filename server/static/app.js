@@ -1103,21 +1103,26 @@
   });
 
   // 双击控件：就地编辑说明（按钮再编辑脚本）——对象列表的「重定义」栏是另一条路径
+  // 滑块范围编辑器（⚙ 按钮与双击共用）：SetSlider 会保留当前值、越界夹紧、按步长吸附
+  function editSliderRange(label) {
+    var el = findEl(label);
+    if (!el || el.min === null || el.min === undefined) return;
+    var sv = prompt(t('widgetEditSlider'), el.min + ',' + el.max + ',' + el.step);
+    if (sv === null) return;
+    var sp = String(sv).split(',');
+    if (sp.length < 2 || !String(sp[0]).trim() || !String(sp[1]).trim()) {
+      setMsg(t('widgetEditSliderBad'), true);
+      return;
+    }
+    postInput('SetSlider[' + el.label + ',' + sp[0].trim() + ',' + sp[1].trim()
+              + (sp[2] && String(sp[2]).trim() ? ',' + sp[2].trim() : '') + ']',
+              function () { loadState(); });
+  }
+
   function editWidget(el) {
     if (!el) return;
-    // 滑动条：改「最小值,最大值,步长」（SetSlider 会保留当前值、越界夹紧、按步长吸附）
     if (el.kind === 'number' && el.min !== null && el.min !== undefined) {
-      var pre = el.min + ',' + el.max + ',' + el.step;
-      var sv = prompt(t('widgetEditSlider'), pre);
-      if (sv === null) return;
-      var sp = String(sv).split(',');
-      if (sp.length < 2 || !String(sp[0]).trim() || !String(sp[1]).trim()) {
-        setMsg(t('widgetEditSliderBad'), true);
-        return;
-      }
-      postInput('SetSlider[' + el.label + ',' + sp[0].trim() + ',' + sp[1].trim()
-                + (sp[2] && String(sp[2]).trim() ? ',' + sp[2].trim() : '') + ']',
-                function () { loadState(); });
+      editSliderRange(el.label);
       return;
     }
     var cap = prompt(t('widgetEditCaption'), el.caption || '');
@@ -2165,6 +2170,8 @@
   }
 
   listEl.addEventListener('click', function (ev) {
+    var sb = ev.target.closest ? ev.target.closest('[data-sb]') : null;
+    if (sb) { editSliderRange(sb.getAttribute('data-sb')); return; }   // ⚙ 改滑块范围/步长
     var pb = ev.target.closest ? ev.target.closest('[data-pb]') : null;
     if (pb) { sliderPlay(pb.getAttribute('data-pb')); return; }
     var t = ev.target;
