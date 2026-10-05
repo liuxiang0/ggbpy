@@ -29,7 +29,7 @@ window.GGB_DATA.TOOLS = {
     text: { hints: ['点击文本位置，然后输入内容'], en: ['Click position, then type text'] },
     dist: { hints: ['点击两点，或 点+直线/圆，或直接点线段求长度'], en: ['Click two points, or a point and a line/circle; click a segment for its length'] },
     slope: { hints: ['点击 直线/线段/射线 求斜率'], en: ['Click a line/segment/ray for its slope'] },
-    angle: { hints: ['点击角的起点', '点击角的顶点（∠符号中心）', '点击角的终点'], en: ['Click the start point', 'Click the vertex (angle center)', 'Click the end point'] },
+    angle: { hints: ['① 点击角的一条边上的点', '② 点击角的顶点（∠符号中心）', '③ 点击角的另一条边上的点'], en: ['Click the start point', 'Click the vertex (angle center)', 'Click the end point'] },
     area: { hints: ['点击 多边形/圆/椭圆 求面积'], en: ['Click a polygon/circle/ellipse for its area'] },
     perimeter: { hints: ['点击 多边形 或 圆 求周长'], en: ['Click a polygon or circle for its perimeter'] },
     zoomin: { hints: ['单击画布：以点击处为中心放大'], en: ['Click canvas to zoom in centered here'] },

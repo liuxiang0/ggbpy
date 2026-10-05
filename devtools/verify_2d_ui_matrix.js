@@ -705,6 +705,47 @@ function check(name, ok, detail) {
   await ctx2.close();
 
   // -------------------------------------------------------------------------
+  section('S. 角度有向 0..360°：优角绘制到反射扇区');
+  const angErrBefore = JS_ERRORS.length;
+  await typeCmd('XAx=(2,0)');
+  await typeCmd('XBx=(1,0)');
+  await typeCmd('XCx=(0,-1)');            // 逆时针从 BA 到 BC = 225°（优角）
+  await typeCmd('XG=Angle[XAx,XBx,XCx]');
+  await page.waitForTimeout(400);
+  const xg = await byLabel('XG');
+  check('优角数值为 225°（不再折成 135°）', !!xg && Math.abs(Number(xg.deg) - 225) < 1e-6, xg && String(xg.deg));
+  const angPix = await page.evaluate(({ el, dpr }) => {
+    const cv = document.getElementById('cv');
+    const g = cv.getContext('2d');
+    const S = window.__ggbpyDebug.toScreen(el.cx, el.cy);
+    const rad = el.rad;
+    let inSpan = 0, outSpan = 0, reflex = 0;
+    const R = Math.min(130, Math.max(50, Math.round(Math.abs(el.arc_r * S.scale * 2))));
+    for (let dx = -R; dx <= R; dx++) {
+      for (let dy = -R; dy <= R; dy++) {
+        const x = Math.round(S.x + dx), y = Math.round(S.y + dy);
+        if (x < 0 || y < 0) continue;
+        const d = g.getImageData(x * dpr, y * dpr, 1, 1).data;
+        if (!(d[3] > 200 && d[2] > 150 && d[0] > 60 && d[0] < 220 && d[1] < 170)) continue;
+        let rel = Math.atan2(-dy, dx) - el.ang1;
+        while (rel < 0) rel += 2 * Math.PI;
+        while (rel >= 2 * Math.PI) rel -= 2 * Math.PI;
+        const inArc = rel <= rad + 0.15;
+        if (inArc) {
+          inSpan++;
+          if (rel > Math.PI * 0.9 && rel < rad - 0.1) reflex++;   // 反射部分（>162° 且未到端点）
+        } else {
+          outSpan++;
+        }
+      }
+    }
+    return { inSpan: inSpan, outSpan: outSpan, reflex: reflex, rad: rad * 180 / Math.PI, R: R };
+  }, { el: xg, dpr: await page.evaluate(() => window.devicePixelRatio || 1) });
+  check('弧线+标注像素落在有向扇区 [0, rad]（数量足够）', angPix.inSpan >= 60, JSON.stringify(angPix));
+  check('优角弧线覆盖反射扇区（>180° 部分有像素；旧实现止于 135°）', angPix.reflex >= 5, JSON.stringify(angPix));
+  check('角度渲染无新增 JS 错误', JS_ERRORS.length === angErrBefore,
+        JS_ERRORS.slice(angErrBefore).join(';').slice(0, 60));
+
   section('R. 剖分面积标注 + 内联列表动态链（memo 修复）');
   const tessErr2 = JS_ERRORS.length;
   await typeCmd('ZAx=(0,0)');

@@ -1067,6 +1067,43 @@ check("内联数值列表驱动 Sum 重算（2+20=22 → 5+50=55）",
       abs(_before_sum - 22.0) < 1e-9 and abs(_in2.elements["SI"].value - 55.0) < 1e-9,
       "%s → %s" % (_before_sum, _in2.elements["SI"].value))
 
+# ---------------------------------------------------------------------------
+section("Z8. 角度为有向 0..360°（钝角/优角/平角都正确，弧的圆心角 0..2π）")
+
+
+def _sweep_mod2pi(el):
+    sw = el.ang2 - el.ang1
+    while sw < 0:
+        sw += 2 * math.pi
+    while sw >= 2 * math.pi:
+        sw -= 2 * math.pi
+    return sw
+
+
+_ag = Construction()
+_ag.process("A8a=(2,0)")
+_ag.process("B8a=(1,0)")
+_ag.process("C8a=(0,1)")          # BA=(1,0) → BC=(-1,1)：逆时针 135°
+_ag.process("C8b=(0,-1)")         # BD=(-1,-1)：逆时针 225°（优角，旧实现会折成 135°）
+_ag.process("E8=(-2,0)")          # 平角
+_ag.process("G1=Angle[A8a,B8a,C8a]")
+_ag.process("G2=Angle[A8a,B8a,C8b]")
+_ag.process("G3=Angle[A8a,B8a,E8]")
+_ag.process("G4=Angle[A8a,B8a,A8a]")
+_e1, _e2, _e3, _e4 = (_ag.elements[k] for k in ("G1", "G2", "G3", "G4"))
+check("Angle 有向 0..360°：135°（逆时针侧）/ 225°（优角）/ 180°（平角）/ 0°（同向）",
+      abs(_e1.value - 135) < 1e-9 and abs(_e2.value - 225) < 1e-9
+      and abs(_e3.value - 180) < 1e-9 and abs(_e4.value - 0) < 1e-9,
+      "%.1f / %.1f / %.1f / %.1f" % (_e1.value, _e2.value, _e3.value, _e4.value))
+check("优角可超过 180°（不再限制在 0..180）", _e2.value > 180 and _e2.rad > math.pi,
+      "%.1f° rad=%.4f" % (_e2.value, _e2.rad))
+check("弧的圆心角契约：rad == (ang2-ang1) mod 2π（四条用例一致）",
+      all(abs(_sweep_mod2pi(e) - e.rad) < 1e-9 for e in (_e1, _e2, _e3, _e4)),
+      "%.4f/%.4f/%.4f/%.4f" % tuple(_sweep_mod2pi(e) for e in (_e1, _e2, _e3, _e4)))
+_ag.process("V8=Angle[(1,0),(-1,-1)]")
+check("二向量形式同为有向：Angle[(1,0),(-1,-1)] = 225°", abs(_ag.elements["V8"].value - 225) < 1e-9,
+      "%.1f°" % _ag.elements["V8"].value)
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

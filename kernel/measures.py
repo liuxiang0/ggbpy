@@ -105,8 +105,10 @@ def _angle2_state(d, texts, objs, frozen) -> Dict[str, float]:
     dv = math.hypot(v[0], v[1])
     if du < EPSILON or dv < EPSILON:
         raise GeoError("零向量无法求夹角")
-    c = max(-1.0, min(1.0, (u[0] * v[0] + u[1] * v[1]) / (du * dv)))
-    ang = math.degrees(math.acos(c))
+    # 有向角：逆时针从 u 到 v，范围 [0, 360)（与 GeoGebra 的 Angle 一致）
+    ang = math.degrees(math.atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1]))
+    if ang < 0:
+        ang += 360.0
     return {"value": ang, "rad": math.radians(ang), "cx": 0.0, "cy": 0.0,
             "ang1": math.atan2(u[1], u[0]), "ang2": math.atan2(v[1], v[0])}
 
@@ -118,8 +120,8 @@ def _angle_state(a, b, c) -> Dict[str, float]:
     ang = math.degrees(math.atan2(cross, dot))
     if ang < 0:
         ang += 360.0
-    if ang > 180.0:
-        ang = 360.0 - ang          # 无向角 0..180（初中直觉：∠ABC = 45° 而非 315°）
+    # 有向角 [0, 360)：逆时针从 BA 到 BC，钝角/优角都能正确表示
+    # （例：BA 指向右、BC 指向左下 → 225°，不再折成 135°）
     # 三维点：值改用真三维夹角；弧的绘制字段仍按 xy 投影（3D 视图里弧为示意）
     if _has_z(a, b, c):
         uz, vz = _z_of(a) - _z_of(b), _z_of(c) - _z_of(b)

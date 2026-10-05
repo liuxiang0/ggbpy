@@ -302,10 +302,13 @@ window.GGB_R2D = (function () {
           var r2 = Math.max(12, e.arc_r * scale);
           ctx.strokeStyle = '#7c3aed';
           ctx.lineWidth = 2;
+          // 有向角约定：rad ∈ [0, 2π) = 从 BA 逆时针到 BC 的圆心角（可为优角），
+          // 因此弧恒为逆时针扫 rad（y-down 画布 → 负角映射 + anticlockwise=true）。
+          var sweepA = e.rad > 0 ? e.rad : 0;
           ctx.beginPath();
-          ctx.arc(cx2, cy2, r2, -e.ang1, -e.ang1 - e.rad, true);   // y-down 映射：世界 CCW → 视觉仍 CCW
+          ctx.arc(cx2, cy2, r2, -e.ang1, -e.ang1 - sweepA, true);   // y-down 映射
           ctx.stroke();
-          var mid = e.ang1 + e.rad / 2;
+          var mid = e.ang1 + sweepA / 2;
           var lx = cx2 + r2 * 1.45 * Math.cos(mid);
           var ly = cy2 - r2 * 1.45 * Math.sin(mid);
           ctx.fillStyle = '#7c3aed';
