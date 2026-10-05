@@ -321,37 +321,62 @@ window.GGB_R2D = (function () {
         if (e.kind === 'number' && e.min !== null && e.min !== undefined
             && e.slider_x !== null && e.slider_x !== undefined) {
           // 滑动条：按 GeoGebra 样式画成线段 + 可拖动滑钮（min / 当前值 / max 标注）
-          var tk0 = sxp(e.slider_x), tk1 = sxp(e.slider_x + (e.slider_len || 3)), tky = syp(e.slider_y);
+          var _vert = !!e.slider_vert;
+          var tk0, tk1, tky, tkx;
+          if (_vert) {
+            // 竖直：轨道沿 +y，min 在底、max 在顶；播放按钮在**底部**
+            tkx = sxp(e.slider_x);
+            tk0 = syp(e.slider_y);                      // 底（min）
+            tk1 = syp(e.slider_y + (e.slider_len || 3)); // 顶（max）
+          } else {
+            tk0 = sxp(e.slider_x);
+            tk1 = sxp(e.slider_x + (e.slider_len || 3));
+            tky = syp(e.slider_y);
+          }
           var span = (e.max - e.min) || 1;
           var frac = Math.max(0, Math.min(1, (e.val - e.min) / span));
-          var kx = tk0 + (tk1 - tk0) * frac;
+          var kx, ky;
+          if (_vert) { kx = tkx; ky = tk0 - (tk0 - tk1) * frac; }   // 由底向上按 frac
+          else { kx = tk0 + (tk1 - tk0) * frac; ky = tky; }
           ctx.save();
           ctx.strokeStyle = '#94a3b8';
           ctx.lineWidth = 4;
           ctx.beginPath();
-          ctx.moveTo(tk0, tky);
-          ctx.lineTo(tk1, tky);
+          if (_vert) { ctx.moveTo(kx, tk0); ctx.lineTo(tkx, tk1); }
+          else { ctx.moveTo(tk0, tky); ctx.lineTo(tk1, tky); }
           ctx.stroke();
           ctx.fillStyle = '#2563eb';
           ctx.beginPath();
-          ctx.arc(kx, tky, 7, 0, Math.PI * 2);
+          ctx.arc(kx, ky, 7, 0, Math.PI * 2);
           ctx.fill();
           ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 2;
           ctx.stroke();
-          ctx.fillStyle = '#334155';
           ctx.font = '12px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'top';
-          ctx.fillText(fmtNum(e.min), tk0, tky + 9);
-          ctx.fillText(fmtNum(e.max), tk1, tky + 9);
-          ctx.textBaseline = 'bottom';
-          ctx.fillStyle = '#1d4ed8';
-          ctx.fillText(e.label + ' = ' + fmtNum(e.val), (tk0 + tk1) / 2, tky - 9);
+          ctx.fillStyle = '#334155';
+          if (_vert) {
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(fmtNum(e.min), tkx - 10, tk0);
+            ctx.fillText(fmtNum(e.max), tkx - 10, tk1);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = '#1d4ed8';
+            ctx.fillText(e.label + ' = ' + fmtNum(e.val), tkx, tk1 - 12);
+          } else {
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(fmtNum(e.min), tk0, tky + 9);
+            ctx.fillText(fmtNum(e.max), tk1, tky + 9);
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = '#1d4ed8';
+            ctx.fillText(e.label + ' = ' + fmtNum(e.val), (tk0 + tk1) / 2, tky - 9);
+          }
           ctx.restore();
           // 播放/暂停按钮（轨道右侧）：点击在 ▶ 与 ⏸ 间切换（与对象列表的 ▶ 同一实现）
           var playing = (env.get('playingLabels') || []).indexOf(e.label) >= 0;
-          var pbx = Math.max(tk0, tk1) + 18, pby = tky;
+          var pbx = _vert ? tkx : Math.max(tk0, tk1) + 18;
+          var pby = _vert ? tk0 + 26 : tky;   // 竖直时播放按钮在底部
           ctx.fillStyle = playing ? '#dc2626' : '#059669';
           ctx.beginPath();
           ctx.arc(pbx, pby, 10, 0, Math.PI * 2);
@@ -370,13 +395,18 @@ window.GGB_R2D = (function () {
           }
           var wsmap = env.get('widgetBoxes');
           if (wsmap) {
-            wsmap[e.label] = { kind: 'slider', label: e.label,
-                               playing: playing,
-                               playX0: pbx - 12, playX1: pbx + 12, playY0: pby - 12, playY1: pby + 12,
-                               x0: Math.min(tk0, tk1) - 10, x1: Math.max(tk0, tk1) + 10,
-                               y0: tky - 14, y1: tky + 16, knobX: kx,
-                               wx0: e.slider_x, wx1: e.slider_x + (e.slider_len || 3),
-                               wy0: e.slider_y };
+            var _ln = e.slider_len || 3;
+            wsmap[e.label] = _vert
+              ? { kind: 'slider', label: e.label, playing: playing, axis: 'y', vert: true,
+                  playX0: pbx - 12, playX1: pbx + 12, playY0: pby - 12, playY1: pby + 12,
+                  x0: tkx - 14, x1: tkx + 14, y0: Math.min(tk0, tk1) - 12, y1: Math.max(tk0, tk1) + 12,
+                  knobX: kx, knobY: ky,
+                  wx0: e.slider_x, wx1: e.slider_x + _ln, wy0: e.slider_y, wy1: e.slider_y + _ln }
+              : { kind: 'slider', label: e.label, playing: playing, axis: 'x',
+                  playX0: pbx - 12, playX1: pbx + 12, playY0: pby - 12, playY1: pby + 12,
+                  x0: Math.min(tk0, tk1) - 10, x1: Math.max(tk0, tk1) + 10,
+                  y0: tky - 14, y1: tky + 16, knobX: kx,
+                  wx0: e.slider_x, wx1: e.slider_x + _ln, wy0: e.slider_y, wy1: e.slider_y };
           }
         }
         if (e.kind === 'button' || e.kind === 'checkbox' || e.kind === 'inputbox') {

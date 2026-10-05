@@ -980,6 +980,28 @@ function check(name, ok, detail) {
   check('动画无新增 JS 错误', JS_ERRORS.length === anErrBefore,
         JS_ERRORS.slice(anErrBefore).join(';').slice(0, 60));
 
+  section('AA. 竖直滑块：轨道沿 y、播放按钮在底部、功能不变');
+  const vtErrBefore = JS_ERRORS.length;
+  await typeCmd('vtS=Slider[0,10,1,(-2,2),vertical]');
+  await page.waitForTimeout(500);
+  const vtBox = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['vtS'] || null);
+  check('竖直滑块命中框：axis=y、轨道沿 y、播放按钮在轨道底部之下',
+        !!vtBox && vtBox.axis === 'y' && vtBox.vert === true
+        && Math.abs((vtBox.wy1 - vtBox.wy0) - 3) < 1e-6 && vtBox.playY0 > vtBox.y1,
+        JSON.stringify({ axis: vtBox && vtBox.axis, playY0: vtBox && vtBox.playY0, y1: vtBox && vtBox.y1 }));
+  // 注：竖直滑块的**值拖动**路径本用例未覆盖（合成 pointerdown 驱动不稳，且播放按钮就在
+  // 轨道底部下方，容易互相干扰）；此处覆盖的是需求里可直接断言的部分：方向、轨道轴向、
+  // 播放按钮在底部。轴感知取值由代码复用同一路径 + sliderValueAt(axis) 实现，待补 UI 级用例。
+  await typeCmd('SetValue[vtS,5]');
+  await page.waitForTimeout(300);
+  const vtBox2 = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['vtS'] || null);
+  check('竖直滑块滑钮纵向位置与值一致（值 5/区间 0..10 → 纵向居中）',
+        !!vtBox2 && typeof vtBox2.knobY === 'number'
+        && Math.abs(vtBox2.knobY - (vtBox2.y0 + vtBox2.y1) / 2) < 3,
+        JSON.stringify(vtBox2 && { knobY: vtBox2.knobY, mid: (vtBox2.y0 + vtBox2.y1) / 2 }));
+  check('竖直滑块无新增 JS 错误', JS_ERRORS.length === vtErrBefore,
+        JS_ERRORS.slice(vtErrBefore).join(';').slice(0, 60));
+
   section('Y. 滑块范围/步长：列表行 ⚙ 按钮就地编辑');
   const seErrBefore = JS_ERRORS.length;
   await typeCmd('seS=Slider[0,10,1,(-2,-5)]');   // 与 U 段的 uS 错开位置，避免命中框重叠

@@ -59,6 +59,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   播放中图标变 **⏸**，再点即暂停；只有播放中的滑块会动画，且在播放框上点击不会被「画布交互自动停止播放」抢先
 - **滑块参数就地在对象列表里改**：滑块行有 **▶**（自动播放动画）与 **⚙**（改 最小值/最大值/步长，弹窗预填当前值）两个小按钮；
   ⚙ 走 `SetSlider`，**当前值保留**（越界夹紧、按新步长吸附）；滑块**画布双击**也会调同一编辑器（但画布上改值拖动优先，故推荐用 ⚙）
+- **滑块可竖直放置**：`Slider[min,max,step,(x,y),vertical]`（或命令 `SetSliderVertical[滑块, true/false]`）—— 轨道沿 +y、min 在底 max 在顶、数值标注在左侧、**播放按钮在轨道底部**；竖直与水平的拖动/播放功能完全一致（取值按轴换算）
 - **滑块是「动态参数」的主力**：给函数 / 几何对象提供可动参数（如 `s=Slider[0,10,1,(x,y)]` + `f(x)=s*x`、`Circle[(0,0),s]`），
   对象列表的 **▶** 按钮可让它自动播放；**范围与步长**用 `SetSlider[滑块, 最小值, 最大值, 步长?]` 随手改 ——
   **当前值保留**（越界夹持到边界、按新步长吸附），位置与 defn 同步重写（`.ggk` 往返一致）
@@ -224,6 +225,15 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+
+- **第八十三批（2026-10-05 · 滑块可竖直放置，播放按钮置底）**：
+  - **需求**：滑块还可以竖直放置；播放按钮置于底部；功能不变
+  - **内核**：`Slider[最小值, 最大值, 步长?, (x,y)?, vertical?]`（也接受 `v` / `竖直`）→ `slider_vert`；`GeoNumber.draw()` 序列化；新命令 `SetSliderVertical[滑块, true/false]`（别名 滑块方向/竖直滑块）；`_regen_defn` 带上标志 → `.ggk` 往返一致
+  - **前端**：`render2d` 按方向分支绘制（轨道沿 +y、min 在底、max 在顶、数值标注在左侧、**播放按钮在轨道底部**）；命中框新增 `axis`（x/y）与 `knobY`；`sliderValueAt(label, wx, wy)` 按轴取比例（拖动/播放语义不变）
+  - **实测**：`vtS=Slider[0,10,1,(-2,2),vertical]` → 命中框 `axis=y`、轨道世界长 3、**播放按钮在轨道底部之下**（`playY0 > y1`）✓；值 5（区间 0..10）→ 滑钮**纵向居中**（`knobY == 中点`）✓；零新增 JS 错误 ✓
+  - **遗留（已写明在测试里）**：竖直滑块的**值拖动**未纳入用例覆盖（合成 pointerdown 驱动不稳，且播放按钮紧贴轨道底部易互相干扰）——轴感知取值由代码复用同一路径实现，待补 UI 级用例
+  - **命名坑（已修）**：命令表按「display name 小写 == key」分发，故 key 定为 `setslidervertical`，`SetSliderVertical[…]` 可在命令栏直接输入 ✓
+  - 检测：2D 浏览器 129 → **132**（AA 段 3 条）
 - **第八十二批（2026-10-05 · 动画：速度/方向可调 + 多滑块同步）**：
   - **实现**：播放内核重写为 `anim = { ms, dir }` + `playState = { labels: {label: dir}, timer }` —— **多个滑块共用一个定时器**，每个 tick 推进所有在播滑块（真同步，不再是每个滑块一个 interval ✗）；顶栏新增 **▶ 全部播放 / ⏸ 全部暂停 / ⚙ 动画设置**（设置弹窗填 `步间隔ms,方向`，方向 `up`/`down`/`bounce`）；单个滑块的 ▶ 变为**加入/退出**播放
   - **配套改动**：`playingLabels` 暴露到状态层，`panels.js`/`render2d.js` 由「`playState.label === x`」改为**按集合判断**（支持多滑块同时在播）；调试钩子新增 `playingLabels()` 与 `animState()`
@@ -596,7 +606,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 260 + 2D API 71 + 3D 496/181/142 + 2D 前端 129 + 代码质量 19 = 1704 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 260 + 2D API 71 + 3D 496/181/142 + 2D 前端 132 + 代码质量 19 = 1707 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

@@ -119,9 +119,10 @@ def _regen_defn(el) -> str:
     if isinstance(el, GeoInputBox):
         return "%s=InputBox[%s,(%s,%s)]" % (lab, el.target, _num_txt(el.x), _num_txt(el.y))
     if getattr(el, "kind", "") == "number" and getattr(el, "min", None) is not None:
-        return "%s=Slider[%s,%s,%s,(%s,%s)]" % (lab, _num_txt(el.min), _num_txt(el.max),
-                                               _num_txt(el.step), _num_txt(el.slider_x),
-                                               _num_txt(el.slider_y))
+        _v = ",vertical" if getattr(el, "slider_vert", False) else ""
+        return "%s=Slider[%s,%s,%s,(%s,%s)%s]" % (lab, _num_txt(el.min), _num_txt(el.max),
+                                                 _num_txt(el.step), _num_txt(el.slider_x),
+                                                 _num_txt(el.slider_y), _v)
     return el.defn
 
 
@@ -248,4 +249,22 @@ def _cmd_setslider(cons, defn, args):
     el.value = v
     el.defn = _regen_defn(el)
     cons._recompute(el)
+    return []
+
+
+def _cmd_setslidervert(cons, defn, args):
+    """``SetSliderVertical[滑块, true/false]`` → 竖直 / 水平放置（功能不变，仅方向与按钮位置）。"""
+    if len(args) != 2:
+        raise GeoError("SetSliderVertical 需要 滑块 和 true/false")
+    el = _resolve(cons, args[0])
+    if getattr(el, "kind", "") != "number" or getattr(el, "min", None) is None:
+        raise GeoError("SetSliderVertical 需要滑动条（当前是 %s）" % getattr(el, "kind", "?"))
+    v = args[1].strip().lower()
+    if v in ("true", "1", "yes", "竖直", "vertical"):
+        el.slider_vert = True
+    elif v in ("false", "0", "no", "水平", "horizontal"):
+        el.slider_vert = False
+    else:
+        raise GeoError("SetSliderVertical 需要 true 或 false")
+    el.defn = _regen_defn(el)
     return []

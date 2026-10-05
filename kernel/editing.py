@@ -44,6 +44,10 @@ def _cmd_slider(cons, defn, args):
     """
     args = list(args)
     pos = None
+    vertical = False
+    if args and args[-1].strip().lower() in ("vertical", "v", "竖直"):
+        vertical = True
+        args.pop()
     if args and args[-1].strip().startswith("("):
         pos = args.pop()
     if len(args) not in (2, 3):
@@ -66,6 +70,7 @@ def _cmd_slider(cons, defn, args):
         n = sum(1 for e in cons.elements.values() if getattr(e, "min", None) is not None)
         el.slider_x, el.slider_y = -6.0, -2.0 - 1.4 * n      # 自动排布（左下方逐行下移）
     el.slider_len = 3.0                                      # 轨道世界长度
+    el.slider_vert = vertical                                # 竖直放置（轨道沿 +y，播放按钮在底部）
     return cons.add(el)
 
 def _cmd_setcoords(cons, defn, args):
