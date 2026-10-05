@@ -36,7 +36,7 @@ from .misc import _cmd_randombetween, _cmd_randomize, _cmd_setwire
 from .numeric import _cmd_complex_abs, _cmd_gcd, _cmd_iqr, _cmd_lcm, _cmd_max, _cmd_mean, _cmd_median, _cmd_min, _cmd_mode, _cmd_ncr, _cmd_normal, _cmd_npr, _cmd_q1, _cmd_q3, _cmd_sort, _cmd_stdev, _cmd_sum, _cmd_variance, _cmd_isfinite
 from .primitives import _cmd_anglebisector, _cmd_arc, _cmd_arecollinear, _cmd_areparallel, _cmd_areperpendicular, _cmd_centroid, _cmd_circle, _cmd_fitline, _cmd_foot, _cmd_incenter, _cmd_incircle, _cmd_intersect, _cmd_isoline, _cmd_line, _cmd_midpoint, _cmd_perpbis, _cmd_perpendicularline, _cmd_pointoncircle, _cmd_pointonpath, _cmd_polygon, _cmd_polyline, _cmd_randpointin, _cmd_ray, _cmd_regularpolygon, _cmd_rigidpolygon, _cmd_sector, _cmd_segment, _cmd_semicircle, _cmd_tangent, _cmd_vector
 from .proofs import _cmd_areconcurrent, _cmd_areconcyclic, _cmd_arecongruent, _cmd_prove
-from .widgets import _cmd_button, _cmd_checkbox, _cmd_inputbox
+from .widgets import _cmd_button, _cmd_checkbox, _cmd_inputbox, _cmd_setwidgetpos
 from .tessellation import _cmd_delaunay, _cmd_voronoi
 from .transforms import _cmd_dilate, _cmd_invert, _cmd_reflect, _cmd_rotate, _cmd_translate
 
@@ -162,6 +162,7 @@ SPECS: List[Tuple[str, Callable, str, str, Tuple[str, ...]]] = [
     ("button", _cmd_button, "Button", "button", ("按钮",)),
     ("checkbox", _cmd_checkbox, "CheckBox", "checkbox", ("复选框", "勾选框")),
     ("inputbox", _cmd_inputbox, "InputBox", "inputbox", ("输入框",)),
+    ("setwidgetpos", _cmd_setwidgetpos, "SetWidgetPos", "point", ("控件位置", "移动控件")),
     ("perimeter", _cmd_perimeter, "", "number", ("周长",)),
     ("circumference", _cmd_circumference, "", "number", ("圆周长", "椭圆周长")),
     ("incenter", _cmd_incenter, "", "point", ("内心",)),

@@ -1183,6 +1183,38 @@ _pv3.load_json(_json_mod.dumps(_old))
 check("旧 v4 文件（无 values）仍可载入（用 defn 初值）",
       _pv3.elements["sP"].value == 0 and _pv3.elements["sP"].min == 0, "%.1f" % _pv3.elements["sP"].value)
 
+# ---------------------------------------------------------------------------
+section("Z12. 控件/滑块锚点移动（SetWidgetPos）")
+
+_sw = Construction()
+_sw.process('bW=Button["点我", "BW=(1,1)", (0,0)]')
+_sw.process("cW=Circle[(0,0),1]")
+_sw.process('cbW=CheckBox["显示c", cW, (0,0)]')
+_sw.process("nW=3")
+_sw.process("ibW=InputBox[nW, (0,0)]")
+_sw.process("slW=Slider[0,10,1,(0,0)]")
+_sw.process("SetValue[slW, 7]")
+for _ln in ("SetWidgetPos[bW,(2,3)]", "SetWidgetPos[cbW,(-2,1)]", "SetWidgetPos[ibW,(1,-1)]", "SetWidgetPos[slW,(4,-2)]"):
+    _sw.process(_ln)
+check("SetWidgetPos 更新按钮/复选框/输入框锚点并重写 defn",
+      abs(_sw.elements["bW"].x - 2) < 1e-9 and "Button[" in _sw.elements["bW"].defn and "(2,3)" in _sw.elements["bW"].defn
+      and abs(_sw.elements["cbW"].x + 2) < 1e-9 and "( -2,1)".replace(" ", "") in _sw.elements["cbW"].defn
+      and abs(_sw.elements["ibW"].y + 1) < 1e-9 and "InputBox[" in _sw.elements["ibW"].defn,
+      "%r" % _sw.elements["bW"].defn)
+check("SetWidgetPos 移动滑块并保留其数值（值不回到 min）",
+      abs(_sw.elements["slW"].slider_x - 4) < 1e-9 and abs(_sw.elements["slW"].slider_y + 2) < 1e-9
+      and abs(_sw.elements["slW"].value - 7) < 1e-9 and "Slider[" in _sw.elements["slW"].defn,
+      "%r 值=%.1f" % (_sw.elements["slW"].defn, _sw.elements["slW"].value))
+_msg_sw = _sw.process("SetWidgetPos[nW,(1,1)]")
+check("对普通数值调用 SetWidgetPos → 明确报错", "滑动条" in (_msg_sw or "") or "控件" in (_msg_sw or ""), (_msg_sw or "")[:40])
+_dsw = _json_mod.loads(_sw.save_json())
+_sw2 = Construction()
+_sw2.load_json(_json_mod.dumps(_dsw))
+check(".ggk 往返保留控件新位置与滑块数值",
+      "(4,-2)" in _sw2.elements["slW"].defn and abs(_sw2.elements["slW"].value - 7) < 1e-9
+      and "(2,3)" in _sw2.elements["bW"].defn,
+      "%r 值=%.1f" % (_sw2.elements["slW"].defn, _sw2.elements["slW"].value))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

@@ -705,6 +705,53 @@ function check(name, ok, detail) {
   await ctx2.close();
 
   // -------------------------------------------------------------------------
+  section('V. 控件/滑块锚点拖动（点击=动作 / 拖动=移位）');
+  const wdErrBefore = JS_ERRORS.length;
+  await typeCmd('vC=Circle[(0,0),2]');
+  await typeCmd('vBT=Button["跑脚本", "vA=(2,2)", (-4,4)]');
+  await typeCmd('vSL=Slider[0,10,1,(-1,-3)]');
+  await page.waitForTimeout(500);
+  const vRect = await page.evaluate(() => { const r = document.getElementById('cv').getBoundingClientRect(); return { x: r.x, y: r.y }; });
+  const vBoxes = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes());
+  // ① 拖动按钮：应移动位置且**不执行脚本**
+  const bt = vBoxes['vBT'];
+  const bx = vRect.x + (bt.x0 + bt.x1) / 2, by = vRect.y + (bt.y0 + bt.y1) / 2;
+  await page.mouse.move(bx, by);
+  await page.mouse.down();
+  await page.mouse.move(bx + 80, by - 50, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+  const vEls1 = ((await (await page.request.get(BASE + '/api/state')).json()).elements) || [];
+  const vBT1 = vEls1.filter((e) => e.label === 'vBT')[0];
+  check('拖动按钮改变锚点（defn 同步重写）',
+        !!vBT1 && String(vBT1.defn).indexOf('Button[') >= 0 && String(vBT1.defn) !== 'vBT=Button["跑脚本", "vA=(2,2)", (-4,4)]',
+        vBT1 && vBT1.defn);
+  check('拖动按钮不会执行脚本（无 vA 元素）', !vEls1.some((e) => e.label === 'vA'),
+        String(vEls1.map((e) => e.label)));
+  // ② 点击按钮：仍应执行脚本（回归）
+  const bt2 = (await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()))['vBT'];
+  await page.mouse.click(vRect.x + (bt2.x0 + bt2.x1) / 2, vRect.y + (bt2.y0 + bt2.y1) / 2);
+  await page.waitForTimeout(500);
+  const vEls2 = ((await (await page.request.get(BASE + '/api/state')).json()).elements) || [];
+  check('点击按钮仍执行脚本（vA 出现）', vEls2.some((e) => e.label === 'vA'), String(vEls2.map((e) => e.label)));
+  // ③ 拖滑块轨道（远离滑钮）：位置变、值不变
+  const sl2 = (await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()))['vSL'];
+  const slValBefore = (vEls2.filter((e) => e.label === 'vSL')[0] || {}).val;
+  const trackX = vRect.x + sl2.x1 - 6, trackY = vRect.y + (sl2.y0 + sl2.y1) / 2;
+  await page.mouse.move(trackX, trackY);
+  await page.mouse.down();
+  await page.mouse.move(trackX + 60, trackY - 40, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+  const vEls3 = ((await (await page.request.get(BASE + '/api/state')).json()).elements) || [];
+  const vSL3 = vEls3.filter((e) => e.label === 'vSL')[0] || {};
+  check('拖滑块轨道移动整条滑块（位置变、数值不变）',
+        String(vSL3.defn).indexOf('Slider[') >= 0 && String(vSL3.defn).indexOf('(-1,-3)') < 0
+        && Math.abs(Number(vSL3.val) - Number(slValBefore)) < 1e-9,
+        'defn=' + vSL3.defn + ' val=' + slValBefore + '→' + vSL3.val);
+  check('锚点拖动无新增 JS 错误', JS_ERRORS.length === wdErrBefore,
+        JS_ERRORS.slice(wdErrBefore).join(';').slice(0, 60));
+
   section('U. 画布滑块（线段 + 滑钮：渲染与拖动）');
   const slErrBefore = JS_ERRORS.length;
   await typeCmd('uS=Slider[0,10,1,(-2,2)]');

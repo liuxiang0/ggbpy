@@ -353,8 +353,9 @@ window.GGB_R2D = (function () {
           if (wsmap) {
             wsmap[e.label] = { kind: 'slider', label: e.label,
                                x0: Math.min(tk0, tk1) - 10, x1: Math.max(tk0, tk1) + 10,
-                               y0: tky - 14, y1: tky + 16,
-                               wx0: e.slider_x, wx1: e.slider_x + (e.slider_len || 3) };
+                               y0: tky - 14, y1: tky + 16, knobX: kx,
+                               wx0: e.slider_x, wx1: e.slider_x + (e.slider_len || 3),
+                               wy0: e.slider_y };
           }
         }
         if (e.kind === 'button' || e.kind === 'checkbox' || e.kind === 'inputbox') {

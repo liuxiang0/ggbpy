@@ -424,6 +424,24 @@ check("API：载入 .ggk 后滑块值保留为 7（不再回到 0）",
       _st2 == 200 and abs(float(_sM2.get("val", -1)) - 7) < 1e-9 and _sM2.get("min") == 0,
       "val=%s" % _sM2.get("val"))
 
+# ---------------------------------------------------------------------------
+section("N. 控件/滑块锚点移动经 HTTP（SetWidgetPos）")
+
+clear()
+put('bN=Button["点我", "BN=(1,1)", (0,0)]')
+put("slN=Slider[0,10,1,(0,0)]")
+post("/api/drag", {"label": "slN", "x": 9, "y": 0, "push": True})
+put("SetWidgetPos[bN,(3,4)]")
+put("SetWidgetPos[slN,(-3,2)]")
+_elsN = {e.get("label"): e for e in state()}
+check("API：按钮与滑块锚点已移动（defn 同步重写）",
+      "(3,4)" in str((_elsN.get("bN") or {}).get("defn")) and "(-3,2)" in str((_elsN.get("slN") or {}).get("defn")),
+      "%s | %s" % ((_elsN.get("bN") or {}).get("defn"), (_elsN.get("slN") or {}).get("defn")))
+check("API：移动滑块后仍是滑动条且数值保留为 9",
+      abs(float((_elsN.get("slN") or {}).get("val", -1)) - 9) < 1e-9
+      and (_elsN.get("slN") or {}).get("min") == 0 and "Slider[" in str((_elsN.get("slN") or {}).get("defn")),
+      "val=%s min=%s" % ((_elsN.get("slN") or {}).get("val"), (_elsN.get("slN") or {}).get("min")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

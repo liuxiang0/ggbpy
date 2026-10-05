@@ -403,6 +403,8 @@
   function toolPointAt() { return _tools2d.toolPointAt.apply(null, arguments); }
   function toolCanvasClick() { return _tools2d.toolCanvasClick.apply(null, arguments); }
   function widgetClick() { return _tools2d.widgetClick.apply(null, arguments); }
+  function widgetHit() { return _tools2d.widgetHit.apply(null, arguments); }
+  function widgetAct() { return _tools2d.widgetAct.apply(null, arguments); }
 
   // 三维对象位移与拖动（P2 前端拆分） 已抽到 static/drag3d.js（P2 前端拆分）；同名薄包装保持调用点不变
   var _drag3d = window.GGB_DRAG3.create({ get: _panelStateGet, api: api, drawAxes3d: drawAxes3d, drawElement: drawElement, drawGrid: drawGrid, drawMiniAxes3d: drawMiniAxes3d, drawOverlay: drawOverlay, drawSelectionOverlay: drawSelectionOverlay, findEl3d: findEl3d, fmtNum: fmtNum, is3DEl: is3DEl, load3d: load3d, populateEditBar: populateEditBar, render: render, render3d: render3d, renderList: renderList, renderList3d: renderList3d, setMsg: setMsg, sxp: sxp, syp: syp, tipText: tipText, translateMsg: translateMsg, updateUndoBtns: updateUndoBtns, usableCanvasRect: usableCanvasRect });
@@ -811,7 +813,16 @@
   canvas.addEventListener('pointerdown', function (ev) {
     ev.preventDefault();
     if (playState) { clearInterval(playState.timer); playState = null; render(); }  // 画布交互自动停止播放
-    if (widgetClick(ev.offsetX, ev.offsetY)) return;   // 控件优先：按钮/复选框/输入框
+    // 控件优先：按下先记录，抬起时若未移动才执行动作（移动则视为拖动位置）
+    var _wEl = widgetHit(ev.offsetX, ev.offsetY);
+    if (_wEl) {
+      drag = { label: _wEl.label, widget: true, moved: false, downX: ev.offsetX, downY: ev.offsetY,
+               grabX: wxp(ev.offsetX), grabY: wyp(ev.offsetY), pos0: [_wEl.x || 0, _wEl.y || 0] };
+      dragPending = false;
+      canvas.style.cursor = 'move';
+      canvas.setPointerCapture(ev.pointerId);
+      return;
+    }
     if (activeTool) { toolPreview = null; toolCanvasClick(ev.offsetX, ev.offsetY); return; }
     hoverTip = null;
     touches[ev.pointerId] = { x: ev.offsetX, y: ev.offsetY };
@@ -838,11 +849,20 @@
     }
     var sldHit = sliderAt(sx, sy);
     if (sldHit && !selectMode && !addSelModifier(ev)) {
-      drag = { label: sldHit, slider: true };
+      var _sb = widgetBoxes[sldHit] || {};
+      var _onKnob = typeof _sb.knobX === 'number' && Math.abs(sx - _sb.knobX) <= 12;
+      if (_onKnob) {
+        drag = { label: sldHit, slider: true };
+        canvas.style.cursor = 'ew-resize';
+        api('POST', '/api/drag', { label: sldHit, x: sliderValueAt(sldHit, wxp(sx)), y: 0, push: true }, function () {});
+      } else {
+        // 拖轨道 = 移动整条滑块（锚点）
+        drag = { label: sldHit, sliderPos: true, grabX: wxp(sx), grabY: wyp(sy),
+                 pos0: [_sb.wx0 || 0, _sb.wy0 || 0] };
+        canvas.style.cursor = 'move';
+      }
       dragPending = false;
-      canvas.style.cursor = 'ew-resize';
       canvas.setPointerCapture(ev.pointerId);
-      api('POST', '/api/drag', { label: sldHit, x: sliderValueAt(sldHit, wxp(sx)), y: 0, push: true }, function () {});
       return;
     }
     var label = hitFreePoint(sx, sy);
@@ -978,6 +998,20 @@
       }
       return;
     }
+    if (drag && (drag.sliderPos || drag.widget)) {
+      if (drag.widget && !drag.moved
+          && Math.abs(ev.offsetX - drag.downX) < 4 && Math.abs(ev.offsetY - drag.downY) < 4) return;
+      drag.moved = true;
+      var _dEl = findEl(drag.label);
+      if (_dEl) {
+        var _nx = drag.pos0[0] + (wxp(ev.offsetX) - drag.grabX);
+        var _ny = drag.pos0[1] + (wyp(ev.offsetY) - drag.grabY);
+        if (drag.sliderPos) { _dEl.slider_x = _nx; _dEl.slider_y = _ny; }
+        else { _dEl.x = _nx; _dEl.y = _ny; }
+        render();
+      }
+      return;
+    }
     if (drag && drag.slider) {
       var _sv = sliderValueAt(drag.label, wxp(ev.offsetX));
       api('POST', '/api/drag', { label: drag.label, x: _sv, y: 0, push: false }, function (d) {
@@ -1068,11 +1102,26 @@
       canvas.style.cursor = 'default';
       loadState();
     } else if (drag) {
+      var _d = drag;
       drag = null;
       dragPending = false;
       canvas.style.cursor = 'default';
-      // 最后一次落点已随 move 提交
-      loadState();
+      if (_d.widget && !_d.moved) {
+        widgetAct(_d.label);                 // 未移动 → 执行控件动作
+      } else if (_d.widget || _d.sliderPos) {
+        var _pEl = findEl(_d.label);
+        var _px = _d.sliderPos ? _pEl && _pEl.slider_x : _pEl && _pEl.x;
+        var _py = _d.sliderPos ? _pEl && _pEl.slider_y : _pEl && _pEl.y;
+        if (_pEl && _px !== undefined) {
+          postInput('SetWidgetPos[' + _d.label + ',(' + Number(_px).toFixed(4) + ',' + Number(_py).toFixed(4) + ')]',
+                    function () { loadState(); });
+        } else {
+          loadState();
+        }
+      } else {
+        // 最后一次落点已随 move 提交
+        loadState();
+      }
     }
     if (marquee) {
       // 框选：与框接触的对象全部选中

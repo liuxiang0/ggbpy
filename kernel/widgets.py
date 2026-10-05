@@ -12,6 +12,7 @@ from typing import List, Tuple
 
 from .cmd_util import label_of, _lookup, _resolve
 from .elements import GeoButton, GeoCheckBox, GeoError, GeoInputBox
+from .tolerance import COORD
 from .parser import eval_number
 
 
@@ -87,3 +88,50 @@ def _cmd_inputbox(cons, defn, args):
     if len(args) == 2:
         el.x, el.y = _pos_of(cons, args[1])
     return cons.add(el)
+
+
+def _num_txt(v) -> str:
+    """坐标/数值的紧凑文本（避免 1.0 变 1.000000）。"""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    if abs(f - round(f)) < COORD:
+        return str(int(round(f)))
+    return ("%.6f" % f).rstrip("0").rstrip(".")
+
+
+def _esc(t: str) -> str:
+    """defn 里的字符串转义（与前端一致：双引号换单引号）。"""
+    return str(t).replace('"', "'")
+
+
+def _cmd_setwidgetpos(cons, defn, args):
+    """``SetWidgetPos[控件|滑动条, (x,y)]`` → 移动锚点，并同步重写 defn（.ggk 往返一致）。
+
+    拖动控件/滑块位置时由前端调用；滑块的**当前值不受影响**（.ggk 的 values 另存）。
+    """
+    if len(args) != 2:
+        raise GeoError("SetWidgetPos 需要 控件/滑动条 和 (x,y)")
+    el = _resolve(cons, args[0])
+    x, y = _pos_of(cons, args[1])
+    lab = el.label
+    pos = "(%s,%s)" % (_num_txt(x), _num_txt(y))
+    if isinstance(el, GeoButton):
+        el.x, el.y = x, y
+        el.defn = '%s=Button["%s","%s",%s]' % (lab, _esc(el.caption), _esc(el.script), pos)
+        return []
+    if isinstance(el, GeoCheckBox):
+        el.x, el.y = x, y
+        el.defn = '%s=CheckBox["%s",%s,%s]' % (lab, _esc(el.caption), el.target, pos)
+        return []
+    if isinstance(el, GeoInputBox):
+        el.x, el.y = x, y
+        el.defn = "%s=InputBox[%s,%s]" % (lab, el.target, pos)
+        return []
+    if getattr(el, "kind", "") == "number" and getattr(el, "min", None) is not None:
+        el.slider_x, el.slider_y = x, y
+        el.defn = "%s=Slider[%s,%s,%s,%s]" % (lab, _num_txt(el.min), _num_txt(el.max),
+                                             _num_txt(el.step), pos)
+        return []
+    raise GeoError("SetWidgetPos 需要 交互控件 或 滑动条（当前是 %s）" % getattr(el, "kind", "?"))

@@ -176,48 +176,58 @@ window.GGB_T2D = (function () {
 
       var finishPolyline = env.finishPolyline;   // 由 app.js 注入（属于其他模块）
 
-      function widgetClick(sx, sy) {
-        // 交互控件命中：按钮执行脚本、复选框切换目标显示、输入框编辑目标数值。
-        // 返回 true 表示已消费本次点击（画布不再做工具/拖拽处理）。
+      function widgetHit(sx, sy) {
+        // 命中交互控件（按钮/复选框/输入框；滑动条由 app.js 的 sliderAt 处理）
         var wmap = env.get('widgetBoxes');
-        if (!wmap) return false;
+        if (!wmap) return null;
         for (var k in wmap) {
           if (!Object.prototype.hasOwnProperty.call(wmap, k)) continue;
           var b = wmap[k];
+          if (!b || b.kind === 'slider') continue;
           if (sx < b.x0 - 2 || sx > b.x1 + 2 || sy < b.y0 - 2 || sy > b.y1 + 2) continue;
           var els = env.get('elements');
-          var el = null;
-          for (var i = 0; i < els.length; i++) if (els[i].label === k) { el = els[i]; break; }
-          if (!el) return false;
-          var lang = env.get('lang');
-          if (el.kind === 'button') {
-            var script = String(el.script || '');
-            var lines = script.split(/[\n;]+/);
-            (function runNext(idx) {
-              while (idx < lines.length && !lines[idx].trim()) idx++;
-              if (idx >= lines.length) { resetTool(); return; }
-              postInput(lines[idx].trim(), function () { runNext(idx + 1); });
-            })(0);
-            return true;
-          }
-          if (el.kind === 'checkbox') {
-            var tgt = null;
-            for (var j = 0; j < els.length; j++) if (els[j].label === el.target) { tgt = els[j]; break; }
-            var curVis = !tgt || tgt.visible === undefined || tgt.visible === null ? true : !!tgt.visible;
-            var turnOn = !curVis;
-            postInput('SetVisible[' + el.target + ', ' + (turnOn ? 'true' : 'false') + ']', function () { render(); });
-            return true;
-          }
-          if (el.kind === 'inputbox') {
-            var cur = '';
-            for (var m = 0; m < els.length; m++) if (els[m].label === el.target) { cur = els[m].value != null ? els[m].value : ''; break; }
-            var v = prompt((lang === 'en' ? 'Value for ' : '输入 ') + el.target + ':', String(cur).replace(/^= /, ''));
-            if (v === null) return true;
-            postInput('SetValue[' + el.target + ', ' + v + ']', function () { render(); });
-            return true;
-          }
+          for (var i = 0; i < els.length; i++) if (els[i].label === k) return els[i];
+        }
+        return null;
+      }
+
+      function widgetAct(label) {
+        // 控件动作：按钮跑脚本 / 复选框切显示 / 输入框改数值
+        var els = env.get('elements'), el = null;
+        for (var i = 0; i < els.length; i++) if (els[i].label === label) { el = els[i]; break; }
+        if (!el) return false;
+        var lang = env.get('lang');
+        if (el.kind === 'button') {
+          var lines = String(el.script || '').split(/[\n;]+/);
+          (function runNext(idx) {
+            while (idx < lines.length && !lines[idx].trim()) idx++;
+            if (idx >= lines.length) { resetTool(); return; }
+            postInput(lines[idx].trim(), function () { runNext(idx + 1); });
+          })(0);
+          return true;
+        }
+        if (el.kind === 'checkbox') {
+          var tgt = null;
+          for (var j = 0; j < els.length; j++) if (els[j].label === el.target) { tgt = els[j]; break; }
+          var curVis = !tgt || tgt.visible === undefined || tgt.visible === null ? true : !!tgt.visible;
+          postInput('SetVisible[' + el.target + ', ' + (curVis ? 'false' : 'true') + ']',
+                    function () { render(); });
+          return true;
+        }
+        if (el.kind === 'inputbox') {
+          var cur = '';
+          for (var m = 0; m < els.length; m++) if (els[m].label === el.target) { cur = els[m].value != null ? els[m].value : ''; break; }
+          var v = prompt((lang === 'en' ? 'Value for ' : '输入 ') + el.target + ':', String(cur).replace(/^= /, ''));
+          if (v === null) return true;
+          postInput('SetValue[' + el.target + ', ' + v + ']', function () { render(); });
+          return true;
         }
         return false;
+      }
+
+      function widgetClick(sx, sy) {          // 兼容：命中即动作
+        var el = widgetHit(sx, sy);
+        return el ? widgetAct(el.label) : false;
       }
 
       function toolCanvasClick(sx, sy) {
@@ -750,6 +760,8 @@ window.GGB_T2D = (function () {
       toolPointAt: toolPointAt,
       toolCanvasClick: toolCanvasClick,
       widgetClick: widgetClick,
+      widgetHit: widgetHit,
+      widgetAct: widgetAct,
     };
   }
 
