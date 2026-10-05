@@ -1091,6 +1091,24 @@
     }
   });
 
+  // 双击控件：就地编辑说明（按钮再编辑脚本）——对象列表的「重定义」栏是另一条路径
+  function editWidget(el) {
+    if (!el) return;
+    var cap = prompt(t('widgetEditCaption'), el.caption || '');
+    if (cap === null) return;
+    postInput('SetCaption[' + el.label + ',"' + String(cap).replace(/"/g, "'") + '"]', function (ok) {
+      if (!ok || el.kind !== 'button') { loadState(); return; }
+      var sc = prompt(t('widgetEditScript'), el.script || '');
+      if (sc === null) { loadState(); return; }
+      postInput('SetScript[' + el.label + ',"' + String(sc).replace(/"/g, "'") + '"]',
+                function () { loadState(); });
+    });
+  }
+  canvas.addEventListener('dblclick', function (ev) {
+    var el = widgetHit(ev.offsetX, ev.offsetY);
+    if (el) editWidget(el);
+  });
+
   canvas.addEventListener('pointerup', function (ev) {
     delete touches[ev.pointerId];
     if (pinch) {

@@ -778,6 +778,24 @@ function check(name, ok, detail) {
   check('滑块拖动无新增 JS 错误', JS_ERRORS.length === slErrBefore,
         JS_ERRORS.slice(slErrBefore).join(';').slice(0, 60));
 
+  section('W. 双击控件就地改说明/脚本');
+  const edErrBefore = JS_ERRORS.length;
+  await typeCmd('edB=Button["旧说明", "edA=(1,1)", (-4,-4)]');
+  await page.waitForTimeout(450);
+  const edRect = await page.evaluate(() => { const r = document.getElementById('cv').getBoundingClientRect(); return { x: r.x, y: r.y }; });
+  const edBox = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['edB']);
+  dialogQueue.push('新说明');       // 说明
+  dialogQueue.push('edA=(2,2)');    // 脚本
+  await page.mouse.dblclick(edRect.x + (edBox.x0 + edBox.x1) / 2, edRect.y + (edBox.y0 + edBox.y1) / 2);
+  await page.waitForTimeout(700);
+  const edEl = (((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === 'edB')[0] || {};
+  check('双击按钮改说明与脚本（defn 同步重写）',
+        edEl.caption === '新说明' && String(edEl.script).indexOf('edA=(2,2)') >= 0
+        && String(edEl.defn).indexOf('新说明') >= 0,
+        JSON.stringify({ caption: edEl.caption, script: edEl.script, defn: edEl.defn }));
+  check('就地编辑无新增 JS 错误', JS_ERRORS.length === edErrBefore,
+        JS_ERRORS.slice(edErrBefore).join(';').slice(0, 60));
+
   section('T. 交互控件（按钮/复选框/输入框：渲染 + 点击交互）');
   const wgErrBefore = JS_ERRORS.length;
   await typeCmd('wC=Circle[(0,0),2]');

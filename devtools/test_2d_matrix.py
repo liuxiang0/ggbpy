@@ -1245,6 +1245,38 @@ _ex2.process("SetValue[sX, 5]")
 check(".ggk 往返后受控点仍然跟随（AX.x → 5）", round(_ex2.elements["AX"].x, 3) == 5.0,
       str(round(_ex2.elements["AX"].x, 3)))
 
+# ---------------------------------------------------------------------------
+section("Z14. 就地编辑控件说明/脚本（SetCaption / SetScript）")
+
+_ce = Construction()
+_ce.process('bE=Button["旧说明", "AE=(1,1)", (2,3)]')
+_ce.process("cE=Circle[(0,0),1]")
+_ce.process('cbE=CheckBox["旧说明", cE, (0,0)]')
+_ce.process('txE=Text["旧文本", (1,1)]')
+_ce.process('SetCaption[bE, "开始"]')
+_ce.process('SetScript[bE, "BE=(2,2);CE=(3,3)"]')
+_ce.process('SetCaption[cbE, "显示圆"]')
+_ce.process('SetCaption[txE, "新文本"]')
+check("SetCaption 改按钮/复选框说明并重写 defn",
+      _ce.elements["bE"].caption == "开始" and _ce.elements["bE"].defn == 'bE=Button["开始","BE=(2,2);CE=(3,3)",(2,3)]'
+      and _ce.elements["cbE"].caption == "显示圆" and 'CheckBox["显示圆"' in _ce.elements["cbE"].defn,
+      "%r | %r" % (_ce.elements["bE"].defn, _ce.elements["cbE"].defn))
+check("SetScript 改按钮脚本（分号分隔多条）",
+      _ce.elements["bE"].script == "BE=(2,2);CE=(3,3)" and "BE=(2,2)" in _ce.elements["bE"].defn,
+      repr(_ce.elements["bE"].script))
+check("SetCaption 对文本改内容与 defn",
+      _ce.elements["txE"].content == "新文本" and 'Text["新文本"' in _ce.elements["txE"].defn,
+      "%r %r" % (_ce.elements["txE"].content, _ce.elements["txE"].defn))
+_msg_sc = _ce.process('SetScript[cE, "x"]')
+check("SetScript 用非按钮 → 明确报错", "按钮" in (_msg_sc or ""), (_msg_sc or "")[:34])
+_dce = _json_mod.loads(_ce.save_json())
+_ce2 = Construction()
+_ce2.load_json(_json_mod.dumps(_dce))
+check(".ggk 往返保留新说明与脚本",
+      _ce2.elements["bE"].caption == "开始" and _ce2.elements["bE"].script == "BE=(2,2);CE=(3,3)"
+      and _ce2.elements["txE"].content == "新文本",
+      "%r %r" % (_ce2.elements["bE"].caption, _ce2.elements["bE"].script))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

@@ -106,6 +106,53 @@ def _esc(t: str) -> str:
     return str(t).replace('"', "'")
 
 
+def _regen_defn(el) -> str:
+    """按控件当前字段重写 defn（位置/说明/脚本/绑定目标变化后调用，保证 .ggk 往返一致）。"""
+    lab = el.label
+    if isinstance(el, GeoButton):
+        return '%s=Button["%s","%s",(%s,%s)]' % (lab, _esc(el.caption), _esc(el.script),
+                                                _num_txt(el.x), _num_txt(el.y))
+    if isinstance(el, GeoCheckBox):
+        return '%s=CheckBox["%s",%s,(%s,%s)]' % (lab, _esc(el.caption), el.target,
+                                                _num_txt(el.x), _num_txt(el.y))
+    if isinstance(el, GeoInputBox):
+        return "%s=InputBox[%s,(%s,%s)]" % (lab, el.target, _num_txt(el.x), _num_txt(el.y))
+    if getattr(el, "kind", "") == "number" and getattr(el, "min", None) is not None:
+        return "%s=Slider[%s,%s,%s,(%s,%s)]" % (lab, _num_txt(el.min), _num_txt(el.max),
+                                               _num_txt(el.step), _num_txt(el.slider_x),
+                                               _num_txt(el.slider_y))
+    return el.defn
+
+
+def _cmd_setcaption(cons, defn, args):
+    """``SetCaption[控件|文本, "新说明"]`` → 改说明文字（控件重写 defn，文本改内容）。"""
+    if len(args) != 2:
+        raise GeoError('SetCaption 需要 对象 和 文字，如 SetCaption[btn, "开始"]')
+    el = _resolve(cons, args[0])
+    txt = _caption_of(cons, args[1])
+    if isinstance(el, (GeoButton, GeoCheckBox)):
+        el.caption = txt
+        el.defn = _regen_defn(el)
+        return []
+    if getattr(el, "kind", "") == "text":
+        el.content = txt
+        el.defn = '%s=Text["%s",(%s,%s)]' % (el.label, _esc(txt), _num_txt(el.x), _num_txt(el.y))
+        return []
+    raise GeoError("SetCaption 需要 按钮/复选框 或 文本（当前是 %s）" % getattr(el, "kind", "?"))
+
+
+def _cmd_setscript(cons, defn, args):
+    """``SetScript[按钮, "命令1;命令2"]`` → 改按钮脚本（多条用 ; 或换行分隔）。"""
+    if len(args) != 2:
+        raise GeoError('SetScript 需要 按钮 和 脚本，如 SetScript[btn, "A=(1,1)"]')
+    el = _resolve(cons, args[0])
+    if not isinstance(el, GeoButton):
+        raise GeoError("SetScript 需要 按钮（当前是 %s）" % getattr(el, "kind", "?"))
+    el.script = _caption_of(cons, args[1])
+    el.defn = _regen_defn(el)
+    return []
+
+
 def _cmd_setwidgetpos(cons, defn, args):
     """``SetWidgetPos[控件|滑动条, (x,y)]`` → 移动锚点，并同步重写 defn（.ggk 往返一致）。
 
@@ -115,23 +162,20 @@ def _cmd_setwidgetpos(cons, defn, args):
         raise GeoError("SetWidgetPos 需要 控件/滑动条 和 (x,y)")
     el = _resolve(cons, args[0])
     x, y = _pos_of(cons, args[1])
-    lab = el.label
-    pos = "(%s,%s)" % (_num_txt(x), _num_txt(y))
     if isinstance(el, GeoButton):
         el.x, el.y = x, y
-        el.defn = '%s=Button["%s","%s",%s]' % (lab, _esc(el.caption), _esc(el.script), pos)
+        el.defn = _regen_defn(el)
         return []
     if isinstance(el, GeoCheckBox):
         el.x, el.y = x, y
-        el.defn = '%s=CheckBox["%s",%s,%s]' % (lab, _esc(el.caption), el.target, pos)
+        el.defn = _regen_defn(el)
         return []
     if isinstance(el, GeoInputBox):
         el.x, el.y = x, y
-        el.defn = "%s=InputBox[%s,%s]" % (lab, el.target, pos)
+        el.defn = _regen_defn(el)
         return []
     if getattr(el, "kind", "") == "number" and getattr(el, "min", None) is not None:
         el.slider_x, el.slider_y = x, y
-        el.defn = "%s=Slider[%s,%s,%s,%s]" % (lab, _num_txt(el.min), _num_txt(el.max),
-                                             _num_txt(el.step), pos)
+        el.defn = _regen_defn(el)
         return []
     raise GeoError("SetWidgetPos 需要 交互控件 或 滑动条（当前是 %s）" % getattr(el, "kind", "?"))

@@ -58,6 +58,8 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **滑块在画布上就是一条线段**（GeoGebra 样式）：`Slider[最小值, 最大值, 步长?, (x,y)?]` 在图形区画成**轨道线段 + 可拖动滑钮**，
   左右标注最小/最大值、上方标注 `名称 = 当前值`；**拖动滑钮即改值**（按步长吸附，与对象列表里的滑动条共用 `/api/drag`，松开即提交）；
   省略位置时自动排布在左下方（每多一个滑块下移一行）
+- **就地编辑控件**：**双击画布上的控件**即可改说明（按钮会接着问脚本）；也可用命令 `SetCaption[对象, "新说明"]`（按钮/复选框/文本）与
+  `SetScript[按钮, "cmd1;cmd2"]` —— 两者都会**重写 defn** → `.ggk` 往返一致；对象列表的「重定义」栏是另一条编辑路径
 - **控件可拖动位置**：在画布上**拖动控件本体**即移动锚点（**点击**才是执行动作：按钮跑脚本 / 复选框切显示 / 输入框改数值）；
   移动由 `SetWidgetPos[控件|滑动条, (x,y)]` 完成，并**同步重写 defn** → `.ggk` 往返位置一致
 - **交互控件（新「控件」工具组）**：工具面板新增 **控件** 分类 = `滑块`（沿用）/ `文本`（原在测量分类下，已移入）/ `插入图片` /
@@ -202,6 +204,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第七十三批（2026-10-05 · 就地编辑控件说明/脚本）**：
+  - **新增命令**（COMMANDS 184 → **186**）：`SetCaption[对象, "新说明"]`（按钮/复选框改 caption，**文本**改内容；中文别名 设置说明/改说明）、`SetScript[按钮, "cmd1;cmd2"]`（多条用 `;` 或换行；别名 设置脚本/改脚本）
+  - **重构**：把 defn 重写逻辑抽为 `widgets._regen_defn(el)`（按钮/复选框/输入框/滑块四类共用），`SetWidgetPos` 一并改用它（删掉重复拼接）
+  - **前端**：画布 **双击控件** → 弹窗改说明（按钮继续问脚本）→ 发 `SetCaption`/`SetScript` 后 `loadState()`；i18n 新增 `widgetEditCaption`/`widgetEditScript`（中英对称）
+  - **实测**：双击按钮 → 输入「新说明」+「edA=(2,2)」→ `caption=新说明`、`script=edA=(2,2)`、defn 变成 `Button["新说明","edA=(2,2)",(-4,-4)]` ✓；`.ggk` 往返保留 ✓
+  - 检测：2D 内核 242 → **247**、2D API 66 → **67**、2D 浏览器 107 → **109**
 - **第七十二批（2026-10-05 · 内核清偿：表达式依赖助手拆出 `kernel/exprdeps.py`）**：
   - 把上一批新增的 `point_expr_state` / `numeric_expr_state` / `_ref_deps` 与既有的 `_list_state_from_parts` / `list_literal_state` 一并搬到新模块 **`kernel/exprdeps.py`**（164 行，职责单一：把「引用已有元素」的字面量变成受控对象）
   - `cmd_util` 改为 **re-export 同一对象**（233 行，回到模块规模预算 120–340 内 ✓），历史调用点零改动；`exprdeps` 对 `cmd_util._tuple_parts_any` 用**函数内懒引用**避免模块级循环导入
@@ -511,7 +519,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 242 + 2D API 66 + 3D 496/181/142 + 2D 前端 107 + 代码质量 19 = 1659 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 247 + 2D API 67 + 3D 496/181/142 + 2D 前端 109 + 代码质量 19 = 1667 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

@@ -460,6 +460,19 @@ check("API：字面量坐标线段端点跟随（sgO.x2 = 8）",
 check("API：受控点定义式保留（AO=(sO,0)，供 .ggk 重放）",
       str((_elsO.get("AO") or {}).get("defn")) == "AO=(sO,0)", str((_elsO.get("AO") or {}).get("defn")))
 
+# ---------------------------------------------------------------------------
+section("P. 就地编辑控件经 HTTP（SetCaption / SetScript）")
+
+clear()
+put('bP=Button["旧", "AP=(1,1)", (0,0)]')
+put('SetCaption[bP, "新说明"]')
+put('SetScript[bP, "CP=(2,2)"]')
+_bP = {e.get("label"): e for e in state()}.get("bP") or {}
+check("API：SetCaption/SetScript 生效且 defn 同步",
+      _bP.get("caption") == "新说明" and _bP.get("script") == "CP=(2,2)"
+      and 'Button["新说明","CP=(2,2)"' in str(_bP.get("defn")),
+      "%s | %s" % (_bP.get("caption"), _bP.get("defn")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
