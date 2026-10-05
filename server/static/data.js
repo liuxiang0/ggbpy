@@ -72,6 +72,10 @@ window.GGB_DATA.TOOLS = {
     linechart: { hints: ['点击任意处，输入数据（逗号分隔，按顺序连线）'], en: ['Click anywhere, enter data (comma separated, connected in order)'] },
     scatterplot: { hints: ['点击任意处，输入点（如 1,2; 3,4; 5,3 或 (1,2),(3,4)）'], en: ['Click anywhere, enter points (e.g. 1,2; 3,4; 5,3 or (1,2),(3,4))'] },
     dotplot: { hints: ['点击任意处，输入数据（逗号分隔，相同值叠点）'], en: ['Click anywhere, enter data (comma separated, repeated values stack)'] },
+    button: { hints: ['点击画布放置按钮（弹出对话框输入说明与脚本，多条命令用 ; 分隔）'], en: ['Click the canvas to place a button (enter caption and script; separate commands with ;)'] },
+    checkbox: { hints: ['点击要控制显示的对象，然后输入复选框说明'], en: ['Click the object to control, then enter the checkbox caption'] },
+    inputbox: { hints: ['点击要编辑数值的对象（数值/滑块）'], en: ['Click the object whose value to edit (number/slider)'] },
+    image: { hints: ['先选择图片文件，再依次点击两个基点'], en: ['Pick an image file, then click two base points'] },
     stemplot: { hints: ['点击任意处，输入数据（非负，逗号分隔，如 12,15,23）'], en: ['Click anywhere, enter data (non-negative, comma separated, e.g. 12,15,23)'] },
     barchart3d: { hints: ['点击任意处，输入数据（逗号分隔）→ 三维柱状图'], en: ['Click anywhere, enter data (comma separated) → 3D bar chart'] },
     scatterplot3d: { hints: ['点击任意处，输入三维点（如 1,2,3; 4,5,6）'], en: ['Click anywhere, enter 3D points (e.g. 1,2,3; 4,5,6)'] },
@@ -103,13 +107,14 @@ window.GGB_DATA.TOOL_CATS = [
     { id: 'polygons', zh: '多边形', en: 'Polygons', icon: 'polygons.png', def: 'polygon', tools: ['polygon', 'rigidpolygon', 'regpoly'] },
     { id: 'conics', zh: '圆锥曲线', en: 'Conics', icon: 'conics.png', def: 'ellipse', tools: ['ellipse', 'hyperbola', 'parabola', 'conic5'] },
     { id: 'transformers', zh: '变换', en: 'Transform', icon: 'transformers.png', def: 'translate', tools: ['reflect', 'rotate', 'translate', 'dilate', 'invert'] },
-    { id: 'measures', zh: '测量', en: 'Measure', icon: 'measures.png', def: 'dist', tools: ['text', 'dist', 'slope', 'angle', 'area', 'perimeter'] },
+    { id: 'measures', zh: '测量', en: 'Measure', icon: 'measures.png', def: 'dist', tools: ['dist', 'slope', 'angle', 'area', 'perimeter'] },
     // 注意：直方图(barchart) 只归「统计图」分类，不要再放进「计算」——同一按钮会在两个分类里重复出现
     { id: 'calculates', zh: '计算', en: 'Calculate', icon: 'calculates.png', def: 'function', tools: ['function', 'locus', 'ineq'] },
     { id: 'charts', zh: '统计图', en: 'Charts', icon: 'measures.png', def: 'barchart',
       tools: ['barchart', 'histogram', 'boxplot', 'piechart', 'linechart', 'scatterplot', 'dotplot',
               'barchart3d', 'scatterplot3d', 'surfacechart3d', 'stemplot'] },
-    { id: 'sliders', zh: '滑块', en: 'Sliders', icon: 'sliders.png', def: 'slider', tools: ['slider'] },
+    { id: 'widgets', zh: '控件', en: 'Widgets', icon: 'sliders.png', def: 'slider',
+      tools: ['slider', 'text', 'image', 'button', 'checkbox', 'inputbox'] },
     { id: 'd3', zh: '3D', en: '3D', icon: 'sliders.png', def: 'pt3d', tools: ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone3d', 'cylinder3d', 'prism3d', 'pyramid3d', 'tetra3d', 'octa3d', 'hexa3d', 'icosa3d', 'dodeca3d'] },
     { id: 'viewpoint', zh: '视图', en: 'View', icon: 'viewpoint.png', def: 'zoomin', tools: ['zoomin', 'zoomout', 'home'] }
   ];;

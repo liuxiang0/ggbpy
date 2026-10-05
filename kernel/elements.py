@@ -1175,6 +1175,71 @@ class GeoStemPlot(GeoChart2D):
         return d
 
 
+class GeoWidget(GeoElement):
+    """交互控件基类：世界坐标锚点 + 说明文字（button/checkbox/inputbox 共用）。
+
+    控件本身**无状态**：checkbox 的勾选态由前端读目标的 visible、inputbox 的文本由前端读
+    目标的值 —— 这样无需给 SetVisible/SetValue 加依赖重算（它们只改字段、不触发 compute）。
+    """
+
+    def __init__(self, label: str, defn: str, free: bool = False) -> None:
+        super().__init__(label, defn, free)
+        self.caption = ""
+        self.x = 0.0
+        self.y = 0.0
+        self.target = ""      # 绑定对象标签（checkbox / inputbox）
+        self.script = ""      # 按钮脚本（多行命令，逐行执行）
+
+    def _widget_base(self, d) -> Dict:
+        d["caption"] = self.caption
+        d["x"], d["y"] = self.x, self.y
+        d["target"] = self.target
+        return d
+
+
+class GeoButton(GeoWidget):
+    """按钮：点击后逐行执行脚本。"""
+
+    kind = "button"
+
+    def draw(self, view):
+        d = super().draw(view)
+        if d is None:
+            return None
+        self._widget_base(d)
+        d["script"] = self.script
+        d["value"] = "▶ " + (self.caption or "(按钮)")
+        return d
+
+
+class GeoCheckBox(GeoWidget):
+    """复选框：勾选/取消切换目标对象的显示。"""
+
+    kind = "checkbox"
+
+    def draw(self, view):
+        d = super().draw(view)
+        if d is None:
+            return None
+        self._widget_base(d)
+        d["value"] = "☐ " + (self.caption or self.target)
+        return d
+
+
+class GeoInputBox(GeoWidget):
+    """输入框：编辑绑定对象的数值。"""
+
+    kind = "inputbox"
+
+    def draw(self, view):
+        d = super().draw(view)
+        if d is None:
+            return None
+        self._widget_base(d)
+        d["value"] = "输入框 → " + self.target
+        return d
+
+
 class GeoText(GeoElement):
     """文本标注：内容 + 锚点坐标。"""
     kind = "text"

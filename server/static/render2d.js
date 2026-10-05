@@ -13,6 +13,7 @@ window.GGB_R2D = (function () {
       function gcdInt(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { var t = a % b; a = b; b = t; } return a || 1; }
 
       var angleUnit = env.angleUnit;   // 由 app.js 注入（属于其他模块）
+      var findEl = env.findEl;   // 由 app.js 注入（属于其他模块）
 
       function fmtAngleDeg(deg) {
         var COARSE = env.get('COARSE');
@@ -316,6 +317,58 @@ window.GGB_R2D = (function () {
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(fmtAngleDeg(e.deg), lx, ly);
+        }
+        if (e.kind === 'button' || e.kind === 'checkbox' || e.kind === 'inputbox') {
+          // 交互控件（Button / CheckBox / InputBox）：锚点在左下角；实时态从绑定对象派生
+          var wbx = sxp(e.x), wby = syp(e.y);
+          var wcap = e.caption || '';
+          var tgt = findEl ? findEl(e.target) : null;
+          var wlab = wcap, ww = 0, wh = 0;
+          if (e.kind === 'button') {
+            ww = Math.max(64, ctx.measureText ? 0 : 0);
+            ctx.font = '13px sans-serif';
+            ww = Math.max(64, ctx.measureText(wcap).width + 26);
+            wh = 28; wlab = wcap;
+          } else if (e.kind === 'checkbox') {
+            ctx.font = '13px sans-serif';
+            // visible 为 null/undefined 表示默认可见（只有显式 false 才是隐藏）
+            var won = !tgt || tgt.visible === undefined || tgt.visible === null ? true : !!tgt.visible;
+            wlab = (won ? '☑ ' : '☐ ') + wcap;
+            ww = Math.max(34, ctx.measureText(wlab).width + 16);
+            wh = 24;
+          } else {
+            ctx.font = '13px sans-serif';
+            var wv = tgt && tgt.value != null ? tgt.value : '';
+            wlab = wcap + ' = ' + wv;
+            ww = Math.max(96, ctx.measureText(wlab).width + 18);
+            wh = 26;
+          }
+          var wx0 = wbx, wy0 = wby - wh;
+          ctx.save();
+          ctx.fillStyle = e.kind === 'button' ? '#2563eb' : 'rgba(255,255,255,.95)';
+          ctx.strokeStyle = e.kind === 'button' ? '#1d4ed8' : '#94a3b8';
+          ctx.lineWidth = 1;
+          var wr = 5;
+          ctx.beginPath();
+          ctx.moveTo(wx0 + wr, wy0);
+          ctx.lineTo(wx0 + ww - wr, wy0);
+          ctx.quadraticCurveTo(wx0 + ww, wy0, wx0 + ww, wy0 + wr);
+          ctx.lineTo(wx0 + ww, wy0 + wh - wr);
+          ctx.quadraticCurveTo(wx0 + ww, wy0 + wh, wx0 + ww - wr, wy0 + wh);
+          ctx.lineTo(wx0 + wr, wy0 + wh);
+          ctx.quadraticCurveTo(wx0, wy0 + wh, wx0, wy0 + wh - wr);
+          ctx.lineTo(wx0, wy0 + wr);
+          ctx.quadraticCurveTo(wx0, wy0, wx0 + wr, wy0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = e.kind === 'button' ? '#ffffff' : '#0f172a';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(wlab, wx0 + (e.kind === 'checkbox' ? 8 : 12), wy0 + wh / 2);
+          ctx.restore();
+          var wmap = env.get('widgetBoxes');
+          if (wmap) wmap[e.label] = { x0: wx0, y0: wy0, x1: wx0 + ww, y1: wy0 + wh };
         }
         if (e.kind === 'text') {
           var tx = sxp(e.x), ty = syp(e.y);

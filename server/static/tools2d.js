@@ -176,6 +176,50 @@ window.GGB_T2D = (function () {
 
       var finishPolyline = env.finishPolyline;   // 由 app.js 注入（属于其他模块）
 
+      function widgetClick(sx, sy) {
+        // 交互控件命中：按钮执行脚本、复选框切换目标显示、输入框编辑目标数值。
+        // 返回 true 表示已消费本次点击（画布不再做工具/拖拽处理）。
+        var wmap = env.get('widgetBoxes');
+        if (!wmap) return false;
+        for (var k in wmap) {
+          if (!Object.prototype.hasOwnProperty.call(wmap, k)) continue;
+          var b = wmap[k];
+          if (sx < b.x0 - 2 || sx > b.x1 + 2 || sy < b.y0 - 2 || sy > b.y1 + 2) continue;
+          var els = env.get('elements');
+          var el = null;
+          for (var i = 0; i < els.length; i++) if (els[i].label === k) { el = els[i]; break; }
+          if (!el) return false;
+          var lang = env.get('lang');
+          if (el.kind === 'button') {
+            var script = String(el.script || '');
+            var lines = script.split(/[\n;]+/);
+            (function runNext(idx) {
+              while (idx < lines.length && !lines[idx].trim()) idx++;
+              if (idx >= lines.length) { resetTool(); return; }
+              postInput(lines[idx].trim(), function () { runNext(idx + 1); });
+            })(0);
+            return true;
+          }
+          if (el.kind === 'checkbox') {
+            var tgt = null;
+            for (var j = 0; j < els.length; j++) if (els[j].label === el.target) { tgt = els[j]; break; }
+            var curVis = !tgt || tgt.visible === undefined || tgt.visible === null ? true : !!tgt.visible;
+            var turnOn = !curVis;
+            postInput('SetVisible[' + el.target + ', ' + (turnOn ? 'true' : 'false') + ']', function () { render(); });
+            return true;
+          }
+          if (el.kind === 'inputbox') {
+            var cur = '';
+            for (var m = 0; m < els.length; m++) if (els[m].label === el.target) { cur = els[m].value != null ? els[m].value : ''; break; }
+            var v = prompt((lang === 'en' ? 'Value for ' : '输入 ') + el.target + ':', String(cur).replace(/^= /, ''));
+            if (v === null) return true;
+            postInput('SetValue[' + el.target + ', ' + v + ']', function () { render(); });
+            return true;
+          }
+        }
+        return false;
+      }
+
       function toolCanvasClick(sx, sy) {
         var CHART_TOOL_CMD = env.get('CHART_TOOL_CMD'), activeTool = env.get('activeTool'), canvas = env.get('canvas'), cssH = env.get('cssH'), cssW = env.get('cssW'), lang = env.get('lang'), shiftKeyPressed = env.get('shiftKeyPressed'), snapOn = env.get('snapOn'), toolSel = env.get('toolSel'), view = env.get('view');
         if (activeTool === 'point') {
@@ -225,6 +269,33 @@ window.GGB_T2D = (function () {
           var slL = hitObject(sx, sy, ['line', 'segment', 'ray']);
           if (!slL) { setMsg(lang === 'en' ? 'Click a line/segment/ray' : '请点击直线/线段/射线', true); return; }
           postInput('Slope[' + slL + ']', function (ok) { if (ok) resetTool(); });
+          return;
+        }
+        if (activeTool === 'button' || activeTool === 'checkbox' || activeTool === 'inputbox') {
+          // 交互控件工具：按钮/复选框/输入框（说明与脚本用对话框输入）
+          var wpx = wxp(sx).toFixed(3), wpy = wyp(sy).toFixed(3), posStr = '(' + wpx + ',' + wpy + ')';
+          if (activeTool === 'button') {
+            var capB = prompt(lang === 'en' ? 'Button caption:' : '按钮说明：', lang === 'en' ? 'Run' : '执行');
+            if (capB === null) { resetTool(); return; }
+            var scB = prompt(lang === 'en' ? 'Script (separate commands with ;):' : '命令脚本（多条用 ; 分隔）：', 'A=(1,1)');
+            if (scB === null) { resetTool(); return; }
+            postInput('Button["' + capB.replace(/"/g, "'") + '","' + scB.replace(/"/g, "'") + '",' + posStr + ']',
+                      function (ok) { if (ok) resetTool(); });
+            return;
+          }
+          var wHit = hitObject(sx, sy);
+          if (!wHit) {
+            setMsg(lang === 'en' ? 'Click the object to bind' : '请点击要绑定的对象', true);
+            return;
+          }
+          if (activeTool === 'checkbox') {
+            var capC = prompt(lang === 'en' ? 'Check box caption:' : '复选框说明：', wHit);
+            if (capC === null) { resetTool(); return; }
+            postInput('CheckBox["' + capC.replace(/"/g, "'") + '",' + wHit + ',' + posStr + ']',
+                      function (ok) { if (ok) resetTool(); });
+            return;
+          }
+          postInput('InputBox[' + wHit + ',' + posStr + ']', function (ok) { if (ok) resetTool(); });
           return;
         }
         if (activeTool === 'angle') {
@@ -678,6 +749,7 @@ window.GGB_T2D = (function () {
       snapHitLabel: snapHitLabel,
       toolPointAt: toolPointAt,
       toolCanvasClick: toolCanvasClick,
+      widgetClick: widgetClick,
     };
   }
 

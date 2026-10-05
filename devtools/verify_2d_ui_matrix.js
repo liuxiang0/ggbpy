@@ -705,6 +705,43 @@ function check(name, ok, detail) {
   await ctx2.close();
 
   // -------------------------------------------------------------------------
+  section('T. 交互控件（按钮/复选框/输入框：渲染 + 点击交互）');
+  const wgErrBefore = JS_ERRORS.length;
+  await typeCmd('wC=Circle[(0,0),2]');
+  await typeCmd('wN=3');
+  await typeCmd('wCB=CheckBox["显示圆", wC, (-3,1)]');
+  await typeCmd('wBT=Button["建点", "wA=(1,1)", (1,3)]');
+  await typeCmd('wIB=InputBox[wN, (2,-2)]');
+  await page.waitForTimeout(500);
+  const wgRows = await page.$$eval('#objlist .obj', (els) => els.map((e) => e.getAttribute('data-label')));
+  check('三个控件进入对象列表', ['wCB', 'wBT', 'wIB'].every((k) => wgRows.indexOf(k) >= 0), String(wgRows.slice(-5)));
+  const cvRect = await page.evaluate(() => { const r = document.getElementById('cv').getBoundingClientRect(); return { x: r.x, y: r.y }; });
+  const wBox = async (k) => await page.evaluate((kk) => window.__ggbpyDebug.widgetBoxes()[kk] || null, k);
+  const stLabels = async () => (await (await page.request.get(BASE + '/api/state')).json()).elements || [];
+  const clickWidget = async (k) => {
+    const bx = await wBox(k);
+    if (!bx) return false;
+    await page.mouse.click(cvRect.x + (bx.x0 + bx.x1) / 2, cvRect.y + (bx.y0 + bx.y1) / 2);
+    await page.waitForTimeout(500);
+    return true;
+  };
+  const vis0 = (await stLabels()).filter((e) => e.label === 'wC')[0];
+  const okCB = await clickWidget('wCB');
+  const vis1 = (await stLabels()).filter((e) => e.label === 'wC')[0];
+  check('点击复选框切换目标可见性', okCB && vis0 && vis1 && vis1.visible === false,
+        'visible ' + (vis0 && vis0.visible) + ' → ' + (vis1 && vis1.visible));
+  const hadA = (await stLabels()).some((e) => e.label === 'wA');
+  const okBT = await clickWidget('wBT');
+  const hasA = (await stLabels()).some((e) => e.label === 'wA');
+  check('点击按钮执行脚本（脚本创建的对象出现）', okBT && !hadA && hasA, 'hadA=' + hadA + ' hasA=' + hasA);
+  dialogQueue.push('9');
+  const okIB = await clickWidget('wIB');
+  const nEl = (await stLabels()).filter((e) => e.label === 'wN')[0];
+  check('点击输入框修改绑定对象的值', okIB && nEl && Math.abs(Number(nEl.val) - 9) < 1e-9,
+        'n=' + (nEl && nEl.val));
+  check('控件渲染/交互无新增 JS 错误', JS_ERRORS.length === wgErrBefore,
+        JS_ERRORS.slice(wgErrBefore).join(';').slice(0, 60));
+
   section('S. 角度有向 0..360°：优角绘制到反射扇区');
   const angErrBefore = JS_ERRORS.length;
   await typeCmd('XAx=(2,0)');

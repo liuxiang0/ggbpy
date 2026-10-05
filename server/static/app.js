@@ -229,6 +229,7 @@
       case 'PIE_PAL': return PIE_PAL;
       case 'canvas': return canvas;
       case 'chartBoxes': return chartBoxes;
+      case 'widgetBoxes': return widgetBoxes;
       case 'C': return C;
       case 'planeZ': return planeZ;
       case 'ctx3': return ctx3;
@@ -359,7 +360,7 @@
   function postInput3d() { return _tools3d.postInput3d.apply(null, arguments); }
 
   // 二维元素绘制层（元素/圆锥曲线/不等式/叠加层/图片，P2 前端拆分） 已抽到 static/render2d.js（P2 前端拆分）；同名薄包装保持调用点不变
-  var _render2d = window.GGB_R2D.create({ get: _panelStateGet, angleUnit: angleUnit, drawArrow: drawArrow, drawBarChart: drawBarChart, drawBoxPlot: drawBoxPlot, drawDotPlot: drawDotPlot, drawStemPlot: drawStemPlot, drawGrid: drawGrid, drawLineChart: drawLineChart, drawPieChart: drawPieChart, drawScatterPlot: drawScatterPlot, fmtNum: fmtNum, is3DEl: is3DEl, populateEditBar: populateEditBar, render: render, renderList: renderList, strokeSeg: strokeSeg, sxp: sxp, syp: syp, tipText: tipText, usableCanvasRect: usableCanvasRect });
+  var _render2d = window.GGB_R2D.create({ get: _panelStateGet, angleUnit: angleUnit, findEl: findEl, drawArrow: drawArrow, drawBarChart: drawBarChart, drawBoxPlot: drawBoxPlot, drawDotPlot: drawDotPlot, drawStemPlot: drawStemPlot, drawGrid: drawGrid, drawLineChart: drawLineChart, drawPieChart: drawPieChart, drawScatterPlot: drawScatterPlot, fmtNum: fmtNum, is3DEl: is3DEl, populateEditBar: populateEditBar, render: render, renderList: renderList, strokeSeg: strokeSeg, sxp: sxp, syp: syp, tipText: tipText, usableCanvasRect: usableCanvasRect });
   function gcdInt() { return _render2d.gcdInt.apply(null, arguments); }
   function fmtAngleDeg() { return _render2d.fmtAngleDeg.apply(null, arguments); }
   function drawSelectionOverlay() { return _render2d.drawSelectionOverlay.apply(null, arguments); }
@@ -380,6 +381,7 @@
   function snapHitLabel() { return _tools2d.snapHitLabel.apply(null, arguments); }
   function toolPointAt() { return _tools2d.toolPointAt.apply(null, arguments); }
   function toolCanvasClick() { return _tools2d.toolCanvasClick.apply(null, arguments); }
+  function widgetClick() { return _tools2d.widgetClick.apply(null, arguments); }
 
   // 三维对象位移与拖动（P2 前端拆分） 已抽到 static/drag3d.js（P2 前端拆分）；同名薄包装保持调用点不变
   var _drag3d = window.GGB_DRAG3.create({ get: _panelStateGet, api: api, drawAxes3d: drawAxes3d, drawElement: drawElement, drawGrid: drawGrid, drawMiniAxes3d: drawMiniAxes3d, drawOverlay: drawOverlay, drawSelectionOverlay: drawSelectionOverlay, findEl3d: findEl3d, fmtNum: fmtNum, is3DEl: is3DEl, load3d: load3d, populateEditBar: populateEditBar, render: render, render3d: render3d, renderList: renderList, renderList3d: renderList3d, setMsg: setMsg, sxp: sxp, syp: syp, tipText: tipText, translateMsg: translateMsg, updateUndoBtns: updateUndoBtns, usableCanvasRect: usableCanvasRect });
@@ -578,7 +580,8 @@
   // ---------- 统计图绘制（统一 offset 平移 + 拖拽命中盒） ----------
   // 每张统计图都可作为一个整体在平面上移动：offset 是它的世界坐标偏移，
   // 绘制时整体平移（ctx.translate），拖动时只改 offset（与图内数据无关）。
-  var chartBoxes = {};                    // label → 屏幕包围盒（整体拖动命中用）
+  var chartBoxes = {};
+  var widgetBoxes = {};      // 交互控件（按钮/复选框/输入框）的屏幕命中框                    // label → 屏幕包围盒（整体拖动命中用）
   var PIE_PAL = ['#ef4444', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#64748b'];
 
 
@@ -787,6 +790,7 @@
   canvas.addEventListener('pointerdown', function (ev) {
     ev.preventDefault();
     if (playState) { clearInterval(playState.timer); playState = null; render(); }  // 画布交互自动停止播放
+    if (widgetClick(ev.offsetX, ev.offsetY)) return;   // 控件优先：按钮/复选框/输入框
     if (activeTool) { toolPreview = null; toolCanvasClick(ev.offsetX, ev.offsetY); return; }
     hoverTip = null;
     touches[ev.pointerId] = { x: ev.offsetX, y: ev.offsetY };
@@ -1288,6 +1292,7 @@
     chartBox: function (label) { return chartBoxes[label] || null; },
     selectMode: function () { return !!selectMode; },
     chartBoxes: function () { return chartBoxes; },
+    widgetBoxes: function () { return widgetBoxes; },
     faceBudget: function () { return MESH_FACE_BUDGET; },
     cacheSize: function () { return Object.keys(meshFaceCache).length; },
     projCalls: function () { return dbgProjCalls; },
@@ -2464,6 +2469,7 @@
     // 作图工具与选择模式互斥：激活工具时自动退出选择
     if (selectMode) setSelectMode(false);
     if (name !== 'image') pendingImage = null;   // 切换到其它工具时丢弃待插入图片
+    if (name === 'image') { var _f = document.getElementById('imgfile'); if (_f) _f.click(); }
     activeTool = name;
     toolSel = [];
     updateToolButtons();

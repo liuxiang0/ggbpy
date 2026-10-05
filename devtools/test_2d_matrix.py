@@ -1104,6 +1104,32 @@ _ag.process("V8=Angle[(1,0),(-1,-1)]")
 check("二向量形式同为有向：Angle[(1,0),(-1,-1)] = 225°", abs(_ag.elements["V8"].value - 225) < 1e-9,
       "%.1f°" % _ag.elements["V8"].value)
 
+# ---------------------------------------------------------------------------
+section("Z9. 交互控件（Button / CheckBox / InputBox）")
+
+_wg = Construction()
+_wg.process("c9=Circle[(0,0),2]")
+_wg.process("n9=3")
+_wg.process('b9=Button["点我", "A9=(2,2)", (3,4)]')
+_wg.process('cb9=CheckBox["显示圆", c9, (-3,1)]')
+_wg.process("ib9=InputBox[n9, (2,-2)]")
+_b, _cb, _ib = _wg.elements["b9"], _wg.elements["cb9"], _wg.elements["ib9"]
+check("Button：caption/script/位置正确", _b.kind == "button" and _b.caption == "点我"
+      and _b.script == "A9=(2,2)" and abs(_b.x - 3) < 1e-9 and abs(_b.y - 4) < 1e-9,
+      "%s %r %r (%.1f,%.1f)" % (_b.kind, _b.caption, _b.script, _b.x, _b.y))
+check("CheckBox：绑定目标对象", _cb.kind == "checkbox" and _cb.target == "c9" and _cb.caption == "显示圆",
+      "%s → %s" % (_cb.kind, _cb.target))
+check("InputBox：绑定目标对象", _ib.kind == "inputbox" and _ib.target == "n9", "%s → %s" % (_ib.kind, _ib.target))
+check("控件序列化含 caption/target/坐标（供前端派生实时态）",
+      all(k in _b.draw((0, 0, 1, 1)) for k in ("caption", "target", "x", "y"))
+      and "script" in _b.draw((0, 0, 1, 1)), "")
+_msg_b = _wg.process('bx=Button["只有说明"]')
+_msg_c = _wg.process('cbx=CheckBox["说明", 不存在]')
+check("控件参数缺失/目标不存在 → 明确报错",
+      _wg.elements.get("bx") is None and "命令脚本" in (_msg_b or "")
+      and _wg.elements.get("cbx") is None and "找不到对象" in (_msg_c or ""),
+      "%s | %s" % ((_msg_b or "")[:22], (_msg_c or "")[:22]))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

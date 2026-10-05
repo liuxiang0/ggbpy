@@ -367,6 +367,26 @@ check("API：移动点后元胞面积变化（内联列表 + memo 修复链路�
       [round(float(v), 4) for v in (_vel2.get("areas") or [])] != _areas_before,
       "%s → %s" % (_areas_before[:2], [round(float(v), 4) for v in (_vel2.get("areas") or [])][:2]))
 
+# ---------------------------------------------------------------------------
+section("K. 交互控件经 HTTP（caption/target/脚本 + 目标可见性切换）")
+
+clear()
+put("cK=Circle[(0,0),2]")
+put("nK=3")
+put('bK=Button["点我", "AK=(2,2)", (3,4)]')
+put('cbK=CheckBox["显示圆", cK, (-3,1)]')
+put("ibK=InputBox[nK, (2,-2)]")
+_elsK = {e.get("label"): e for e in state()}
+check("API：Button/CheckBox/InputBox 三个控件都创建成功并带绑定信息",
+      (_elsK.get("bK") or {}).get("kind") == "button" and (_elsK.get("bK") or {}).get("script") == "AK=(2,2)"
+      and (_elsK.get("cbK") or {}).get("target") == "cK" and (_elsK.get("ibK") or {}).get("target") == "nK",
+      "%s/%s/%s" % ((_elsK.get("bK") or {}).get("kind"), (_elsK.get("cbK") or {}).get("target"),
+                    (_elsK.get("ibK") or {}).get("target")))
+put("SetVisible[cK, false]")
+_elsK2 = {e.get("label"): e for e in state()}
+check("API：SetVisible 切换目标可见性（复选框的前端派生依据）",
+      (_elsK2.get("cK") or {}).get("visible") is False, str((_elsK2.get("cK") or {}).get("visible")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

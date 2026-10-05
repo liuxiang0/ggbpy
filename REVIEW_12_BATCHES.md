@@ -44,7 +44,7 @@
 ### §0 之外的补强（2026-10-04 第五十九批）
 
 - **CAS 算子接线为构造命令**：`Solve` `NSolve` `Limit` `PartialFractions` `Substitute` `SolveODE`（CAS 面板早已实现，但只在那里可用）
-  + `SurfaceArea` + `IsFinite` —— 每条在 `SPECS` 只加一行（§6-F「命令注册单一来源」的直接红利），全部 DAG 可重算
+  - `SurfaceArea` + `IsFinite` —— 每条在 `SPECS` 只加一行（§6-F「命令注册单一来源」的直接红利），全部 DAG 可重算
 
 ### §0 之外的补强（2026-10-04 第六十批）
 
@@ -112,12 +112,14 @@ python3 devtools/test_quality.py                                 # 宽泛捕获�
 > 复核状态见 **§0**（2026-10-04）。
 
 ### P0 — 阻塞级 / 影响正确性与可用性
+
 1. **服务端单一全局 Construction**（`server/main.py`：`cons = Construction()`）：所有客户端共享一份构造，无会话隔离、无鉴权。第五批"两个浏览器脚本并发互清场"就是这个结构的直接表现。
 2. **重计算同步阻塞全局**（`process_line` → 同步几何计算）：`ImplicitSurface` 实测 n=24/32/40/48 = **0.88/1.23/2.03/3.12 s**（n 上限 64 → 约 7–8 s），期间所有请求排队；无超时、无取消、无线程池卸载。
 3. **撤销/重做 = 全构造重放**（`construction.snapshot/restore`）：快照存 `(label, defn, style)`，恢复时对整条构造 `process_internal` 重放 —— 含 n=32 等值面时 **redo 1.20 s**（首次创建 1.48 s）；快照无差量、无计算缓存。
 4. **3D 状态每次全量传输**（`app.js load3d` + 第十批的 `refresh3dIfNeeded`）：每次输入/撤销/重做都 `fetch /api/state3d`。实测载荷 **n=24 → 0.94 MB，n=32 → 1.71 MB**，服务端 JSON 序列化 10–19 ms；无增量、无缓存、无压缩。
 
 ### P1 — 质量与可维护性
+
 5. **3D 渲染 O(边×面) 遮挡测试**：已有预算阈值（2000 面 / 4000 边 / 15 万乘积）兜底，但阈值内仍全量计算，且每帧重投影所有顶点（无投影缓存、无脏标记重绘）。
 6. **命令注册四张表手工同步**：`COMMANDS`(163) / `ALIASES`(188) / `_result_kind` / `DISPLAY_NAMES`(54) 各写一遍，新增命令要改 4 处，漏一处就退化（如缺 `_result_kind` → 自动标签类型错）。
 7. **`data` 约定散落无 schema**：`commands.py` 内 **24 处**内联 `{"objtype": …}`；`analytic/param/ranges/expr/meshid/lo/hi/normal/u/v/segs/pts/grid/center/axes` 等键各自为政，新代码靠约定与记忆。
@@ -127,6 +129,7 @@ python3 devtools/test_quality.py                                 # 宽泛捕获�
 11. **内核单文件 7,671 行**：`_transform_fn` 256 行、`process_line` 166 行；几何/统计/3D/CAS/导入导出全混在一起。
 
 ### P2 — 已知但影响有限
+
 12. SVG 导出只含 2D 视图（3D 跳过，无 3D 投影视图）；`.ggb` 不内嵌网格数据（导入网格只能 .ggk）；`Perimeter` 对立体无定义（刻意）。
 13. 2D 侧没有"限制/边界"文档章节（3D 侧很完整）。
 
