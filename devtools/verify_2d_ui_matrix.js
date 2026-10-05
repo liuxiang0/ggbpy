@@ -724,6 +724,10 @@ function check(name, ok, detail) {
   const slEl = (((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === 'uS')[0];
   check('拖动滑钮改变数值（≈70% → 7，按步长吸附）',
         !!slEl && Math.abs(Number(slEl.val) - 7) < 1e-9, 'val=' + (slEl && slEl.val));
+  const slEl2 = (((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === 'uS')[0];
+  check('拖动后滑块仍是滑块（defn/min 保留、几何不丢）',
+        !!slEl2 && String(slEl2.defn).indexOf('Slider[') >= 0 && slEl2.min === 0,
+        JSON.stringify({ defn: slEl2 && slEl2.defn, min: slEl2 && slEl2.min }));
   check('滑块拖动无新增 JS 错误', JS_ERRORS.length === slErrBefore,
         JS_ERRORS.slice(slErrBefore).join(';').slice(0, 60));
 

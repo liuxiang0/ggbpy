@@ -402,6 +402,28 @@ _sEl2 = {e.get("label"): e for e in state()}.get("sL") or {}
 check("API：/api/drag 更新滑块数值（画布拖动与面板共用同一端点）",
       abs(float(_sEl2.get("val", -1)) - 6) < 1e-9, str(_sEl2.get("val")))
 
+# ---------------------------------------------------------------------------
+section("M. 滑块持久化经 HTTP（drag 保持定义 + .ggk 往返保留数值）")
+
+clear()
+put("sM=Slider[0,10,1,(-5,3)]")
+post("/api/drag", {"label": "sM", "x": 7, "y": 0, "push": True})
+_sM = {e.get("label"): e for e in state()}.get("sM") or {}
+check("API：/api/drag 后滑块仍是滑块（min/slider_x 保留、值已更新）",
+      abs(float(_sM.get("val", -1)) - 7) < 1e-9 and _sM.get("min") == 0
+      and abs(float(_sM.get("slider_x", 99)) + 5) < 1e-9,
+      "val=%s min=%s slider_x=%s" % (_sM.get("val"), _sM.get("min"), _sM.get("slider_x")))
+_st, _h, _raw, _js = req("/api/download")
+check("API：.ggk 含 version 5 与 values 字段",
+      _st == 200 and b'"version": 5' in _raw and b'"values"' in _raw, "len=%d" % len(_raw))
+_ggk = _raw.decode("utf-8")
+post("/api/clear", {})
+_st2, _js2 = post("/api/load", _ggk)
+_sM2 = {e.get("label"): e for e in state()}.get("sM") or {}
+check("API：载入 .ggk 后滑块值保留为 7（不再回到 0）",
+      _st2 == 200 and abs(float(_sM2.get("val", -1)) - 7) < 1e-9 and _sM2.get("min") == 0,
+      "val=%s" % _sM2.get("val"))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

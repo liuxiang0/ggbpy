@@ -97,7 +97,9 @@ def _cmd_setvalue(cons, defn, args):
     num = _resolve(cons, args[0], ("number",))
     v = eval_number(cons, args[1])
     num.value = v
-    num.defn = num.label + "=" + _fmt(v)
+    if getattr(num, "min", None) is None:
+        num.defn = num.label + "=" + _fmt(v)
+    # 滑动条保留 `Slider[...]` defn（见 construction.move 的同类处理）
     cons._recompute(num)
     return []
 

@@ -49,6 +49,8 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   `Substitute[表达式|函数, 变量, 值]` → 数值或函数 · `SolveODE[微分方程]` → 通解文本 ·
   `IsFinite[数值|表达式]` → 布尔（`1/0`/`∞`/`0/0` 均为 False）· `SurfaceArea[立体|曲面]` → 表面积（球/锥/柱解析，网格按三角形求和）
   中文别名：求解方程 / 数值解 / 极限 / 部分分式 / 代入 / 微分方程 / 是否有限 / 表面积
+- **滑块的定义与数值分别保存**：拖动滑钮或 `SetValue` **不会改写 `Slider[…]` 定义**（否则会退化成普通数值、丢失 min/max 与画布线段）；
+  当前值由 **`.ggk` v5 的 `values` 字段**保存/恢复（旧 v4 文件缺该字段 → 回落到定义里的初值，向后兼容）
 - **滑块在画布上就是一条线段**（GeoGebra 样式）：`Slider[最小值, 最大值, 步长?, (x,y)?]` 在图形区画成**轨道线段 + 可拖动滑钮**，
   左右标注最小/最大值、上方标注 `名称 = 当前值`；**拖动滑钮即改值**（按步长吸附，与对象列表里的滑动条共用 `/api/drag`，松开即提交）；
   省略位置时自动排布在左下方（每多一个滑块下移一行）
@@ -194,6 +196,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第六十九批（2026-10-05 · 滑块定义保持 + `.ggk` v5 数值持久化）**：
+  - **发现两个真问题**：① `SetValue` 与 `Construction.move`（画布拖动走的端点）都会把数值对象的 defn **改写成 `label=值`** ✗ → 滑块一旦被拖动就退化成普通数值，**min/max/step 与画布线段几何全部丢失**；② `.ggk` 只存 `defn` 不存数值 ✗ → 滑块重载后**回到最小值**
+  - **修复①**：数值对象带 `min`（即滑动条）时**保留 `Slider[…]` 定义**，只更新值；普通自由数值仍按值写 defn（旧行为不变）
+  - **修复②**：`.ggk` 升到 **v5**，新增 `values`（自由数值当前值）字段，载入重放后恢复并**重算其依赖**；旧 v4 文件缺该键时回落定义初值（向后兼容）
+  - **实测**：`move(s, 6)` 后 defn 仍是 `s=Slider[0,10,1,(-5,3)]` ✓、`SetValue[s,8]` 后仍是 ✓；`.ggk` 往返 `s=8` 且仍是滑动条 ✓；旧 v4 载入 `s=0` ✓；函数 `g(x)=s*x` 随滑块联动（0 → `6*x`）✓
+  - 检测：2D 内核 226 → **232**、2D API 58 → **61**、2D 浏览器 101 → **102**（新增「拖动后仍是滑块」回归断言）
 - **第六十八批（2026-10-05 · 滑块改为画布线段（GeoGebra 样式））**：
   - **需求**：滑块希望像 GeoGebra 那样在**图形区画一条线段**（原实现只有对象列表里的 `<input type=range>` ✗）
   - **内核**：`Slider[最小值, 最大值, 步长?, (x,y)?]` 新增可选位置（缺省自动排布：左下方逐行下移）与 `slider_len`（轨道世界长度，默认 3），并在 `GeoNumber.draw()` 中序列化 `slider_x/slider_y/slider_len`
@@ -480,7 +488,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 226 + 2D API 58 + 3D 496/181/142 + 2D 前端 101 + 代码质量 19 = 1626 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 232 + 2D API 61 + 3D 496/181/142 + 2D 前端 102 + 代码质量 19 = 1636 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

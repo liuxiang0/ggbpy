@@ -368,7 +368,11 @@ class Construction:
             return True
         elif el.kind == "number":
             el.value = float(x)
-            el.defn = label + "=" + _fmt(el.value)
+            if getattr(el, "min", None) is None:
+                el.defn = label + "=" + _fmt(el.value)
+            # 滑动条（有 min/max）保留 `Slider[...]` defn：否则会退化成普通数值，
+            # 丢失 min/max/step 与画布上的线段几何（当前值改由 .ggk 的 values 字段保存）
+
         else:
             raise GeoError(label + " 暂不支持拖拽")
         self._recompute(el)
@@ -688,7 +692,7 @@ class Construction:
                    if getattr(self.elements[lab], "kind", "") == "image"]
         return json.dumps({
             "format": "ggk",
-            "version": 4,          # v4：styles 增加统计图 offset（第 5 项，旧文件兼容）
+            "version": 5,          # v5：新增 values（自由数值/滑块当前值）；旧文件缺该键时用 defn 初值
             "order": self.order,
             "defns": {lab: self.elements[lab].defn for lab in self.order},
             "styles": {lab: [self.elements[lab].color, self.elements[lab].visible,
@@ -701,6 +705,11 @@ class Construction:
             "meshes": mesh_store.serialize([getattr(self.elements[lab], "meshid", "")
                                             for lab in self.order]),
             "macros": macro.serialize(self),
+            # 自由数值（滑块）的**当前值**：defn 只含 min/max/step，不存会在重载时回到最小值
+            "values": {lab: float(self.elements[lab].value) for lab in self.order
+                       if getattr(self.elements[lab], "kind", "") == "number"
+                       and getattr(self.elements[lab], "free", False)
+                       and isinstance(getattr(self.elements[lab], "value", None), (int, float))},
         }, ensure_ascii=False, indent=1)
 
     def save_ggk(self, view=None) -> str:
@@ -744,6 +753,19 @@ class Construction:
         from . import macro
         if data.get("macros"):
             macro.load(data["macros"], self)
+        # v5：恢复自由数值（滑块）的当前值并重算其依赖（defn 里不含当前值）
+        _touched = []
+        for _lab, _v in (data.get("values") or {}).items():
+            _el = self.elements.get(_lab)
+            if _el is None or getattr(_el, "kind", "") != "number" or not getattr(_el, "free", False):
+                continue
+            try:
+                _el.value = float(_v)
+                _touched.append(_el)
+            except (TypeError, ValueError):  # 数值非法：保留 defn 初值
+                pass
+        for _el in _touched:
+            self._recompute(_el)
         return tuple(data["view"]) if data.get("view") else None
 
     # ------------------------------------------------------------------

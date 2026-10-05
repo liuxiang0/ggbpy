@@ -1149,6 +1149,40 @@ check("缺省位置自动排布（左上起逐行下移，互不重叠）",
       _c.slider_x is not None and _c.slider_y is not None and _c.slider_y < _b2.slider_y,
       "(%s,%s)" % (_c.slider_x, _c.slider_y))
 
+# ---------------------------------------------------------------------------
+import json as _json_mod  # noqa: E402  （Z11 段用）
+section("Z11. 滑块定义保持与 .ggk v5 数值持久化")
+
+_pv = Construction()
+_pv.process("sP=Slider[0,10,1,(-5,3)]")
+_pv.process("nP=3")
+_pv.process("gP(x)=sP*x")
+_pv.move("sP", 6.0, 0.0)
+_pv.process("SetValue[nP, 5]")
+check("拖动滑块不改写 defn（仍是 Slider[…]）且几何/范围保留",
+      _pv.elements["sP"].defn.startswith("sP=Slider[") and _pv.elements["sP"].min == 0
+      and _pv.elements["sP"].max == 10 and abs(_pv.elements["sP"].slider_x + 5) < 1e-9,
+      "%r min=%s" % (_pv.elements["sP"].defn, _pv.elements["sP"].min))
+check("普通自由数值仍按值写入 defn（旧行为不变）", _pv.elements["nP"].defn == "nP=5", _pv.elements["nP"].defn)
+check("函数引用滑块会联动（g(x)=sP*x → 6x）", "6" in str(_pv.elements["gP"].expr), str(_pv.elements["gP"].expr)[:20])
+
+_pv.process("SetValue[sP, 8]")
+_data = _json_mod.loads(_pv.save_json())
+check(".ggk v5：values 保存自由数值当前值",
+      _data.get("version") == 5 and abs(_data.get("values", {}).get("sP", -1) - 8) < 1e-9
+      and abs(_data.get("values", {}).get("nP", -1) - 5) < 1e-9, str(_data.get("values")))
+_pv2 = Construction()
+_pv2.load_json(_json_mod.dumps(_data))
+check(".ggk 往返：滑块仍是滑块且当前值保留（不再回到最小值）",
+      _pv2.elements["sP"].value == 8 and _pv2.elements["sP"].defn.startswith("sP=Slider[")
+      and _pv2.elements["sP"].min == 0 and _pv2.elements["nP"].value == 5,
+      "sP=%.1f defn=%r nP=%.1f" % (_pv2.elements["sP"].value, _pv2.elements["sP"].defn, _pv2.elements["nP"].value))
+_old = dict(_data); _old.pop("values"); _old["version"] = 4
+_pv3 = Construction()
+_pv3.load_json(_json_mod.dumps(_old))
+check("旧 v4 文件（无 values）仍可载入（用 defn 初值）",
+      _pv3.elements["sP"].value == 0 and _pv3.elements["sP"].min == 0, "%.1f" % _pv3.elements["sP"].value)
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
