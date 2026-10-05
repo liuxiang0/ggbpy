@@ -37,7 +37,8 @@ from .numeric import _cmd_complex_abs, _cmd_gcd, _cmd_iqr, _cmd_lcm, _cmd_max, _
 from .primitives import _cmd_anglebisector, _cmd_arc, _cmd_arecollinear, _cmd_areparallel, _cmd_areperpendicular, _cmd_centroid, _cmd_circle, _cmd_fitline, _cmd_foot, _cmd_incenter, _cmd_incircle, _cmd_intersect, _cmd_isoline, _cmd_line, _cmd_midpoint, _cmd_perpbis, _cmd_perpendicularline, _cmd_pointoncircle, _cmd_pointonpath, _cmd_polygon, _cmd_polyline, _cmd_randpointin, _cmd_ray, _cmd_regularpolygon, _cmd_rigidpolygon, _cmd_sector, _cmd_segment, _cmd_semicircle, _cmd_tangent, _cmd_vector
 from .proofs import _cmd_areconcurrent, _cmd_areconcyclic, _cmd_arecongruent, _cmd_prove
 from .widgets import (_cmd_button, _cmd_checkbox, _cmd_inputbox, _cmd_setcaption,
-                      _cmd_setinput, _cmd_setscript, _cmd_setwidgetpos)
+                      _cmd_setinput, _cmd_setscript, _cmd_setslider,
+                      _cmd_setwidgetpos)
 from .tessellation import _cmd_delaunay, _cmd_voronoi
 from .transforms import _cmd_dilate, _cmd_invert, _cmd_reflect, _cmd_rotate, _cmd_translate
 
@@ -167,6 +168,7 @@ SPECS: List[Tuple[str, Callable, str, str, Tuple[str, ...]]] = [
     ("setcaption", _cmd_setcaption, "SetCaption", "point", ("设置说明", "改说明")),
     ("setscript", _cmd_setscript, "SetScript", "point", ("设置脚本", "改脚本")),
     ("setinput", _cmd_setinput, "SetInput", "point", ("输入框提交", "提交输入")),
+    ("setslider", _cmd_setslider, "SetSlider", "point", ("滑块范围", "改滑块")),
     ("perimeter", _cmd_perimeter, "", "number", ("周长",)),
     ("circumference", _cmd_circumference, "", "number", ("圆周长", "椭圆周长")),
     ("incenter", _cmd_incenter, "", "point", ("内心",)),

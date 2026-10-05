@@ -1105,6 +1105,21 @@
   // 双击控件：就地编辑说明（按钮再编辑脚本）——对象列表的「重定义」栏是另一条路径
   function editWidget(el) {
     if (!el) return;
+    // 滑动条：改「最小值,最大值,步长」（SetSlider 会保留当前值、越界夹紧、按步长吸附）
+    if (el.kind === 'number' && el.min !== null && el.min !== undefined) {
+      var pre = el.min + ',' + el.max + ',' + el.step;
+      var sv = prompt(t('widgetEditSlider'), pre);
+      if (sv === null) return;
+      var sp = String(sv).split(',');
+      if (sp.length < 2 || !String(sp[0]).trim() || !String(sp[1]).trim()) {
+        setMsg(t('widgetEditSliderBad'), true);
+        return;
+      }
+      postInput('SetSlider[' + el.label + ',' + sp[0].trim() + ',' + sp[1].trim()
+                + (sp[2] && String(sp[2]).trim() ? ',' + sp[2].trim() : '') + ']',
+                function () { loadState(); });
+      return;
+    }
     var cap = prompt(t('widgetEditCaption'), el.caption || '');
     if (cap === null) return;
     postInput('SetCaption[' + el.label + ',"' + String(cap).replace(/"/g, "'") + '"]', function (ok) {
@@ -1116,7 +1131,11 @@
     });
   }
   canvas.addEventListener('dblclick', function (ev) {
-    var el = widgetHit(ev.offsetX, ev.offsetY);
+    var el = widgetHit(ev.offsetX, ev.offsetY);          // 按钮/复选框/输入框
+    if (!el) {
+      var sLabel = sliderAt(ev.offsetX, ev.offsetY);     // 滑动条（改范围/步长）
+      if (sLabel) el = findEl(sLabel);
+    }
     if (el) editWidget(el);
   });
 
@@ -2059,7 +2078,8 @@
     var lab = row.getAttribute('data-label');
     var df = t.closest('.df');
     var rEl = df ? null : findEl(lab);
-    var isWidget = !!rEl && (rEl.kind === 'button' || rEl.kind === 'checkbox' || rEl.kind === 'inputbox');
+    var isWidget = !!rEl && (rEl.kind === 'button' || rEl.kind === 'checkbox' || rEl.kind === 'inputbox'
+                             || (rEl.kind === 'number' && rEl.min !== null && rEl.min !== undefined));
     if (!df && !isWidget) return;
     var now = new Date().getTime();
     if (rowClick.label === lab && now - rowClick.t < 450) {

@@ -495,6 +495,19 @@ _nQ2 = {e.get("label"): e for e in state()}.get("nQ") or {}
 check("API：拖动滑块后受控数值跟随（sQ=8 → nQ=16）",
       abs(float(_nQ2.get("val", -1)) - 16) < 1e-9, str(_nQ2.get("val")))
 
+# ---------------------------------------------------------------------------
+section("R. 改滑块范围经 HTTP（SetSlider）")
+
+clear()
+put("sR=Slider[0,10,1,(0,0)]")
+post("/api/drag", {"label": "sR", "x": 7, "y": 0, "push": True})
+put("SetSlider[sR, -5, 5, 0.5]")
+_elsR = {e.get("label"): e for e in state()}.get("sR") or {}
+check("API：SetSlider 改范围/步长并夹紧当前值（7 → 5）",
+      float(_elsR.get("min")) == -5 and float(_elsR.get("max")) == 5
+      and abs(float(_elsR.get("val")) - 5) < 1e-9 and "Slider[-5,5,0.5," in str(_elsR.get("defn")),
+      "min=%s max=%s val=%s" % (_elsR.get("min"), _elsR.get("max"), _elsR.get("val")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

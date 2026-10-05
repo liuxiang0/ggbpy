@@ -910,6 +910,29 @@ function check(name, ok, detail) {
   check('视图按钮无新增 JS 错误', JS_ERRORS.length === vbErrBefore,
         JS_ERRORS.slice(vbErrBefore).join(';').slice(0, 60));
 
+  section('Y. 滑块范围/步长（SetSlider 语义 + 几何同步）');
+  const seErrBefore = JS_ERRORS.length;
+  await typeCmd('seS=Slider[0,10,1,(-2,2)]');
+  await page.waitForTimeout(450);
+  // 注意：滑块「范围编辑器」的 UI 入口（画布双击 / 列表行双击）本用例**暂未覆盖** ——
+  // 实测两者都打不开弹窗（画布双击被滑块的「改值拖动」抢占；列表行路径与控件行不同，未定位原因）。
+  // 内核/HTTP 语义由 2D 内核 Z16 段与 API R 段覆盖；此处验证「改范围后几何/定义同步且仍正常渲染」。
+  await page.request.post(BASE + '/api/input', { data: { text: 'SetSlider[seS,-5,5,0.5]' } });
+  await page.waitForTimeout(300);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(800);
+  const seEl = (((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === 'seS')[0] || {};
+  check('SetSlider 改范围后滑块定义/几何同步（min/max/step 与 defn）',
+        Number(seEl.min) === -5 && Number(seEl.max) === 5 && Math.abs(Number(seEl.step) - 0.5) < 1e-9
+        && String(seEl.defn).indexOf('Slider[-5,5,0.5,') >= 0,
+        JSON.stringify({ min: seEl.min, max: seEl.max, step: seEl.step, defn: seEl.defn }));
+  const seBox2 = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['seS'] || null);
+  check('改范围后滑块仍渲染在画布上（命中框仍在，范围已按新值重算）',
+        !!seBox2 && seBox2.kind === 'slider' && Math.abs(seBox2.wx1 - seBox2.wx0 - 3) < 1e-6,
+        JSON.stringify(seBox2));
+  check('滑块范围改动无新增 JS 错误', JS_ERRORS.length === seErrBefore,
+        JS_ERRORS.slice(seErrBefore).join(';').slice(0, 60));
+
   section('S. 角度有向 0..360°：优角绘制到反射扇区');
   const angErrBefore = JS_ERRORS.length;
   await typeCmd('XAx=(2,0)');

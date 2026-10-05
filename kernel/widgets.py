@@ -211,3 +211,41 @@ def _cmd_setinput(cons, defn, args):
     # 其它（含受控对象、点、表达式）→ 重定义
     from .editing import _cmd_redefine
     return _cmd_redefine(cons, defn, [tgt.label, tgt.label + "=" + text])
+
+
+def _cmd_setslider(cons, defn, args):
+    """``SetSlider[滑块, 最小值, 最大值, 步长?]`` → 改范围/步长。
+
+    - **当前值保留**（若落到新范围外则夹紧到边界；按新步长吸附）
+    - 位置（slider_x/slider_y）与 defn 一并同步 → `.ggk` 往返一致
+    - 用途：滑块给函数/几何对象当**动态参数**，范围与步长需要随手调整
+    """
+    if len(args) not in (3, 4):
+        raise GeoError("SetSlider 需要 滑块、最小值、最大值（可选步长）")
+    el = _resolve(cons, args[0])
+    if getattr(el, "kind", "") != "number" or getattr(el, "min", None) is None:
+        raise GeoError("SetSlider 需要滑动条（当前是 %s）" % getattr(el, "kind", "?"))
+    lo = eval_number(cons, args[1])
+    hi = eval_number(cons, args[2])
+    if hi <= lo:
+        raise GeoError("最大值必须大于最小值")
+    if len(args) == 4:
+        step = eval_number(cons, args[3])
+        if step <= 0:
+            raise GeoError("步长必须为正")
+    else:
+        step = (hi - lo) / 100.0
+    el.min, el.max, el.step = lo, hi, step
+    # 保留当前值：夹紧到新范围并按新步长吸附
+    v = float(el.value)
+    v = max(lo, min(hi, v))
+    import math as _m
+    if step > 0:
+        v = lo + round((v - lo) / step) * step
+        v = max(lo, min(hi, v))
+        if abs(v - round(v)) < COORD:
+            v = float(round(v))
+    el.value = v
+    el.defn = _regen_defn(el)
+    cons._recompute(el)
+    return []

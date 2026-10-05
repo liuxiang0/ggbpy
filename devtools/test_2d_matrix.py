@@ -1311,6 +1311,36 @@ check("SetInput 改受控对象 → 按新表达式重定义", abs(_si.elements[
 _msg_si = _si.process('SetInput[nI, "((("]')
 check("SetInput 非法表达式 → 明确报错", "不匹配" in (_msg_si or "") or "错误" in (_msg_si or ""), (_msg_si or "")[:30])
 
+# ---------------------------------------------------------------------------
+section("Z16. 修改滑块范围/步长（SetSlider）")
+
+_ss = Construction()
+_ss.process("sS=Slider[0,10,1,(-5,3)]")
+_ss.process("fS(x)=sS*x")
+_ss.process("SetValue[sS, 7]")
+_ss.process("SetSlider[sS, 0, 20, 2]")
+_e = _ss.elements["sS"]
+check("SetSlider 改范围与步长（当前值按新步长吸附：7 → 8）",
+      _e.min == 0 and _e.max == 20 and _e.step == 2 and abs(_e.value - 8) < 1e-9
+      and "Slider[0,20,2," in _e.defn, "值=%.1f defn=%r" % (_e.value, _e.defn))
+check("改范围保留位置", abs(_e.slider_x + 5) < 1e-9 and abs(_e.slider_y - 3) < 1e-9,
+      "(%s,%s)" % (_e.slider_x, _e.slider_y))
+_ss.process("SetSlider[sS, 9, 10, 1]")
+check("当前值越界 → 夹紧到新范围（8 → 9）", abs(_ss.elements["sS"].value - 9) < 1e-9,
+      "%.1f" % _ss.elements["sS"].value)
+check("改范围后依赖对象跟随（f(x)=sS*x）", "9" in str(_ss.elements["fS"].expr), str(_ss.elements["fS"].expr)[:20])
+_msg_ss1 = _ss.process("SetSlider[fS, 0, 1]")
+_msg_ss2 = _ss.process("SetSlider[sS, 5, 1]")
+check("非滑块 / 范围非法 → 明确报错", "滑动条" in (_msg_ss1 or "") and "最大值" in (_msg_ss2 or ""),
+      "%s | %s" % ((_msg_ss1 or "")[:20], (_msg_ss2 or "")[:20]))
+_dss = _json_mod.loads(_ss.save_json())
+_ss2 = Construction(); _ss2.load_json(_json_mod.dumps(_dss))
+check(".ggk 往返保留新范围/步长/值",
+      _ss2.elements["sS"].min == 9 and _ss2.elements["sS"].max == 10
+      and _ss2.elements["sS"].step == 1 and abs(_ss2.elements["sS"].value - 9) < 1e-9,
+      "%s..%s/%s 值=%.1f" % (_ss2.elements["sS"].min, _ss2.elements["sS"].max,
+                            _ss2.elements["sS"].step, _ss2.elements["sS"].value))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
