@@ -202,6 +202,11 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第七十二批（2026-10-05 · 内核清偿：表达式依赖助手拆出 `kernel/exprdeps.py`）**：
+  - 把上一批新增的 `point_expr_state` / `numeric_expr_state` / `_ref_deps` 与既有的 `_list_state_from_parts` / `list_literal_state` 一并搬到新模块 **`kernel/exprdeps.py`**（164 行，职责单一：把「引用已有元素」的字面量变成受控对象）
+  - `cmd_util` 改为 **re-export 同一对象**（233 行，回到模块规模预算 120–340 内 ✓），历史调用点零改动；`exprdeps` 对 `cmd_util._tuple_parts_any` 用**函数内懒引用**避免模块级循环导入
+  - 新增断言：`exprdeps.py` 存在 + 规模合理 + 与 `cmd_util` re-export 同一对象（模块边界 333 → **336**）
+  - 行为回归：`A=(s,0)` / `Segment[(0,0),(s,2)]` / `n=s*2` 三个受控对象在 `s=3→7` 时全部跟随 ✓
 - **第七十一批（2026-10-05 · 表达式依赖化：滑块真正驱动几何）**：
   - **动机**：实测发现滑块能驱动 `Circle[(0,0),s]`（元素参数 ✓）与动态文本 ✓，但 **`A=(s,0)`、`n=s*2`、`Segment[(0,0),(s,0)]` 不跟随** ✗ —— 求值后固化成自由对象，滑块等于没用
   - **修复**：新增 `cmd_util.point_expr_state` / `numeric_expr_state`（与既有 `list_literal_state` 同一思路：**从原始行文本**取分量表达式 → 收集引用的元素为依赖 → 重算时按当前值重新求值），并在 `commands.process_line` 的点/数值分支接入；`_point_arg` 的**字面量坐标**同样依赖化（覆盖 `Segment[(0,0),(s,2)]`）
@@ -506,7 +511,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 242 + 2D API 66 + 3D 496/181/142 + 2D 前端 107 + 代码质量 19 = 1656 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 242 + 2D API 66 + 3D 496/181/142 + 2D 前端 107 + 代码质量 19 = 1659 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
