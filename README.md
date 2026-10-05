@@ -76,8 +76,8 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   滚轮缩放时柱高/饼半径同比变化（浏览器回归断言：scale ×1.15 → 柱高与饼直径 ×1.15）；**旧行为**中柱高与基线是屏幕固定像素、饼图完全固定在画布中心，缩放时与折线/散点不一致 —— 已统一
 - **茎叶图边界**：`StemPlot` 只接受**非负有限**数据（负数/非有限给明确 error；空数据报错）；叶单位固定为 1（个位为叶）
 - **列表字面量依赖化（已修）**：`L={n, n*10+2}` 这类**含元素引用**的列表字面量现在会**声明依赖并随依赖重算**（`SetValue[n,3]` → `L=[3,32,35]`，
-  且 `Sum[L]`、`StemPlot[L]` 等消费方同步刷新）；**纯常量列表保持静态快照**（行为不变）。仍有的边界：
-  列表字面量里**不能直接写点标签**（`{A,B}`、`{(A),(B)}` 在解析层即被拒 —— 这是既有解析限制），点列表请用坐标元组 `{(1,1),(3,1)}`
+  且 `Sum[L]`、`StemPlot[L]` 等消费方同步刷新）；**纯常量列表保持静态快照**（行为不变）。**列表也接受点标签**：`{A,B}`、`{A,B,M}`、三维点 `{P3,Q3}` 均可（`itemkind` 自动为 point / point3d），
+  且**随点移动自动重算**（含列表里的派生点）；给点加括号 `{(A),(B)}` 会提示改用 `{A,B}`；点标签与坐标混用、二维与三维混用都给明确报错
 - **剖分的边界**：`Delaunay` 至少 3 点、共线/重合点集报「点集退化」（scipy Qhull）；`Voronoi` 至少 2 点、**重合点明确报错**、
   元胞用点集外扩 15% 的包围盒裁剪（因此**无界元胞问题被规避**，面积和 = 包围盒面积）；两者都只接受二维点/多边形· `NSolve` 在默认区间 `[-60, 60]` 内找实根，找不到即报错 ·
   `Limit` 结果为 ∞/不存在时**明确报错**（不返回假数值）· `SolveODE` 只给 **sympy dsolve 通解文本**（含常数 `c1`，暂不支持初值条件 → 函数）·
@@ -89,9 +89,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 #### 2D 检测矩阵（可重复执行）
 
-- `devtools/test_2d_matrix.py`（内核 204 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
+- `devtools/test_2d_matrix.py`（内核 209 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
 - `devtools/test_2d_api.py`（51 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
-- `devtools/verify_2d_ui_matrix.js`（82 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
+- `devtools/verify_2d_ui_matrix.js`（85 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
 - `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
 - `devtools/bench_undo.py`（性能）：撤销/重做压测（快照字节数、snapshot/restore 耗时、记忆冷/热对照、LRU）
 
@@ -179,6 +179,12 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **前端同步**：`app.js` 顶部定义同名 `EPSILON/COORD/COARSE`（14 处替换），与内核分级一一对应
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
+- **第六十四批（2026-10-05 · 列表字面量接受点标签：`{A,B}` / `{P3,Q3}`）**：
+  - **问题**（第六十三批记录的解析层边界）：`{A,B}` 报「对象 A 不是数值」、`{(A),(B)}` 报「元组需要两个或三个分量」→ 列表里无法直接放点元素
+  - **修复**：`parser.py` 新增 `_list_point_items`（整份列表都是点标签时取各点坐标，`itemkind` 按有无 `z` 判定 point / point3d）；`{` 与 `[` 两个列表分支都接入；另加 `_reject_mixed_point_list`（点标签与坐标混用 → 明确指引）与「加括号」友好提示
+  - **与第六十三批的依赖化天然衔接**：解析层产出的初值 + `list_literal_state` 收集的依赖 → **点标签列表随点移动自动重算**（实测 `SetCoords[A,5,5]` 后 `{A,B,M}` → `[[5,5],[3,1],[4,3]]`，连列表里的派生中点 M 也同步）
+  - **明确报错**：点标签与坐标混用（`{A,(9,9)}`）· 二维与三维混用（`{A,P3}`）· 给点加括号（`{(A),(B)}` → 提示「列表里写点请直接用 {A,B} 形式，不要加括号」）
+  - 检测：2D 内核 204 → **209**（点标签列表/动态重算/混用报错/加括号提示/坐标列表回归）、3D 内核 494 → **496**（三维点标签列表 / 维度混用报错）、2D 浏览器 82 → **85**
 - **第六十三批（2026-10-04 · 修复：列表字面量依赖化，打通经列表的 DAG 链）**：
   - **问题**（第六十二批顺带发现）：`commands.py` 建立列表元素时只保存**求值后的快照**（无 deps）→ `L={n, n*10+2}` 不随 `n` 更新，**经列表传递的 DAG 链断开**（影响 `Sum[L]`、`DotPlot[L]`、`StemPlot[L]` 等所有以列表为输入的命令）
   - **修复**：新增 `cmd_util.list_literal_state(cons, line, itemkind)` —— 从原始行文本重新解析列表项，收集其中引用的元素作为**依赖**，并在重算时按当前依赖值**重新求值**每一项；`commands.process_line` 的列表分支挂上它
@@ -433,7 +439,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 204 + 2D API 51 + 3D 494/181/142 + 2D 前端 82 + 代码质量 19 = 1576 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 333 + 会话 23 + 2D 内核 209 + 2D API 51 + 3D 496/181/142 + 2D 前端 85 + 代码质量 19 = 1586 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

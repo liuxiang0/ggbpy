@@ -1681,6 +1681,23 @@ _msg5 = _c4.process("SA3=SurfaceArea[P2d]")
 check("SurfaceArea 拒绝二维对象（提示用 Area）",
       _c4.elements.get("SA3") is None and "Area" in (_msg5 or ""), (_msg5 or "")[:40])
 
+# ---------------------------------------------------------------------------
+section("列表字面量接受三维点标签（{P3,Q3}）")
+
+_pc, _perr = build(["P3a=(1,2,3)", "Q3a=(4,5,6)", "L3p={P3a,Q3a}"])
+_l3 = _pc.elements.get("L3p")
+check("三维点标签列表 → itemkind=point3d、三分量坐标",
+      _perr is None and _l3 is not None and _l3.itemkind == "point3d"
+      and [list(x) for x in _l3.items] == [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+      str(_perr or ([list(x) for x in getattr(_l3, "items", [])], getattr(_l3, "itemkind", None))))
+
+_c5 = Construction()
+_c5.process("P2a=(1,1)")
+_c5.process("P3b=(1,2,3)")
+_msg5 = _c5.process("LMix={P2a,P3b}")
+check("二维点与三维点混在同一列表 → 明确报错",
+      _c5.elements.get("LMix") is None and "分量数需一致" in (_msg5 or ""), (_msg5 or "")[:44])
+
 print("\n" + "=" * 60)
 print("3D 内核检测矩阵：%d 项断言，%d 失败" % (COUNT[0], len(FAILS)))
 if FAILS:

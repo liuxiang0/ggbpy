@@ -292,6 +292,10 @@ def parse_line(cons, line: str) -> Tuple[Optional[str], str, object]:
         if parts[0].startswith("("):
             items, kind3 = _list_tuple_items(cons, parts)
             return label, "list", (items, kind3)
+        pt_items = _list_point_items(cons, parts)
+        if pt_items is not None:
+            return label, "list", pt_items
+        _reject_mixed_point_list(cons, parts)
         items = [eval_number(cons, pp) for pp in parts]
         return label, "list", (items, "number")
     if toks[0] == "{":
@@ -303,6 +307,10 @@ def parse_line(cons, line: str) -> Tuple[Optional[str], str, object]:
         if parts[0].startswith("("):
             items, kind3 = _list_tuple_items(cons, parts)
             return label, "list", (items, kind3)
+        pt_items = _list_point_items(cons, parts)
+        if pt_items is not None:
+            return label, "list", pt_items
+        _reject_mixed_point_list(cons, parts)
         items = [eval_number(cons, p) for p in parts]
         return label, "list", (items, "number")
 
@@ -350,6 +358,34 @@ def _join_toks(toks: List[str]) -> str:
     return s.strip()
 
 
+def _list_point_items(cons, parts):
+    """整份列表都是**点标签**（``{A,B}`` / ``{A3,B3}``）→ ``(items, itemkind)``；否则 ``None``。
+
+    与 ``(x,y)`` 字面量同构（items 为坐标元组），因此渲染/序列化/依赖重算全部复用既有链路；
+    坐标在此只做**初值**，真正的动态刷新由 ``cmd_util.list_literal_state`` 的依赖重算负责。
+    """
+    objs = []
+    for pp in parts:
+        el = cons.elements.get(pp.strip())
+        if el is None or el.kind not in ("point", "point3d"):
+            return None
+        objs.append(el)
+    kind = None
+    items = []
+    for el in objs:
+        z = getattr(el, "z", None)          # 三维点在元素层仍是 kind="point"，靠 z 区分
+        k = "point3d" if z is not None else "point"
+        if kind is None:
+            kind = k
+        elif kind != k:
+            raise GeoError("列表元素分量数需一致（二维点与三维点不能混在同一列表）")
+        if k == "point3d":
+            items.append((float(el.x), float(el.y), float(z)))
+        else:
+            items.append((float(el.x), float(el.y)))
+    return items, kind
+
+
 def _list_tuple_items(cons, parts):
     """列表元素解析：支持 (x,y) 与 (x,y,z)，返回 (items, itemkind)。"""
     items = []
@@ -365,6 +401,14 @@ def _list_tuple_items(cons, parts):
             raise GeoError("列表元素分量数需一致（要么全是 (x,y)，要么全是 (x,y,z)）")
         items.append(tuple(eval_number(cons, q) for q in tp))
     return items, kind
+
+
+def _reject_mixed_point_list(cons, parts) -> None:
+    """列表里「有点标签、又有数值/坐标」时给明确指引（而不是“对象 A 不是数值”这种费解报错）。"""
+    pts = [pp for pp in parts if (cons.elements.get(pp.strip()) is not None
+                                  and cons.elements[pp.strip()].kind in ("point", "point3d"))]
+    if pts:
+        raise GeoError("列表元素要么全是点标签（如 {A,B}），要么全是坐标（如 {(1,2),(3,4)}）")
 
 
 def _tuple_parts_str(s: str) -> List[str]:
@@ -391,7 +435,8 @@ def _tuple_parts_str(s: str) -> List[str]:
     if cur.strip():
         parts.append(cur.strip())
     if len(parts) not in (2, 3):
-        raise GeoError("元组需要两个或三个分量: " + s)
+        raise GeoError("元组需要两个或三个分量: " + s +
+                       "（列表里写点请直接用 {A,B} 形式，不要加括号）")
     return parts
 
 

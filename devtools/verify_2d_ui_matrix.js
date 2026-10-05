@@ -705,6 +705,21 @@ function check(name, ok, detail) {
   await ctx2.close();
 
   // -------------------------------------------------------------------------
+  section('Q. 点标签列表 {A,B}（解析层新能力）');
+  const plErrBefore = JS_ERRORS.length;
+  await typeCmd('PAx=(1,1)');
+  await typeCmd('PBx=(4,1)');
+  await typeCmd('LPT={PAx,PBx}');
+  await page.waitForTimeout(350);
+  const plRows = await page.$$eval('#objlist .obj', (els) => els.map((e) => e.getAttribute('data-label')));
+  check('点标签列表进入对象列表', plRows.indexOf('LPT') >= 0, String(plRows.slice(-3)));
+  const plState = await byLabel('LPT');
+  check('点标签列表序列化为 point 列表（两条坐标）',
+        !!plState && plState.itemkind === 'point' && (plState.items || []).length === 2,
+        JSON.stringify(plState && { k: plState.itemkind, n: (plState.items || []).length }));
+  check('点标签列表渲染无新增 JS 错误', JS_ERRORS.length === plErrBefore,
+        JS_ERRORS.slice(plErrBefore).join(';').slice(0, 60));
+
   section('P. 茎叶图（新图表：渲染 + 可拖动命中框）');
   const stemErrBefore = JS_ERRORS.length;
   await typeCmd('ZS=StemPlot[{12,15,23,11,31,45,45}]');

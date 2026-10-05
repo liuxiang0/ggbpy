@@ -991,6 +991,41 @@ _lc.process("SetValue[n2, 4]")
 check("表达式项也随依赖重算（n2=2→4：P2=[4,16]）",
       list(_lc.elements["P2"].items) == [4.0, 16.0], str(_lc.elements["P2"].items))
 
+# ---------------------------------------------------------------------------
+section("Z6. 列表字面量接受点标签（{A,B} / {A,B,M}）")
+
+_pl = Construction()
+_pl.process("A=(1,1)")
+_pl.process("B=(3,1)")
+_pl.process("M=Midpoint[A,B]")
+_pl.process("LP={A,B,M}")
+_ple = _pl.elements.get("LP")
+check("点标签列表 {A,B,M} → itemkind=point、坐标正确、依赖为三点",
+      _ple is not None and _ple.itemkind == "point"
+      and [list(x) for x in _ple.items] == [[1.0, 1.0], [3.0, 1.0], [2.0, 1.0]]
+      and sorted(d.label for d in _ple.deps) == ["A", "B", "M"],
+      "%s / %s / %s" % (getattr(_ple, "itemkind", None),
+                        [list(x) for x in getattr(_ple, "items", [])],
+                        sorted(d.label for d in getattr(_ple, "deps", []))))
+
+_pl.process("SetCoords[A, 5, 5]")
+_after = [list(x) for x in _pl.elements["LP"].items]
+check("移动点后点标签列表自动重算（含派生中点 M）",
+      _after == [[5.0, 5.0], [3.0, 1.0], [4.0, 3.0]], str(_after))
+
+_msg_mix = _pl.process("LM={A,(9,9)}")
+check("点标签与坐标混用 → 明确报错（不创建元素）",
+      _pl.elements.get("LM") is None and "要么全是点标签" in (_msg_mix or ""), (_msg_mix or "")[:40])
+
+_msg_par = _pl.process("LQ={(A),(B)}")
+check("给点加括号 → 报错并提示改用 {A,B} 形式",
+      _pl.elements.get("LQ") is None and "不要加括号" in (_msg_par or ""), (_msg_par or "")[:60])
+
+_pl.process("LC={(1,2),(3,4)}")
+check("坐标元组列表不受影响（回归）",
+      [list(x) for x in _pl.elements["LC"].items] == [[1.0, 2.0], [3.0, 4.0]]
+      and _pl.elements["LC"].itemkind == "point", "")
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
