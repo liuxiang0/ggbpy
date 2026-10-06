@@ -1000,7 +1000,14 @@ function check(name, ok, detail) {
   //   → 本轮同时发现并修掉一个**真实缺陷**：合成/失活指针会让 setPointerCapture 抛异常，
   //     从而中断整个 pointerdown 处理函数（已改为 capturePointer 尽力而为 + pointercancel 清理）；
   //     但异常消除后**值拖动仍未触发** ✗ → 仍有其它早退原因未定位
-  //   → 下次定位：在画布 pointerdown 各分支前打点（console.debug 或 __ggbpyDebug.breakdown）
+  //   → 本轮再获关键证据：**「整体移动」也在矩阵里失效**（同一序列在独立页面通过 ✓：
+  //     拖轨道 → (-2,2) → (-0.4158,1.0948)，defn 保留 vertical ✓）
+  //     即：**两种交互（改值 / 移动）在矩阵里被同一个原因挡住**；而已知 JS 错误为 0、
+  //     touches=0、activeTool=null、selectMode=false → 处理函数没有抛错，而是**在到达
+  //     滑块分支前就 return 了**（唯一未排查的早退点：`Object.keys(touches) >= 2` 的
+  //     pinch 分支、`macroPickMode`、以及更早的 `widgetHit` 命中判定）
+  //   → 下次定位（一次即可确定）：在 pointerdown 各早退点前打点
+  //     （__ggbpyDebug.breakdown = { stage: '...' }），运行一次矩阵看实际走到哪一步
   //   为了不留"必红"用例，这里只测不影响的状态断言。
   // 取值路径本身：sliderValueAt(label, wx, wy) 按命中框 axis 取比例（x/y 共用同一实现）。
   await typeCmd('SetValue[vtS,5]');

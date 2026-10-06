@@ -919,7 +919,11 @@
     var sldHit = sliderAt(sx, sy);
     if (sldHit && !selectMode && !addSelModifier(ev)) {
       var _sb = widgetBoxes[sldHit] || {};
-      var _onKnob = typeof _sb.knobX === 'number' && Math.abs(sx - _sb.knobX) <= 12;
+      // 是否抓在滑钮上必须**按轴判断**：竖直滑块轨道是竖线，用 x 距离会把轨道上任何一点
+      // 都判成滑钮 → 整条滑块永远移不动（用户报告「竖直 slider 不能移动」的根因）
+      var _onKnob = (_sb.axis === 'y')
+        ? (typeof _sb.knobY === 'number' && Math.abs(sy - _sb.knobY) <= 12)
+        : (typeof _sb.knobX === 'number' && Math.abs(sx - _sb.knobX) <= 12);
       if (_onKnob) {
         drag = { label: sldHit, slider: true };
         canvas.style.cursor = 'ew-resize';
