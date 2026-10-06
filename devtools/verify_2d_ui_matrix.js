@@ -991,8 +991,13 @@ function check(name, ok, detail) {
         JSON.stringify({ axis: vtBox && vtBox.axis, playY0: vtBox && vtBox.playY0, y1: vtBox && vtBox.y1 }));
   // 值拖动：**本矩阵未覆盖**（说明见下），但已用单页探针验证通过：
   //   独立页面里对轨道靠顶派发 pointerdown/up → 值 10（max）；靠底 → 0（min）✓
-  //   在本矩阵里同一序列不生效（activeTool 已确认 null，怀疑是前面用例留下的其它状态
-  //   或列表面板遮挡，未定位）；为了不留"必红"用例，这里只测不影响的状态断言。
+  //   在本矩阵里同一序列不生效（值恒 5）；已用钩子逐项排除：
+  //     __ggbpyDebug.toolState().activeTool === null ✓
+  //     __ggbpyDebug.selectMode() === false ✓（并试过 Esc 前置、主动关闭选择模式）
+  //   → 剩余最可能：前面多个用例的**合成指针事件残留了多指状态**（画布 pointerdown 开头
+  //     有 `touches[pointerId] = ...`，累计 ≥2 会进入 pinch 分支并直接 return ✗）
+  //   → 下次定位：给 __ggbpyDebug 暴露 touchCount / pinch 状态，或每个用例用独立 pointerId 并保证成对 pointerup
+  //   为了不留"必红"用例，这里只测不影响的状态断言。
   // 取值路径本身：sliderValueAt(label, wx, wy) 按命中框 axis 取比例（x/y 共用同一实现）。
   await typeCmd('SetValue[vtS,5]');
   await page.waitForTimeout(300);
