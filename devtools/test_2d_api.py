@@ -518,6 +518,19 @@ _sPx = {e.get("label"): e for e in state()}.get("sPx") or {}
 check("API：slider_px=300 且 defn 同步", abs(float(_sPx.get("slider_px", 0)) - 300) < 1e-9
       and "(0,0),300]" in str(_sPx.get("defn")), "%s | %s" % (_sPx.get("slider_px"), _sPx.get("defn")))
 
+# ---------------------------------------------------------------------------
+section("T2. 命令帮助带参数（/api/commands 的 sigs）")
+
+_cmds = req("/api/commands")[2]
+_cmdj = __import__("json").loads(_cmds.decode("utf-8"))
+check("API：/api/commands 返回 sigs（每条命令都有签名）",
+      isinstance(_cmdj.get("sigs"), dict) and len(_cmdj["sigs"]) == len(_cmdj["commands"]),
+      "sigs=%d commands=%d" % (len(_cmdj.get("sigs", {})), len(_cmdj["commands"])))
+check("API：签名含参数（Slider 带 min/max/step/vertical/px；未登记回退 名字[…]）",
+      "最小值" in _cmdj["sigs"].get("slider", "") and "px" in _cmdj["sigs"].get("slider", "")
+      and _cmdj["sigs"].get("abs", "").endswith("[…]"),
+      "%s | %s" % (_cmdj["sigs"].get("slider"), _cmdj["sigs"].get("abs")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

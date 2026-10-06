@@ -910,6 +910,101 @@ function check(name, ok, detail) {
   check('视图按钮无新增 JS 错误', JS_ERRORS.length === vbErrBefore,
         JS_ERRORS.slice(vbErrBefore).join(';').slice(0, 60));
 
+  section('AB. 命令帮助显示参数 + 唯一匹配提示 + Tab 补全');
+  const abErrBefore = JS_ERRORS.length;
+  // datalist 的 label 带完整签名
+  const abOpt = await page.evaluate(() => {
+    const o = [...document.querySelectorAll('#cmd-list option')];
+    const hit = o.filter((x) => String(x.getAttribute('label') || '').indexOf('Slider[最小值') >= 0);
+    return { total: o.length, withSig: o.filter((x) => String(x.getAttribute('label') || '').indexOf('[') >= 0).length, hit: hit.length };
+  });
+  check('命令下拉（datalist）每项都带参数签名', abOpt.total > 100 && abOpt.withSig === abOpt.total && abOpt.hit === 1,
+        JSON.stringify(abOpt));
+  // 多候选也要有提示（此前只在"前缀唯一"时提示 ✗ → 大多数输入没有反馈）
+  await page.fill('#cmd', 'SetSlider');
+  await page.waitForTimeout(200);
+  const abList = await page.evaluate(() => {
+    const h = document.getElementById('cmd-hint');
+    const items = h ? [...h.querySelectorAll('.cmd-cand')] : [];
+    return { shown: h && h.style.display !== 'none', n: items.length,
+             texts: items.map((x) => x.textContent), cur: items.findIndex((x) => x.className.indexOf('cur') >= 0) };
+  });
+  check('输入 SetSlider → 列出多个候选且每项带完整参数签名',
+        abList.shown && abList.n >= 2 && abList.texts.some((x) => x.indexOf('SetSliderLength') === 0)
+        && abList.texts.every((x) => x.indexOf('[') > 0),
+        JSON.stringify({ n: abList.n, cur: abList.cur, first: abList.texts[0] }));
+  // ↑↓ 切换选中
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(150);
+  const abSel = await page.evaluate(() => {
+    const items = [...document.querySelectorAll('#cmd-hint .cmd-cand')];
+    return { cur: items.findIndex((x) => x.className.indexOf('cur') >= 0), txt: (items.find((x) => x.className.indexOf('cur') >= 0) || {}).textContent };
+  });
+  check('按 ↓ 可切换候选选中项', abSel.cur === 1, JSON.stringify(abSel));
+  // Tab 补全选中项
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(150);
+  const abVal = await page.evaluate(() => document.getElementById('cmd').value);
+  check('按 Tab 把**选中候选**的完整输入内容填入命令栏',
+        abVal === abSel.txt, abVal + ' vs ' + abSel.txt);
+  // 前缀更具体 → 候选收敛为一条
+  await page.fill('#cmd', 'SetSliderL');
+  await page.waitForTimeout(200);
+  const abOne = await page.evaluate(() => {
+    const items = [...document.querySelectorAll('#cmd-hint .cmd-cand')];
+    return { n: items.length, txt: items[0] ? items[0].textContent : '' };
+  });
+  check('前缀具体到唯一命令 → 候选收敛为一条（含参数）',
+        abOne.n === 1 && abOne.txt.indexOf('SetSliderLength') === 0 && abOne.txt.indexOf('像素长度') > 0,
+        JSON.stringify(abOne));
+  // 帮助弹窗：**只显示命令名**（简洁、一屏放下）+ 悬停 title 显示完整参数 + 可拖拽调整大小/可滚动
+  await page.click('#btn-help');
+  await page.waitForTimeout(450);
+  const hp = await page.evaluate(() => {
+    const pop = document.getElementById('help-pop');
+    const body = pop.querySelector('.help-body');
+    const chips = [...body.querySelectorAll('.hc-cmd')];
+    const one = chips.find((c) => c.getAttribute('data-cmd') === 'SetSliderLength');
+    return { chips: chips.length, withBracket: chips.filter((c) => c.textContent.indexOf('[') >= 0).length,
+             title: one ? one.getAttribute('title') : null, text: one ? one.textContent : null,
+             resize: getComputedStyle(pop).resize, fits: !(body.scrollHeight > body.clientHeight) };
+  });
+  check('帮助弹窗只显示命令名（190 条，一屏放得下）',
+        hp.chips === 190 && hp.withBracket === 0 && hp.fits === true,
+        JSON.stringify({ chips: hp.chips, withBracket: hp.withBracket, fits: hp.fits }));
+  check('悬停 title 给出该命令的完整参数',
+        hp.text === 'SetSliderLength' && hp.title === 'SetSliderLength[滑块, 像素长度]',
+        JSON.stringify({ text: hp.text, title: hp.title }));
+  check('帮助窗口可用鼠标拖拽调整大小（resize: both）', hp.resize === 'both', hp.resize);
+  // 默认尺寸下 190 条刚好一屏放下（不溢出 ✓）；窗口缩小或命令增多时依赖 overflow-y:auto 滚动 + PageDown 翻页
+  const scCap = await page.evaluate(() => {
+    const body = document.querySelector('#help-pop .help-body');
+    return { overflowY: getComputedStyle(body).overflowY, flex: getComputedStyle(body).flexGrow };
+  });
+  check('命令列表容器可滚动（overflow-y:auto，窗口缩小时即可上下移动）',
+        scCap.overflowY === 'auto', JSON.stringify(scCap));
+  await page.evaluate(() => { const p = document.getElementById('help-pop'); if (p && p.parentNode) p.parentNode.removeChild(p); });
+  // 回归：弹窗反复打开不再累积委托监听 → 点一次 CAS 命令只插入一次（曾点一次插两次 ✗）
+  await page.click('#btn-help');
+  await page.waitForTimeout(300);
+  const casChip = await page.$('#help-pop .hc-cas');
+  if (casChip) await casChip.click();
+  await page.waitForTimeout(350);
+  const casVal = await page.evaluate(() => {
+    const el = document.querySelector('#cas-panel input, #cas input');
+    return el ? el.value : '';
+  });
+  check('帮助弹窗里的 CAS 命令只插入一次（不重复）',
+        (String(casVal).match(/[A-Za-z]+\[\]/g) || []).length === 1, JSON.stringify(casVal));
+  // 关闭帮助弹窗（否则它会盖住画布，影响后续滚轮/点击用例）
+  await page.evaluate(() => {
+    const p = document.getElementById('help-pop');
+    if (p) { p.style.display = 'none'; if (p.parentNode) p.parentNode.removeChild(p); }
+  });
+  await page.waitForTimeout(150);
+  check('命令帮助/补全无新增 JS 错误', JS_ERRORS.length === abErrBefore,
+        JS_ERRORS.slice(abErrBefore).join(';').slice(0, 60));
+
   section('Z. 动画：速度/方向/往返 + 播放中拖动');
   const anErrBefore = JS_ERRORS.length;
   const anVal = async (l) => Number(((((await (await page.request.get(BASE + '/api/state')).json()).elements) || []).filter((e) => e.label === l)[0] || {}).val);

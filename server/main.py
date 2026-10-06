@@ -248,8 +248,10 @@ def session_sweep():
 def commands_list():
     """命令名列表（前端自动补全/帮助）。"""
     from kernel.commands import COMMANDS, DISPLAY_NAMES
-    return {"commands": sorted(COMMANDS.keys()),
-            "display": {k: DISPLAY_NAMES.get(k, k[:1].upper() + k[1:]) for k in COMMANDS}}
+    from kernel.signatures import all_signatures
+    disp = {k: DISPLAY_NAMES.get(k, k[:1].upper() + k[1:]) for k in COMMANDS}
+    return {"commands": sorted(COMMANDS.keys()), "display": disp,
+            "sigs": all_signatures(COMMANDS.keys(), disp)}
 
 
 @app.get("/api/state")

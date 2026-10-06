@@ -24,7 +24,7 @@ window.GGB_UI = (function () {
 
       var casInsert = env.casInsert;   // 由 app.js 注入（属于其他模块）
 
-      function showHelpModal(commands, display) {
+      function showHelpModal(commands, display, sigs) {
         var CAS_COMMANDS = env.get('CAS_COMMANDS'), casPanel = env.get('casPanel'), lang = env.get('lang');
         var ex = document.getElementById('help-pop');
         if (!ex) {
@@ -33,6 +33,16 @@ window.GGB_UI = (function () {
           document.getElementById('app').appendChild(ex);
         }
         var head = lang === 'en' ? ('Commands (' + commands.length + ')') : ('可用命令（共 ' + commands.length + ' 条）');
+        // PageUp/PageDown 翻页（弹窗内滚动；右下角亦可拖拽调整大小）
+        if (ex._pgKey) document.removeEventListener('keydown', ex._pgKey);
+        ex._pgKey = function (kev) {
+          if (kev.key !== 'PageDown' && kev.key !== 'PageUp') return;
+          var body = document.querySelector('#help-pop .help-body');
+          if (!body) return;
+          kev.preventDefault();
+          body.scrollTop += (kev.key === 'PageDown' ? 1 : -1) * Math.max(80, body.clientHeight - 40);
+        };
+        document.addEventListener('keydown', ex._pgKey);
         var casChips = CAS_COMMANDS.map(function (c) {
           return '<span class="hc hc-cas" data-cas="' + c.name + '" title="' + esc(c.zh) + ' / ' + esc(c.en) + '">' + c.name + '</span>';
         }).join('');
@@ -41,7 +51,9 @@ window.GGB_UI = (function () {
           + (lang === 'en' ? 'Filter commands (e.g. surface, volume, fit)' : '筛选命令（如 surface / volume / 拟合 / 曲面）') + '"></div>'
           + '<div class="help-body" id="help-cmds">' + commands.map(function (c) {
               var cnm = (display && display[c]) || c;
-              return '<span class="hc hc-cmd" data-cmd="' + cnm + '" title="' + (lang === 'en' ? 'Click to insert' : '点击插入') + '">' + cnm + '</span>';
+              var sig = (sigs && sigs[c]) || (cnm + '[…]');
+              // 只显示**命令名**（简洁、一屏放得下）；完整参数放在 title → 鼠标悬停即见
+              return '<span class="hc hc-cmd" data-cmd="' + cnm + '" title="' + esc(sig) + '">' + esc(cnm) + '</span>';
             }).join('') + '</div>'
           + '<div class="help-sec">' + (lang === 'en' ? 'CAS symbolic commands (click to use in the CAS panel)' : 'CAS 符号命令（点击可直接在 CAS 面板使用）') + '</div>'
           + '<div class="help-body">' + casChips + '</div>'
@@ -60,28 +72,31 @@ window.GGB_UI = (function () {
         }
         ex.style.display = 'block';
         ex.querySelector('#help-close').addEventListener('click', function () { ex.style.display = 'none'; });
+        if (!ex._wired) {          // 弹窗会被反复打开：委托监听只绑一次，否则点一次插多次
+        ex._wired = true;
         ex.addEventListener('click', function (ev) {
-          var tc = ev.target.closest ? ev.target.closest('.hc-cmd') : null;
-          if (tc) {
-            var cname = tc.getAttribute('data-cmd') || '';   // 已是规范显示名（如 SurfacePoint）
-            var inp = document.getElementById('cmd');
-            if (inp) {
-              inp.value = cname + '[]';
-              inp.focus();
-              try { inp.setSelectionRange(cname.length + 1, cname.length + 1); } catch (e) {}
-            }
-            return;
-          }
-          var t = ev.target.closest ? ev.target.closest('.hc-cas') : null;
-          if (!t) return;
-          var nm = t.getAttribute('data-cas');
-          if (!env.get('casOpen')) {
-            env.set('casOpen', true);
-            casPanel.style.display = 'flex';
-            api('GET', '/api/cas', null, function (d) { renderCas(d.cells); });
-          }
-          casInsert(nm + '[]', 1);
-        });
+                  var tc = ev.target.closest ? ev.target.closest('.hc-cmd') : null;
+                  if (tc) {
+                    var cname = tc.getAttribute('data-cmd') || '';   // 已是规范显示名（如 SurfacePoint）
+                    var inp = document.getElementById('cmd');
+                    if (inp) {
+                      inp.value = cname + '[]';
+                      inp.focus();
+                      try { inp.setSelectionRange(cname.length + 1, cname.length + 1); } catch (e) {}
+                    }
+                    return;
+                  }
+                  var t = ev.target.closest ? ev.target.closest('.hc-cas') : null;
+                  if (!t) return;
+                  var nm = t.getAttribute('data-cas');
+                  if (!env.get('casOpen')) {
+                    env.set('casOpen', true);
+                    casPanel.style.display = 'flex';
+                    api('GET', '/api/cas', null, function (d) { renderCas(d.cells); });
+                  }
+                  casInsert(nm + '[]', 1);
+                });
+        }
       }
 
     return {

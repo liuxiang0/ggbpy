@@ -1977,20 +1977,91 @@
       }
     }
   });
-  // 命令补全 datalist
+  // 命令补全 datalist（value=名字[ ，label=完整签名 → 下拉里能直接看到参数）
+  var cmdSigs = {}, cmdDisp = {};     // key → 签名 / 显示名
   fetch('/api/commands').then(function (r) { return r.json(); }).then(function (d) {
     var dl = document.getElementById('cmd-list');
     var s = '';
     var dsp = d.display || {};
+    cmdSigs = d.sigs || {};
+    cmdDisp = dsp;
     for (var i = 0; i < d.commands.length; i++) {
-      var nm = dsp[d.commands[i]] || d.commands[i];
-      s += '<option value="' + nm + '["></option>';
+      var k = d.commands[i], nm = dsp[k] || k;
+      s += '<option value="' + nm + '[" label="' + (cmdSigs[k] || (nm + '[…]')).replace(/"/g, '') + '"></option>';
     }
     dl.innerHTML = s;
   }).catch(function () {});
+
+  // 命令栏候选列表：**只要前缀有匹配就列出**（最多 5 条，每条带完整参数签名），
+  // Tab 补全当前选中项；↑/↓ 切换选中；Esc 收起。不再要求"前缀唯一"（那样大多数输入都没提示 ✗）
+  var cmdCands = [], cmdSel = 0;
+  function cmdHintRender(keepSel) {
+    var el = document.getElementById('cmd'), hint = document.getElementById('cmd-hint');
+    if (!el || !hint) return;
+    var pre = String(el.value).split('[')[0].trim().toLowerCase();
+    cmdCands = [];
+    if (!keepSel) cmdSel = 0;      // ↑↓ 切换时保留选中，否则重置
+    if (pre.length >= 1) {
+      var keys = Object.keys(cmdSigs), exact = null, starts = [];
+      for (var i2 = 0; i2 < keys.length; i2++) {
+        var k = keys[i2], nm = (cmdDisp[k] || k).toLowerCase();
+        if (nm === pre) exact = k;
+        else if (nm.indexOf(pre) === 0) starts.push(k);
+      }
+      starts.sort();
+      if (exact) { cmdCands.push(exact); }
+      for (var j2 = 0; j2 < starts.length && cmdCands.length < 5; j2++) cmdCands.push(starts[j2]);
+    }
+    if (cmdSel >= cmdCands.length) cmdSel = 0;
+    if (!cmdCands.length) { hint.style.display = 'none'; hint.innerHTML = ''; return; }
+    var html = '';
+    for (var m = 0; m < cmdCands.length; m++) {
+      var kk = cmdCands[m];
+      html += '<div class="cmd-cand' + (m === cmdSel ? ' cur' : '') + '" data-k="' + kk + '">'
+            + esc(cmdSigs[kk] || cmdDisp[kk] || kk) + '</div>';
+    }
+    hint.innerHTML = html;
+    hint.style.display = 'block';
+    for (var n = 0; n < hint.children.length; n++) {
+      hint.children[n].addEventListener('mousedown', function (ev) {
+        ev.preventDefault();
+        cmdComplete(ev.currentTarget.getAttribute('data-k'));
+      });
+    }
+  }
+  function cmdComplete(key) {
+    var el = document.getElementById('cmd'), hint = document.getElementById('cmd-hint');
+    if (!el || !key) return;
+    el.value = cmdSigs[key] || ((cmdDisp[key] || key) + '[');
+    var cut = el.value.lastIndexOf(']');
+    try { el.setSelectionRange(cut < 0 ? el.value.length : cut, cut < 0 ? el.value.length : cut); } catch (e) { /* 光标设置失败忽略 */ }
+    if (hint) { hint.style.display = 'none'; hint.innerHTML = ''; }
+    cmdCands = [];
+  }
+  var cmdElRef = document.getElementById('cmd');
+  if (cmdElRef) {
+    cmdElRef.addEventListener('input', cmdHintRender);
+    cmdElRef.addEventListener('focus', cmdHintRender);
+    cmdElRef.addEventListener('blur', function () { setTimeout(function () { var h = document.getElementById('cmd-hint'); if (h) h.style.display = 'none'; }, 150); });
+    cmdElRef.addEventListener('keydown', function (ev) {
+      var hint = document.getElementById('cmd-hint');
+      if (ev.key === 'Tab' && cmdCands.length) {
+        ev.preventDefault();
+        cmdComplete(cmdCands[cmdSel]);
+      } else if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && cmdCands.length) {
+        ev.preventDefault();
+        cmdSel = (cmdSel + (ev.key === 'ArrowDown' ? 1 : cmdCands.length - 1)) % cmdCands.length;
+        cmdHintRender(true);
+      } else if (ev.key === 'Escape') {
+        if (hint) { hint.style.display = 'none'; hint.innerHTML = ''; }
+        cmdCands = [];
+      }
+    });
+  }
+
   btn('btn-help', function () {
     fetch('/api/commands').then(function (r) { return r.json(); }).then(function (d) {
-      showHelpModal(d.commands, d.display || {});
+      showHelpModal(d.commands, d.display || {}, d.sigs || {});
     }).catch(function () { setMsg('加载命令失败', true); });
   });
 

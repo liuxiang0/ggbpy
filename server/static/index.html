@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ggbpy · Python 动态几何</title>
 <link rel="stylesheet" href="/static/style.css">
-<link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
-</head>
+<link rel="stylesheet" href="/static/vendor/katex/katex.min.css"></head>
 <body>
 <div id="app">
   <div id="toolbar">
     <div id="cmd-wrap">
       <input id="cmd" list="cmd-list" data-i18n-ph="cmd_ph" autocomplete="off" spellcheck="false">
       <div id="math-preview"></div>
+      <div id="cmd-hint" style="display:none;position:absolute;left:0;top:100%;z-index:40;background:#0f172a;color:#e2e8f0;font:12px/1.6 Consolas,monospace;border-radius:4px;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis"></div>
     </div>
     <datalist id="cmd-list"></datalist>
     <button id="btn-help" data-i18n-title="help_t" title="命令帮助">?</button>

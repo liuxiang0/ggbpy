@@ -272,9 +272,9 @@ html, body { height: 100%; font-family: "Segoe UI", "PingFang SC", "Microsoft Ya
 #cat-tools .tool-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 #toolbar button:disabled { opacity: .4; cursor: not-allowed; }
 .obj-empty { padding: 18px 12px; color: var(--text2); font-size: 12px; line-height: 1.7; text-align: center; }
-#help-pop { position: fixed; top: 120px; left: 50%; transform: translateX(-50%); width: min(680px, 92vw); max-height: 60vh; background: var(--panel); border: 1px solid var(--border2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25); z-index: 90; display: none; flex-direction: column; overflow: hidden; }
+#help-pop { position: fixed; top: 100px; left: 50%; transform: translateX(-50%); width: min(720px, 92vw); height: 70vh; min-width: 320px; min-height: 220px; max-width: 96vw; max-height: 88vh; resize: both; background: var(--panel); border: 1px solid var(--border2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.25); z-index: 90; display: none; flex-direction: column; overflow: hidden; }
 #help-pop .help-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; font-weight: 600; border-bottom: 1px solid var(--border); }
-#help-pop .help-body { padding: 12px 14px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 5px; }
+#help-pop .help-body { padding: 12px 14px; overflow-y: auto; flex: 1 1 auto; min-height: 60px; align-content: flex-start; display: flex; flex-wrap: wrap; gap: 5px; }
 #help-pop .hc { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; padding: 3px 7px; color: var(--text); }
 #help-pop .help-sec { padding: 10px 14px 0; color: var(--text2); font-size: 12px; font-weight: 600; }
 #help-pop .hc-cas { cursor: pointer; border-color: #7c3aed; color: #7c3aed; }
@@ -291,3 +291,9 @@ html, body { height: 100%; font-family: "Segoe UI", "PingFang SC", "Microsoft Ya
   border-radius: 6px; font-size: 13px; }
 .hc-cmd { cursor: pointer; }
 .hc-cmd:hover { background: #e0e7ff; }
+
+/* 命令候选提示：容器不拦截鼠标（否则会挡住画布上的滚轮/点击），仅候选项可点 */
+#cmd-hint { pointer-events: none; }
+#cmd-hint .cmd-cand { pointer-events: auto; padding: 2px 8px; cursor: pointer; }
+#cmd-hint .cmd-cand.cur { background: #2563eb; color: #fff; }
+#cmd-hint .cmd-cand:hover { background: #1e40af; color: #fff; }
