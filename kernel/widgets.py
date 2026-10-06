@@ -14,6 +14,11 @@ from .cmd_util import label_of, _lookup, _resolve
 from .parser import eval_number
 from .elements import GeoButton, GeoCheckBox, GeoError, GeoInputBox
 from .tolerance import COORD
+
+# 滑块轨道长度的像素范围（屏幕量）
+SLIDER_PX_DEFAULT = 140.0
+SLIDER_PX_MIN = 40.0
+SLIDER_PX_MAX = 1200.0
 from .parser import eval_number
 
 
@@ -120,9 +125,11 @@ def _regen_defn(el) -> str:
         return "%s=InputBox[%s,(%s,%s)]" % (lab, el.target, _num_txt(el.x), _num_txt(el.y))
     if getattr(el, "kind", "") == "number" and getattr(el, "min", None) is not None:
         _v = ",vertical" if getattr(el, "slider_vert", False) else ""
-        return "%s=Slider[%s,%s,%s,(%s,%s)%s]" % (lab, _num_txt(el.min), _num_txt(el.max),
-                                                 _num_txt(el.step), _num_txt(el.slider_x),
-                                                 _num_txt(el.slider_y), _v)
+        _px = getattr(el, "slider_px", SLIDER_PX_DEFAULT)
+        _p = "" if abs(_px - SLIDER_PX_DEFAULT) < COORD else "," + _num_txt(_px)
+        return "%s=Slider[%s,%s,%s,(%s,%s)%s%s]" % (lab, _num_txt(el.min), _num_txt(el.max),
+                                                   _num_txt(el.step), _num_txt(el.slider_x),
+                                                   _num_txt(el.slider_y), _v, _p)
     return el.defn
 
 
@@ -266,5 +273,20 @@ def _cmd_setslidervert(cons, defn, args):
         el.slider_vert = False
     else:
         raise GeoError("SetSliderVertical 需要 true 或 false")
+    el.defn = _regen_defn(el)
+    return []
+
+
+def _cmd_setsliderlength(cons, defn, args):
+    """``SetSliderLength[滑块, px]`` → 设轨道**屏幕长度**（px，缩放时不变）。"""
+    if len(args) != 2:
+        raise GeoError("SetSliderLength 需要 滑块 和 像素长度")
+    el = _resolve(cons, args[0])
+    if getattr(el, "kind", "") != "number" or getattr(el, "min", None) is None:
+        raise GeoError("SetSliderLength 需要滑动条（当前是 %s）" % getattr(el, "kind", "?"))
+    px = eval_number(cons, args[1])
+    if px < SLIDER_PX_MIN or px > SLIDER_PX_MAX:
+        raise GeoError("长度需在 %d–%d px 之间" % (SLIDER_PX_MIN, SLIDER_PX_MAX))
+    el.slider_px = float(px)
     el.defn = _regen_defn(el)
     return []

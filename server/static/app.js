@@ -310,12 +310,13 @@
     }
     return null;
   }
-  function sliderValueAt(label, wx, wy) {
+  // 取值用**屏幕坐标**换算（轨道长度按 px → 世界换算不再适用）；sx/sy 为画布局部坐标
+  function sliderValueAt(label, sx, sy) {
     var b = widgetBoxes[label];
     var el = findEl(label);
     if (!b || !el || el.min === null || el.min === undefined) return 0;
-    var f = (b.axis === 'y') ? (wy - b.wy0) / ((b.wy1 - b.wy0) || 1)
-                             : (wx - b.wx0) / ((b.wx1 - b.wx0) || 1);
+    var _p = (b.axis === 'y') ? sy : sx;
+    var f = (_p - b.s0) / ((b.s1 - b.s0) || 1);
     f = Math.max(0, Math.min(1, f));
     var v = el.min + f * ((el.max - el.min) || 0);
     var st = el.step && el.step > 0 ? el.step : 0;
@@ -927,7 +928,7 @@
       if (_onKnob) {
         drag = { label: sldHit, slider: true };
         canvas.style.cursor = 'ew-resize';
-        api('POST', '/api/drag', { label: sldHit, x: sliderValueAt(sldHit, wxp(sx), wyp(sy)), y: 0, push: true }, function () {});
+        api('POST', '/api/drag', { label: sldHit, x: sliderValueAt(sldHit, sx, sy), y: 0, push: true }, function () {});
       } else {
         // 拖轨道 = 移动整条滑块（锚点）
         drag = { label: sldHit, sliderPos: true, grabX: wxp(sx), grabY: wyp(sy),
@@ -1086,7 +1087,7 @@
       return;
     }
     if (drag && drag.slider) {
-      var _sv = sliderValueAt(drag.label, wxp(ev.offsetX), wyp(ev.offsetY));
+      var _sv = sliderValueAt(drag.label, ev.offsetX, ev.offsetY);
       api('POST', '/api/drag', { label: drag.label, x: _sv, y: 0, push: false }, function (d) {
         if (d && d.elements) { elements = d.elements; render(); }
       });

@@ -322,15 +322,16 @@ window.GGB_R2D = (function () {
             && e.slider_x !== null && e.slider_x !== undefined) {
           // 滑动条：按 GeoGebra 样式画成线段 + 可拖动滑钮（min / 当前值 / max 标注）
           var _vert = !!e.slider_vert;
+          var _px = e.slider_px > 0 ? e.slider_px : 140;   // 轨道**屏幕长度（px）**，缩放时不变
           var tk0, tk1, tky, tkx;
           if (_vert) {
-            // 竖直：轨道沿 +y，min 在底、max 在顶；播放按钮在**底部**
+            // 竖直：轨道沿 +y（屏幕向上），min 在底、max 在顶；播放按钮在**底部**
             tkx = sxp(e.slider_x);
-            tk0 = syp(e.slider_y);                      // 底（min）
-            tk1 = syp(e.slider_y + (e.slider_len || 3)); // 顶（max）
+            tk0 = syp(e.slider_y);          // 底（min）
+            tk1 = tk0 - _px;                // 顶（max）
           } else {
             tk0 = sxp(e.slider_x);
-            tk1 = sxp(e.slider_x + (e.slider_len || 3));
+            tk1 = tk0 + _px;
             tky = syp(e.slider_y);
           }
           var span = (e.max - e.min) || 1;
@@ -400,12 +401,12 @@ window.GGB_R2D = (function () {
               ? { kind: 'slider', label: e.label, playing: playing, axis: 'y', vert: true,
                   playX0: pbx - 12, playX1: pbx + 12, playY0: pby - 12, playY1: pby + 12,
                   x0: tkx - 14, x1: tkx + 14, y0: Math.min(tk0, tk1) - 12, y1: Math.max(tk0, tk1) + 12,
-                  knobX: kx, knobY: ky,
+                  knobX: kx, knobY: ky, s0: tk0, s1: tk1, trackPx: _px,
                   wx0: e.slider_x, wx1: e.slider_x + _ln, wy0: e.slider_y, wy1: e.slider_y + _ln }
               : { kind: 'slider', label: e.label, playing: playing, axis: 'x',
                   playX0: pbx - 12, playX1: pbx + 12, playY0: pby - 12, playY1: pby + 12,
                   x0: Math.min(tk0, tk1) - 10, x1: Math.max(tk0, tk1) + 10,
-                  y0: tky - 14, y1: tky + 16, knobX: kx,
+                  y0: tky - 14, y1: tky + 16, knobX: kx, s0: tk0, s1: tk1, trackPx: _px,
                   wx0: e.slider_x, wx1: e.slider_x + _ln, wy0: e.slider_y, wy1: e.slider_y };
           }
         }

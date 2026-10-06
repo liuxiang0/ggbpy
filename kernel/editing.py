@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+# 滑块轨道默认屏幕长度（px）；像素是**屏幕**量，不属 kernel 数值容差体系
+SLIDER_PX_DEFAULT = 140.0
+
 import math
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -43,11 +46,16 @@ def _cmd_slider(cons, defn, args):
     位置缺省时自动排布在左下方（每多一个滑块下移一行）。
     """
     args = list(args)
-    pos = None
+    # 可选参数从**后往前**剥离，顺序与 defn 一致：px（裸数字）→ vertical → (x,y)
+    # px 仅在「已给出步长」时可省略歧义地识别：Slider[min,max,step,(x,y)?,vertical?,px?]
+    px = None
+    if len(args) >= 4 and args[-1].strip().replace(".", "", 1).isdigit():
+        px = float(args.pop())
     vertical = False
     if args and args[-1].strip().lower() in ("vertical", "v", "竖直"):
         vertical = True
         args.pop()
+    pos = None
     if args and args[-1].strip().startswith("("):
         pos = args.pop()
     if len(args) not in (2, 3):
@@ -71,6 +79,7 @@ def _cmd_slider(cons, defn, args):
         el.slider_x, el.slider_y = -6.0, -2.0 - 1.4 * n      # 自动排布（左下方逐行下移）
     el.slider_len = 3.0                                      # 轨道世界长度
     el.slider_vert = vertical                                # 竖直放置（轨道沿 +y，播放按钮在底部）
+    el.slider_px = px if (px and px > 0) else SLIDER_PX_DEFAULT   # 轨道屏幕长度（px，恒定）
     return cons.add(el)
 
 def _cmd_setcoords(cons, defn, args):

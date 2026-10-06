@@ -43,6 +43,7 @@ from .widgets import (_cmd_button,
                       _cmd_setinput,
                       _cmd_setscript,
                       _cmd_setslider,
+                      _cmd_setsliderlength,
                       _cmd_setslidervert,
                       _cmd_setwidgetpos)
 from .tessellation import _cmd_delaunay, _cmd_voronoi
@@ -176,6 +177,7 @@ SPECS: List[Tuple[str, Callable, str, str, Tuple[str, ...]]] = [
     ("setinput", _cmd_setinput, "SetInput", "point", ("输入框提交", "提交输入")),
     ("setslider", _cmd_setslider, "SetSlider", "point", ("滑块范围", "改滑块")),
     ("setslidervertical", _cmd_setslidervert, "SetSliderVertical", "point", ("滑块方向", "竖直滑块")),
+    ("setsliderlength", _cmd_setsliderlength, "SetSliderLength", "point", ("滑块长度", "改滑块长度")),
     ("perimeter", _cmd_perimeter, "", "number", ("周长",)),
     ("circumference", _cmd_circumference, "", "number", ("圆周长", "椭圆周长")),
     ("incenter", _cmd_incenter, "", "point", ("内心",)),

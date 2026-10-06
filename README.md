@@ -59,6 +59,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   播放中图标变 **⏸**，再点即暂停；只有播放中的滑块会动画，且在播放框上点击不会被「画布交互自动停止播放」抢先
 - **滑块参数就地在对象列表里改**：滑块行有 **▶**（自动播放动画）与 **⚙**（改 最小值/最大值/步长，弹窗预填当前值）两个小按钮；
   ⚙ 走 `SetSlider`，**当前值保留**（越界夹紧、按新步长吸附）；滑块**画布双击**也会调同一编辑器（但画布上改值拖动优先，故推荐用 ⚙）
+- **轨道长度按 px（屏幕恒定）**：`SetSliderLength[滑块, px]`（别名 滑块长度 / 改滑块长度）—— 40–1200 px，**缩放时长度不变**；默认 140px（≈旧观感）；也可在创建时写 `Slider[min,max,step,(x,y),vertical?,px?]`（px 需同时给出步长才无歧义）；长度写入 defn → `.ggk` 往返一致；取值映射改为**屏幕坐标**换算（水平/竖直共用）
 - **滑块可竖直放置**：`Slider[min,max,step,(x,y),vertical]`（或命令 `SetSliderVertical[滑块, true/false]`）—— 轨道沿 +y、min 在底 max 在顶、数值标注在左侧、**播放按钮在轨道底部**；竖直与水平的拖动/播放功能完全一致（取值按轴换算）
 - **滑块是「动态参数」的主力**：给函数 / 几何对象提供可动参数（如 `s=Slider[0,10,1,(x,y)]` + `f(x)=s*x`、`Circle[(0,0),s]`），
   对象列表的 **▶** 按钮可让它自动播放；**范围与步长**用 `SetSlider[滑块, 最小值, 最大值, 步长?]` 随手改 ——
@@ -226,6 +227,14 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   - **新增 `devtools/test_tolerance.py`（20 断言）**：常量分级与顺序、**源码零魔数扫描**（kernel/ 与 server/ 的代码部分，跳过注释/文档串）、**扫描器自检**（植入字面量必须被抓到）、**每个模块的容差导入集合 == 实际使用集合**（防漏导入/多余导入）、**禁止旧别名 `EPS`**、前端常量与内核取值一致
   - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**  - **`kernel/geo2d.py`（16 函数 / 437 行）**：二维几何基元与变换算法层 —— 点/直线（一般式·法式）/函数/圆锥曲线参数化，平移·旋转·反射（点与直线、关于直线或点）·位似，以及统一的 `_transform_fn`；只依赖 `elements`/`tolerance`/`math`/`numpy`；`commands.py` **7,867 → 6,171 行（−22%）**
 
+
+- **第八十四批（2026-10-05 · 滑块轨道长度按 px（方案 A））**：
+  - **需求**：滑块显示长度可自由设置，并以 **px** 表达（屏幕长度恒定）
+  - **内核**：`slider_px`（默认 **140**）+ 新命令 `SetSliderLength[滑块, px]`（40–1200，越界报错）；`Slider[…,(x,y),vertical?,px?]` 可在创建时给 px；**defn 仅在非默认时写入 px**（避免既有文本 churn）；`draw()` 序列化 `slider_px`
+  - **顺带修 arg 解析两处 bug**：① 曾把 `step` 误当 px（`默认 px=1.0` ✗）→ px 仅在「已有步长」时识别；② 重放 defn 时 pop 顺序错（defn 为 `…,(x,y),vertical,240`）→ 改为**从后往前**剥离：px → vertical → (x,y)
+  - **前端**：轨道按 **px** 绘制（`tk1 = tk0 ± px`，竖直向上），命中框新增 `s0/s1/trackPx`；`sliderValueAt(label, sx, sy)` 改用**屏幕坐标**换算
+  - **实测**：默认 140px ✓ → `SetSliderLength 240` → 240px ✓；`Slider[…,vertical,200]` → 200px、**朝上**、播放按钮在底部 ✓；`.ggk` 往返 px/方向/步长全保留 ✓；越界报错 ✓；**U 段真实拖动回归通过**（0→7）✓
+  - 检测：2D 内核 260 → **266**、2D API 71 → **72**、2D 浏览器 132 → **133**
 - **第八十三批（2026-10-05 · 滑块可竖直放置，播放按钮置底）**：
   - **需求**：滑块还可以竖直放置；播放按钮置于底部；功能不变
   - **内核**：`Slider[最小值, 最大值, 步长?, (x,y)?, vertical?]`（也接受 `v` / `竖直`）→ `slider_vert`；`GeoNumber.draw()` 序列化；新命令 `SetSliderVertical[滑块, true/false]`（别名 滑块方向/竖直滑块）；`_regen_defn` 带上标志 → `.ggk` 往返一致
@@ -606,7 +615,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 260 + 2D API 71 + 3D 496/181/142 + 2D 前端 132 + 代码质量 19 = 1707 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 260 + 2D API 71 + 3D 496/181/142 + 2D 前端 133 + 代码质量 19 = 1715 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

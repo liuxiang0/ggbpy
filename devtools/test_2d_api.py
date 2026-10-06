@@ -508,6 +508,16 @@ check("API：SetSlider 改范围/步长并夹紧当前值（7 → 5）",
       and abs(float(_elsR.get("val")) - 5) < 1e-9 and "Slider[-5,5,0.5," in str(_elsR.get("defn")),
       "min=%s max=%s val=%s" % (_elsR.get("min"), _elsR.get("max"), _elsR.get("val")))
 
+# ---------------------------------------------------------------------------
+section("S2. 滑块长度按 px 经 HTTP")
+
+clear()
+put("sPx=Slider[0,10,1,(0,0)]")
+put("SetSliderLength[sPx, 300]")
+_sPx = {e.get("label"): e for e in state()}.get("sPx") or {}
+check("API：slider_px=300 且 defn 同步", abs(float(_sPx.get("slider_px", 0)) - 300) < 1e-9
+      and "(0,0),300]" in str(_sPx.get("defn")), "%s | %s" % (_sPx.get("slider_px"), _sPx.get("defn")))
+
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

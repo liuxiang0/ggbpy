@@ -1341,6 +1341,33 @@ check(".ggk 往返保留新范围/步长/值",
       "%s..%s/%s 值=%.1f" % (_ss2.elements["sS"].min, _ss2.elements["sS"].max,
                             _ss2.elements["sS"].step, _ss2.elements["sS"].value))
 
+# ---------------------------------------------------------------------------
+section("Z17. 滑块轨道长度按 px（SetSliderLength）")
+
+_ll = Construction()
+_ll.process("sL2=Slider[0,10,1,(0,0)]")
+check("默认轨道长度 140px 且 defn 文本不变（非默认才写 px）",
+      abs(_ll.elements["sL2"].slider_px - 140) < 1e-9 and _ll.elements["sL2"].defn == "sL2=Slider[0,10,1,(0,0)]",
+      "px=%.0f defn=%r" % (_ll.elements["sL2"].slider_px, _ll.elements["sL2"].defn))
+_ll.process("SetSliderLength[sL2, 240]")
+check("SetSliderLength 改 px 并写入 defn",
+      abs(_ll.elements["sL2"].slider_px - 240) < 1e-9 and _ll.elements["sL2"].defn == "sL2=Slider[0,10,1,(0,0),240]",
+      "%r" % _ll.elements["sL2"].defn)
+_ll.process("SetSliderVertical[sL2, true]")
+check("与竖直共存：defn 顺序 (x,y),vertical,px 且可重放",
+      _ll.elements["sL2"].defn == "sL2=Slider[0,10,1,(0,0),vertical,240]"
+      and abs(_ll.elements["sL2"].slider_px - 240) < 1e-9 and _ll.elements["sL2"].slider_vert is True,
+      "%r" % _ll.elements["sL2"].defn)
+_dll = _json_mod.loads(_ll.save_json())
+_ll2 = Construction(); _ll2.load_json(_json_mod.dumps(_dll))
+check(".ggk 往返保留 px 与方向", abs(_ll2.elements["sL2"].slider_px - 240) < 1e-9
+      and _ll2.elements["sL2"].slider_vert is True and _ll2.elements["sL2"].step == 1,
+      "px=%.0f vert=%s" % (_ll2.elements["sL2"].slider_px, _ll2.elements["sL2"].slider_vert))
+_msg_ll = _ll.process("SetSliderLength[sL2, 20]")
+check("长度越界 → 明确报错", "px" in (_msg_ll or ""), (_msg_ll or "")[:32])
+check("draw() 暴露 slider_px（供前端按 px 绘制）",
+      abs(float(_ll.elements["sL2"].draw((0, 0, 1, 1)).get("slider_px", 0)) - 240) < 1e-9, "")
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

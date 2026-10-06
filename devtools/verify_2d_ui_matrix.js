@@ -1017,6 +1017,17 @@ function check(name, ok, detail) {
         !!vtBox2 && typeof vtBox2.knobY === 'number'
         && Math.abs(vtBox2.knobY - (vtBox2.y0 + vtBox2.y1) / 2) < 5,
         JSON.stringify(vtBox2 && { knobY: vtBox2.knobY, mid: (vtBox2.y0 + vtBox2.y1) / 2 }));
+  // 轨道长度按 px（屏幕长度恒定）：默认 140，SetSliderLength 后随之变化
+  const pxTrack0 = await page.evaluate(() => {
+    const b = window.__ggbpyDebug.widgetBoxes()['vtS']; return b ? Math.round(Math.abs(b.s1 - b.s0)) : -1;
+  });
+  await typeCmd('SetSliderLength[vtS, 260]');
+  await page.waitForTimeout(350);
+  const pxTrack1 = await page.evaluate(() => {
+    const b = window.__ggbpyDebug.widgetBoxes()['vtS']; return b ? Math.round(Math.abs(b.s1 - b.s0)) : -1;
+  });
+  check('轨道长度按 px（默认 140 → SetSliderLength 260 后 260，竖直同样生效）',
+        pxTrack0 === 140 && pxTrack1 === 260, 'px ' + pxTrack0 + '→' + pxTrack1);
   check('竖直滑块无新增 JS 错误', JS_ERRORS.length === vtErrBefore,
         JS_ERRORS.slice(vtErrBefore).join(';').slice(0, 60));
 

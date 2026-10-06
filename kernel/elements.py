@@ -372,6 +372,7 @@ class GeoNumber(GeoElement):
             d["slider_y"] = getattr(self, "slider_y", None)
             d["slider_len"] = getattr(self, "slider_len", 3.0)
             d["slider_vert"] = bool(getattr(self, "slider_vert", False))
+            d["slider_px"] = float(getattr(self, "slider_px", 140.0))
         return d
 
 
