@@ -996,7 +996,11 @@ function check(name, ok, detail) {
   //     __ggbpyDebug.selectMode() === false ✓（并试过 Esc 前置、主动关闭选择模式）
   //   → 剩余最可能：前面多个用例的**合成指针事件残留了多指状态**（画布 pointerdown 开头
   //     有 `touches[pointerId] = ...`，累计 ≥2 会进入 pinch 分支并直接 return ✗）
-  //   → 下次定位：给 __ggbpyDebug 暴露 touchCount / pinch 状态，或每个用例用独立 pointerId 并保证成对 pointerup
+  //   → 本轮已加 __ggbpyDebug.touchState()：实测 touch 0→0，**多指假设排除** ✗
+  //   → 本轮同时发现并修掉一个**真实缺陷**：合成/失活指针会让 setPointerCapture 抛异常，
+  //     从而中断整个 pointerdown 处理函数（已改为 capturePointer 尽力而为 + pointercancel 清理）；
+  //     但异常消除后**值拖动仍未触发** ✗ → 仍有其它早退原因未定位
+  //   → 下次定位：在画布 pointerdown 各分支前打点（console.debug 或 __ggbpyDebug.breakdown）
   //   为了不留"必红"用例，这里只测不影响的状态断言。
   // 取值路径本身：sliderValueAt(label, wx, wy) 按命中框 axis 取比例（x/y 共用同一实现）。
   await typeCmd('SetValue[vtS,5]');

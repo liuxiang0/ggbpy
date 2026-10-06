@@ -883,7 +883,7 @@
                grabX: wxp(ev.offsetX), grabY: wyp(ev.offsetY), pos0: [_wEl.x || 0, _wEl.y || 0] };
       dragPending = false;
       canvas.style.cursor = 'move';
-      canvas.setPointerCapture(ev.pointerId);
+      capturePointer(ev);
       return;
     }
     if (activeTool) { toolPreview = null; toolCanvasClick(ev.offsetX, ev.offsetY); return; }
@@ -900,7 +900,7 @@
         cx: wxp((a.x + b.x) / 2),
         cy: wyp((a.y + b.y) / 2)
       };
-      canvas.setPointerCapture(ev.pointerId);
+      capturePointer(ev);
       return;
     }
     var sx = ev.offsetX, sy = ev.offsetY;
@@ -931,7 +931,7 @@
         canvas.style.cursor = 'move';
       }
       dragPending = false;
-      canvas.setPointerCapture(ev.pointerId);
+      capturePointer(ev);
       return;
     }
     var label = hitFreePoint(sx, sy);
@@ -961,7 +961,7 @@
         shiftDrag = { label: selHit, sx: sx, sy: sy, pushed: false, moved: false, downX: sx, downY: sy, pathPoint: _isPath };
         shiftAccum.dx = 0; shiftAccum.dy = 0;
         canvas.style.cursor = 'grabbing';
-        canvas.setPointerCapture(ev.pointerId);
+        capturePointer(ev);
         return;
       }
       if (selHit) {
@@ -974,13 +974,13 @@
         if (marquee) return;
         marquee = { x0: sx, y0: sy, x1: sx, y1: sy, add: addSelModifier(ev) };
         canvas.style.cursor = 'crosshair';
-        canvas.setPointerCapture(ev.pointerId);
+        capturePointer(ev);
         return;
       }
       pan = { sx: sx, sy: sy, xmin: view.xmin, ymin: view.ymin };
       canvas.style.cursor = 'grabbing';
     }
-    canvas.setPointerCapture(ev.pointerId);
+    capturePointer(ev);
   });
 
   var snapOn = false;
@@ -1201,6 +1201,21 @@
     }
     if (el) editWidget(el);
   });
+
+  // 指针被取消（系统手势/掌拒/切窗）时必须清理，否则 touches 残留 → 之后单指操作会被误判为双指捏合
+  // 指针捕获是**尽力而为**：真实指针能成功；合成事件或已失活指针会抛 DOMException，
+  // 若任其抛出会中断整个 pointerdown 处理函数（历史上导致"拖动无反应"且难定位）。
+  function capturePointer(ev) {
+    try { capturePointer(ev); } catch (e) { /* 捕获失败不致命：继续处理 */ }
+  }
+
+  function dropPointer(ev) {
+    delete touches[ev.pointerId];
+    if (pinch && Object.keys(touches).length < 2) { pinch = null; loadState(); }
+    if (pan) { pan = null; canvas.style.cursor = 'default'; }
+  }
+  canvas.addEventListener('pointercancel', dropPointer);
+  canvas.addEventListener('lostpointercapture', function (ev) { if (!touches[ev.pointerId]) return; dropPointer(ev); });
 
   canvas.addEventListener('pointerup', function (ev) {
     delete touches[ev.pointerId];
@@ -1492,6 +1507,7 @@
     widgetBoxes: function () { return widgetBoxes; },
     playLabel: function () { return playingLabels()[0] || null; },
     playingLabels: function () { return playingLabels(); },
+    touchState: function () { return { count: Object.keys(touches).length, ids: Object.keys(touches), pinch: !!pinch, pan: !!pan }; },
     animState: function () {
       var dirs = {};
       if (playState) { var ks = Object.keys(playState.labels); for (var i = 0; i < ks.length; i++) dirs[ks[i]] = playState.labels[ks[i]]; }
