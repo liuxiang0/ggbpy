@@ -151,6 +151,14 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - `devtools/test_2d_api.py`（76 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出、**`/api/commands` 的 `sigs`（190 条全覆盖 / 无 `[…]` 回退 / 前缀 == 显示名）**等
 - `devtools/verify_2d_ui_matrix.js`（183 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 命令补全模板态（参数高亮 + Tab/Shift+Tab 跳参 + 可选参数与位序 + 无参命令不进模板态）/ **格点吸附**（开关 / Shift 临时 / 复用已有点 / 吸附取原点）/ **原点无标记** / **全局快捷键 Ctrl+Shift+G·X·S** / **指针捕获** / 竖直滑块值拖动与整体移动 / 会话隔离
 - `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
+
+#### 开发纪律守卫（防重复踩坑）
+
+- `devtools/test_quality.py` 第 F 段：**CHANGELOG 批次条目结构**（编号唯一 / 最新批次段连续 / 段长与总数不减少 / 条目够长）——
+  曾连续两批用「替换锚点行」写日志，把上一批**整条删掉** ✗，现在会被这一步直接抓红
+- `devtools/doc_add_batch.py`：**追加 CHANGELOG 批次条目的唯一入口**（在锚点行之前插入 → 自检行数/编号 → 跑结构守卫 → 不过则**自动回滚**）
+- `devtools/_probe_lib.js`（+ `_probe_lib_selftest.js`）：探针夹具库 —— `clearViaPage()`（HTTP 清空不通知前端 ✗）、
+  `setTool()`（工具按钮「选中再点取消」✗）、`measureDrawn()`（画布空白是 `rgba(0,0,0,0)`，必须按 alpha 判 ✗）、`worldToPixel()/proj3Pixel()`
 - `devtools/bench_undo.py`（性能）：撤销/重做压测（快照字节数、snapshot/restore 耗时、记忆冷/热对照、LRU）
 
 ### 3D 视图
@@ -636,7 +644,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 15 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 266 + 2D API 76 + 3D 496/181/149 + 2D 前端 183 + 代码质量 19 = 1782 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 15 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 266 + 2D API 76 + 3D 496/181/149 + 2D 前端 183 + 代码质量 25 = 1788 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 496 + API 181 + 浏览器 149
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

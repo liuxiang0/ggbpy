@@ -119,6 +119,55 @@ def main() -> int:
     check("§0 给出可复现复核入口（三个工具）",
           all(k in rev for k in ("run_all_detection.sh", "bench_blocking.py", "bench_undo.py")), "")
 
+    # F. **防重蹈覆辙守卫**：CHANGELOG 批次条目结构完整性
+    #    背景：连续两批用「替换锚点行」写 CHANGELOG，把上一批整条**删掉了** ✗ —— 靠记性没拦住。
+    #    真实结构：文件里有多段批次列表（含早期「工具批」），且历史上 59/58 批未入 CHANGELOG（60→57 有缺口）。
+    #    因此守卫按「**含最大编号（最新）的连续段**」判定：段内编号必须差恰为 1、段长不减少、最新号不倒退、总数不减少。
+    #    中间被删一条 → 最新段被切成两半 → 段长骤降，直接抓红 ✓
+    print("\n=== F. 变更日志批次条目完整性（防「整条被替换/删除」） ===")
+    cl = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    _NUM = {"零": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7,
+            "八": 8, "九": 9}
+
+    def _cn2int(t: str) -> int:
+        """中文数字 → int（支持 一…九百九十九）。"""
+        section, cur = 0, 0
+        for ch in t:
+            if ch in _NUM:
+                cur = _NUM[ch]
+            elif ch == "十":
+                section += (cur or 1) * 10
+                cur = 0
+            elif ch == "百":
+                section += (cur or 1) * 100
+                cur = 0
+        return section + cur
+
+    entries = []
+    for line in cl.splitlines():
+        m = re.match(r"^- \*\*第([一二三四五六七八九十百零]+)批", line)
+        if m:
+            entries.append((_cn2int(m.group(1)), line))
+    nums = [n for n, _ in entries]
+    dup = sorted({n for n in nums if nums.count(n) > 1})
+    check("CHANGELOG 批次条目总数不减少（≥ 80，防整条被删）", len(entries) >= 80,
+          "n=%d" % len(entries))
+    check("批次编号唯一（重复即说明「替换锚点行」写坏过）", not dup, str(dup[:6]))
+    check("每条批次条目内容非空且够长（≥ 40 字，防写入被截断）",
+          all(len(l) >= 40 for _, l in entries), str([n for n, l in entries if len(l) < 40][:5]))
+
+    runs, cur = [], [entries[0]]
+    for prev, nxt in zip(entries, entries[1:]):
+        (cur.append(nxt) if prev[0] - nxt[0] == 1 else (runs.append(cur), cur := [nxt]))
+    runs.append(cur)
+    main = max(runs, key=lambda r: r[0][0])            # 含最大编号 = 最新批次所在段
+    check("最新批次所在段编号连续（相邻差恰为 1；中间被删一条会在此断段）",
+          all(a[0] - b[0] == 1 for a, b in zip(main, main[1:])),
+          "段长=%d 首=%d 末=%d" % (len(main), main[0][0], main[-1][0]))
+    check("最新批次连续段长度不减少（≥ 33）", len(main) >= 33,
+          "段长=%d（首=%d 末=%d）" % (len(main), main[0][0], main[-1][0]))
+    check("最新批次数不倒退（≥ 92）", main[0][0] >= 92, "最新=%d" % main[0][0])
+
     print("\n" + "=" * 56)
     print("代码质量策略检测：%d 项断言，%d 失败" % (ok + fail, fail))
     print("结果: " + ("ALL PASS" if fail == 0 else "FAILED"))
