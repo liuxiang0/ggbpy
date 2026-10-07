@@ -90,6 +90,10 @@
 
 **收尾铁律（不可省）**：`bash devtools/run_all_detection.sh` 出现「全部检测通过」才算完 → 写 `memory/` → 本地提交 → 告知推送。
 
+**但不必每改一行都跑全量**：迭代中按改动层跑 `bash devtools/run_scope.sh <scope>`
+（`kernel2d` 1.7s / `api2d` 0.4s / `registry` 0.2s / `quick` ~4s / `ui2d` ~100s / `ui3d` ~210s）；
+**提交前**：纯文档改动跑 `docs` 即可，**任何代码改动必须 `all`**。提交信息里不要写没跑过的范围。
+
 
 ## 我如何与用户对话
 
