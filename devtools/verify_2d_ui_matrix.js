@@ -1002,6 +1002,70 @@ function check(name, ok, detail) {
     if (p) { p.style.display = 'none'; if (p.parentNode) p.parentNode.removeChild(p); }
   });
   await page.waitForTimeout(150);
+  // 模板态：**高亮当前参数位 + Tab/Enter 依次跳参**（用户请求 2）
+  const abSnap = () => page.evaluate(() => {
+    const el = document.getElementById('cmd'), h = document.getElementById('cmd-hint');
+    const ps = h ? [...h.querySelectorAll('.cmd-param')] : [];
+    return { v: el.value, s: el.selectionStart,
+             sel: el.value.slice(el.selectionStart, el.selectionEnd),
+             shown: !!h && h.style.display !== 'none', n: ps.length,
+             cur: ps.findIndex((x) => x.className.indexOf('cur') >= 0),
+             msg: (document.getElementById('msg') || {}).textContent || '' };
+  });
+  // 备选形式（`Midpoint[点, 点] 或 Midpoint[线段]`）不是可提交文本 → 补全只填首个形式
+  await page.fill('#cmd', 'Midpoint');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Tab');                       // 候选 → 补全
+  await page.waitForTimeout(200);
+  let abT = await abSnap();
+  check('模板补全只填首个形式（不再带「或」备选）', abT.v === 'Midpoint[点, 点]', abT.v);
+  check('补全后自动选中第一个参数 + 提示高亮当前参数',
+        abT.sel === '点' && abT.shown && abT.n === 2 && abT.cur === 0,
+        JSON.stringify({ sel: abT.sel, shown: abT.shown, n: abT.n, cur: abT.cur }));
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(150);
+  abT = await abSnap();
+  check('Tab 跳到第 2 个参数（高亮跟随）', abT.sel === '点' && abT.s === 12 && abT.cur === 1,
+        JSON.stringify({ sel: abT.sel, s: abT.s, cur: abT.cur }));
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(150);
+  abT = await abSnap();
+  check('末参再 Tab 循环回第 1 个参数', abT.s === 9 && abT.cur === 0, JSON.stringify({ s: abT.s, cur: abT.cur }));
+  // Enter 在中间参数上跳参（不提交）
+  await page.fill('#cmd', 'Angle');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(200);
+  abT = await abSnap();
+  const abMsg0 = abT.msg;
+  check('Angle 模板切出 3 个参数且选中第 1 个', abT.n === 3 && abT.sel === '点A' && abT.cur === 0,
+        JSON.stringify({ n: abT.n, sel: abT.sel, cur: abT.cur }));
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+  abT = await abSnap();
+  check('Enter 在中间参数上跳参（不提交：值/消息不变）',
+        abT.sel === '顶点B' && abT.v === 'Angle[点A, 顶点B, 点C]（有向 0..360°）' && abT.msg === abMsg0,
+        JSON.stringify({ sel: abT.sel, v: abT.v }));
+  // 点提示里的参数可直接选中
+  const abP1 = await page.evaluate(() => {
+    const p = document.querySelectorAll('#cmd-hint .cmd-param')[1];
+    const r = p.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.mouse.click(abP1.x, abP1.y);
+  await page.waitForTimeout(150);
+  abT = await abSnap();
+  check('点提示里的参数 → 输入框选中它', abT.sel === '顶点B' && abT.cur === 1,
+        JSON.stringify({ sel: abT.sel, cur: abT.cur }));
+  // 参数按顶层逗号切分：`(x,y)` 里的逗号不算
+  await page.fill('#cmd', 'Slider[0,10,1,(-2,2)]');
+  await page.waitForTimeout(200);
+  abT = await abSnap();
+  check('参数按顶层逗号切分（(x,y) 内逗号不切）', abT.n === 4, JSON.stringify({ n: abT.n }));
+  await page.fill('#cmd', '');
+  await page.waitForTimeout(150);
+  abT = await abSnap();
+  check('清空输入 → 参数提示收起', abT.shown === false, JSON.stringify({ shown: abT.shown }));
   check('命令帮助/补全无新增 JS 错误', JS_ERRORS.length === abErrBefore,
         JS_ERRORS.slice(abErrBefore).join(';').slice(0, 60));
 

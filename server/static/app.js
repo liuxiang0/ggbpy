@@ -1916,7 +1916,7 @@
       setMsg(d.message, !d.ok);
       if (d.elements) { elements = d.elements; render(); }
       refresh3dIfNeeded();          // 3D 模式下同步刷新 3D 视图与列表
-      if (d.ok) cmdEl.value = '';
+      if (d.ok) { cmdEl.value = ''; cmdHintUpdate('input'); }   // 清空后同步收起提示（程序改 value 不触发 input 事件）
     });
   }
 
@@ -1958,6 +1958,8 @@
   });
   cmdEl.addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') {
+      // 模板内（光标落在某个参数上）→ 依次跳参，不提交；到最后一个参数才交回提交逻辑
+      if (cmdParamJump(1, false, false)) { ev.preventDefault(); return; }
       var v = cmdEl.value.trim();
       if (v) { cmdHistory.push(v); if (cmdHistory.length > 100) cmdHistory.shift(); }
       histIdx = -1;
@@ -1979,14 +1981,17 @@
   });
   // 命令补全 datalist（value=名字[ ，label=完整签名 → 下拉里能直接看到参数）
   var cmdSigs = {}, cmdDisp = {};     // key → 签名 / 显示名
+  var cmdKeyByName = {};              // 小写显示名 → 内部 key（模板态判断用）
   fetch('/api/commands').then(function (r) { return r.json(); }).then(function (d) {
     var dl = document.getElementById('cmd-list');
     var s = '';
     var dsp = d.display || {};
     cmdSigs = d.sigs || {};
     cmdDisp = dsp;
+    cmdKeyByName = {};
     for (var i = 0; i < d.commands.length; i++) {
       var k = d.commands[i], nm = dsp[k] || k;
+      cmdKeyByName[String(nm).toLowerCase()] = k;
       s += '<option value="' + nm + '[" label="' + (cmdSigs[k] || (nm + '[…]')).replace(/"/g, '') + '"></option>';
     }
     dl.innerHTML = s;
@@ -2029,25 +2034,148 @@
       });
     }
   }
+  // 首个 `[...]` 的配对 `]` 位置（按深度配对；签名里可能有第二组，如 `BarChart[{值…}] 或 BarChart[…, …]`）
+  function cmdBracketEnd(s) {
+    var open = String(s).indexOf('[');
+    if (open < 0) return -1;
+    var depth = 0;
+    for (var i = open; i < s.length; i++) {
+      var c = s.charAt(i);
+      if (c === '[') depth++;
+      else if (c === ']') { depth--; if (depth === 0) return i; }
+    }
+    return -1;
+  }
   function cmdComplete(key) {
     var el = document.getElementById('cmd'), hint = document.getElementById('cmd-hint');
     if (!el || !key) return;
-    el.value = cmdSigs[key] || ((cmdDisp[key] || key) + '[');
+    var sig = cmdSigs[key] || ((cmdDisp[key] || key) + '[');
+    // 签名里的「或」备选形式（`Midpoint[点, 点] 或 Midpoint[线段]`）不是可提交文本 → 只留首个 `[...]` 形式
+    var close = cmdBracketEnd(sig);
+    if (close >= 0) {
+      var alt = sig.indexOf(' 或 ', close);
+      if (alt >= 0) sig = sig.slice(0, alt);
+    }
+    el.value = sig;
+    cmdCands = [];
+    if (hint) { hint.style.display = 'none'; hint.innerHTML = ''; }
+    var spans = cmdParamRanges(el);
+    if (spans && spans.length) { cmdParamSelect(spans, 0); return; }   // 选中首个参数 → 可直接键入覆盖
     var cut = el.value.lastIndexOf(']');
     try { el.setSelectionRange(cut < 0 ? el.value.length : cut, cut < 0 ? el.value.length : cut); } catch (e) { /* 光标设置失败忽略 */ }
-    if (hint) { hint.style.display = 'none'; hint.innerHTML = ''; }
-    cmdCands = [];
+  }
+
+  // ---------- 命令模板态：参数区间 / 跳参 / 高亮 ----------
+  // 取「首个 [...]」里按**顶层逗号**切出的参数区间（括号内的逗号不算，如 `(x,y)`、`{a,b}`）；非模板态返回 null
+  function cmdParamRanges(el) {
+    var v = String(el.value || '');
+    var open = v.indexOf('[');
+    if (open < 0) return null;
+    var nm = v.slice(0, open).trim().toLowerCase();
+    if (!nm || !Object.prototype.hasOwnProperty.call(cmdKeyByName, nm)) return null;
+    var close = -1, depth = 0;
+    for (var i = open; i < v.length; i++) {
+      var c0 = v.charAt(i);
+      if (c0 === '[') depth++;
+      else if (c0 === ']') { depth--; if (depth === 0) { close = i; break; } }
+    }
+    if (close <= open) return null;                 // 还没闭合 → 不算模板态
+    var inner = v.slice(open + 1, close), parts = [], from = 0, d = 0;
+    for (var j = 0; j < inner.length; j++) {
+      var c = inner.charAt(j);
+      if (c === '(' || c === '[' || c === '{') d++;
+      else if (c === ')' || c === ']' || c === '}') d = Math.max(0, d - 1);
+      else if (c === ',' && d === 0) { parts.push([from, j]); from = j + 1; }
+    }
+    parts.push([from, inner.length]);
+    var spans = [];
+    for (var p = 0; p < parts.length; p++) {
+      var a = parts[p][0], b = parts[p][1];
+      while (a < b && /\s/.test(inner.charAt(a))) a++;
+      while (b > a && /\s/.test(inner.charAt(b - 1))) b--;
+      spans.push({ start: open + 1 + a, end: open + 1 + b });
+    }
+    return spans;
+  }
+  function cmdParamIdxAt(el, spans) {           // 光标落在第几个参数上（末尾也算命中）
+    var pos = el.selectionStart;
+    if (typeof pos !== 'number' || pos < 0) return -1;
+    for (var i = 0; i < spans.length; i++) if (pos >= spans[i].start && pos <= spans[i].end) return i;
+    return -1;
+  }
+  function cmdParamSelect(spans, i) {
+    var el = document.getElementById('cmd');
+    if (!el || !spans || !spans.length) return;
+    if (i < 0) i = 0;
+    if (i >= spans.length) i = spans.length - 1;
+    el.focus();
+    try { el.setSelectionRange(spans[i].start, spans[i].end); } catch (e) { /* 选不中就算了 */ }
+    cmdParamHint();
+  }
+  // step=+1 向后；wrap=Tab 循环；fromStart=光标不在任何参数上时是否选中首个（Tab 用；Enter 不用 → 保持提交）
+  function cmdParamJump(step, wrap, fromStart) {
+    var el = document.getElementById('cmd');
+    if (!el) return false;
+    var spans = cmdParamRanges(el);
+    if (!spans || !spans.length) return false;
+    var cur = cmdParamIdxAt(el, spans);
+    if (cur < 0) {
+      if (!fromStart) return false;
+      cmdParamSelect(spans, 0);
+      return true;
+    }
+    var n = spans.length, next = cur + step;
+    if (next >= n || next < 0) {
+      if (!wrap) return false;                      // Enter：到末参 → 交回提交逻辑
+      next = ((next % n) + n) % n;
+    }
+    if (next === cur && n <= 1) return false;       // 只有一个参数 → 没有可跳的
+    cmdParamSelect(spans, next);
+    return true;
+  }
+  // 模板态提示：单行显示模板，**加粗高亮光标所在参数**；点参数可直接选中它。返回是否处于模板态
+  function cmdParamHint() {
+    var el = document.getElementById('cmd'), hint = document.getElementById('cmd-hint');
+    if (!el || !hint) return false;
+    var spans = cmdParamRanges(el);
+    if (!spans || !spans.length) return false;
+    var v = String(el.value), cur = cmdParamIdxAt(el, spans), html = '', last = 0;
+    for (var i = 0; i < spans.length; i++) {
+      html += esc(v.slice(last, spans[i].start))
+            + '<span class="cmd-param' + (i === cur ? ' cur' : '') + '" data-i="' + i + '">'
+            + esc(v.slice(spans[i].start, spans[i].end)) + '</span>';
+      last = spans[i].end;
+    }
+    html += esc(v.slice(last));
+    hint.innerHTML = html;
+    hint.style.display = 'block';
+    var ps = hint.querySelectorAll('.cmd-param');
+    for (var k = 0; k < ps.length; k++) {
+      ps[k].addEventListener('mousedown', function (ev) {
+        ev.preventDefault();                        // 保住输入框焦点
+        var idx = parseInt(ev.currentTarget.getAttribute('data-i'), 10) || 0;
+        cmdParamSelect(cmdParamRanges(document.getElementById('cmd')), idx);
+      });
+    }
+    return true;
+  }
+  // 统一入口：模板态 → 参数高亮；否则 → 候选列表（只有 `input` 才重置候选选中，避免 ↑↓ 后 keyup 把选中打回 0）
+  function cmdHintUpdate(mode) {
+    if (cmdParamHint()) { cmdCands = []; return; }
+    if (mode === 'input') cmdHintRender();
   }
   var cmdElRef = document.getElementById('cmd');
   if (cmdElRef) {
-    cmdElRef.addEventListener('input', cmdHintRender);
-    cmdElRef.addEventListener('focus', cmdHintRender);
+    cmdElRef.addEventListener('input', function () { cmdHintUpdate('input'); });
+    cmdElRef.addEventListener('focus', function () { cmdHintUpdate('input'); });
+    cmdElRef.addEventListener('click', function () { cmdHintUpdate('sel'); });
+    cmdElRef.addEventListener('keyup', function () { cmdHintUpdate('sel'); });
     cmdElRef.addEventListener('blur', function () { setTimeout(function () { var h = document.getElementById('cmd-hint'); if (h) h.style.display = 'none'; }, 150); });
     cmdElRef.addEventListener('keydown', function (ev) {
       var hint = document.getElementById('cmd-hint');
-      if (ev.key === 'Tab' && cmdCands.length) {
-        ev.preventDefault();
-        cmdComplete(cmdCands[cmdSel]);
+      if (ev.key === 'Tab') {
+        if (cmdCands.length) { ev.preventDefault(); cmdComplete(cmdCands[cmdSel]); }
+        else if (cmdParamJump(1, true, true)) { ev.preventDefault(); }
       } else if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && cmdCands.length) {
         ev.preventDefault();
         cmdSel = (cmdSel + (ev.key === 'ArrowDown' ? 1 : cmdCands.length - 1)) % cmdCands.length;

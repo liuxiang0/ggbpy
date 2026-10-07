@@ -297,3 +297,7 @@ html, body { height: 100%; font-family: "Segoe UI", "PingFang SC", "Microsoft Ya
 #cmd-hint .cmd-cand { pointer-events: auto; padding: 2px 8px; cursor: pointer; }
 #cmd-hint .cmd-cand.cur { background: #2563eb; color: #fff; }
 #cmd-hint .cmd-cand:hover { background: #1e40af; color: #fff; }
+/* 模板态：当前参数位高亮（参数可点选切换） */
+#cmd-hint .cmd-param { pointer-events: auto; cursor: pointer; border-radius: 2px; padding: 0 1px; }
+#cmd-hint .cmd-param.cur { background: #2563eb; color: #fff; font-weight: 700; }
+#cmd-hint .cmd-param:hover { background: #1e40af; color: #fff; }

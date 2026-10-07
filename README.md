@@ -79,7 +79,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
   可跨列表重渲染生效）—— 都改说明（按钮继续问脚本）；列表的**定义式单元格**双击仍是既有的行内定义编辑
 - **就地编辑控件**：**双击画布上的控件**即可改说明（按钮会接着问脚本）；也可用命令 `SetCaption[对象, "新说明"]`（按钮/复选框/文本）与
   `SetScript[按钮, "cmd1;cmd2"]` —— 两者都会**重写 defn** → `.ggk` 往返一致；对象列表的「重定义」栏是另一条编辑路径
-- **命令栏会显示参数**：① 下拉补全（datalist）每项都带**完整签名**当提示；② 输入时若前缀**唯一确定**某命令 → 输入框下方立刻显示该命令的**完整输入内容（含参数）**，按 **Tab** 一键填入；③ 点 **?** 的命令帮助弹窗里每条命令都带参数签名（未登记的命令回退为 `名字[…]`）
+- **命令栏会显示参数**：① 下拉补全（datalist）每项都带**完整签名**当提示；② 输入时**前缀有匹配即列出候选**（≤5 条，每条带完整参数签名）—— **↑/↓** 切换选中、**Tab** 填入选中项、**Esc** 收起、点击候选也可填入（不再要求"前缀唯一"，否则大多数输入没有反馈）；③ 补全后进入**模板态**：自动**选中第一个参数**（可直接键入覆盖），输入框下方提示**加粗高亮当前参数位**，**Tab** 循环跳参、**Enter** 顺序跳到下一个参数（到末参才提交），**点提示里的参数**也能直接选中；签名里的「或」备选形式只填首个（如 `Midpoint[点, 点]`）；④ 点 **?** 的命令帮助弹窗**只显示命令名**、鼠标悬停显示完整参数（未登记的命令回退为 `名字[…]`）
 - **视图按钮（顶栏，即时生效）**：**放大** / **缩小**（各 ×1.3，**以画布中心为锚点**，该点世界坐标保持不动）/ **复位**（回到启动视图：纵向恰好 -8..8、原点居中）；
   2D 专用（3D 仍用滚轮/拖动缩放）；滚轮缩放不受影响
 - **控件可拖动位置**：在画布上**拖动控件本体**即移动锚点（**点击**才是执行动作：按钮跑脚本 / 复选框切显示 / 输入框改数值）；
@@ -137,9 +137,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 #### 2D 检测矩阵（可重复执行）
 
-- `devtools/test_2d_matrix.py`（内核 214 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
-- `devtools/test_2d_api.py`（54 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
-- `devtools/verify_2d_ui_matrix.js`（89 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 会话隔离
+- `devtools/test_2d_matrix.py`（内核 266 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
+- `devtools/test_2d_api.py`（74 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出等
+- `devtools/verify_2d_ui_matrix.js`（153 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 命令补全模板态（参数高亮 + 跳参）/ 会话隔离
 - `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
 - `devtools/bench_undo.py`（性能）：撤销/重做压测（快照字节数、snapshot/restore 耗时、记忆冷/热对照、LRU）
 
@@ -626,8 +626,8 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 260 + 2D API 71 + 3D 496/181/142 + 2D 前端 144 + 代码质量 19 = 1728 断言
-bash devtools/run_3d_detection.sh       # 仅 3D：内核 490 + API 181 + 浏览器 134
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 266 + 2D API 74 + 3D 496/181/142 + 2D 前端 153 + 代码质量 19 = 1737 断言
+bash devtools/run_3d_detection.sh       # 仅 3D：内核 496 + API 181 + 浏览器 142
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
 python3 -B devtools/test_modules.py     # 模块边界（内核拆分/前端文案外置/词条一致性）
