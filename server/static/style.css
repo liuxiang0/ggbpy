@@ -301,3 +301,7 @@ html, body { height: 100%; font-family: "Segoe UI", "PingFang SC", "Microsoft Ya
 #cmd-hint .cmd-param { pointer-events: auto; cursor: pointer; border-radius: 2px; padding: 0 1px; }
 #cmd-hint .cmd-param.cur { background: #2563eb; color: #fff; font-weight: 700; }
 #cmd-hint .cmd-param:hover { background: #1e40af; color: #fff; }
+/* 可选参数（签名里带 ?）：淡显 + 斜体；当前参数位不受影响 */
+#cmd-hint .cmd-param.cmd-opt:not(.cur) { opacity: .7; font-style: italic; }
+/* 参数位序（如 2/6）：纯数字，语言无关 */
+#cmd-hint .cmd-pos { margin-left: 8px; color: #94a3b8; font-style: normal; }

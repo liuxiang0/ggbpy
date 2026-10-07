@@ -2165,12 +2165,16 @@
     if (!spans || !spans.length) return false;
     var v = String(el.value), cur = cmdParamIdxAt(el, spans), html = '', last = 0;
     for (var i = 0; i < spans.length; i++) {
+      var txt = v.slice(spans[i].start, spans[i].end);
+      var opt = /\?\s*$/.test(txt);                  // 签名里以 `?` 结尾 = 可选参数（只做提示，不做校验）
       html += esc(v.slice(last, spans[i].start))
-            + '<span class="cmd-param' + (i === cur ? ' cur' : '') + '" data-i="' + i + '">'
-            + esc(v.slice(spans[i].start, spans[i].end)) + '</span>';
+            + '<span class="cmd-param' + (i === cur ? ' cur' : '') + (opt ? ' cmd-opt' : '')
+            + '" data-i="' + i + '">' + esc(txt) + '</span>';
       last = spans[i].end;
     }
-    html += esc(v.slice(last));
+    // 位序（纯数字，语言无关）：当前第几个 / 共几个参数
+    var pos = (cur >= 0 ? (cur + 1) : '–') + '/' + spans.length;
+    html += esc(v.slice(last)) + '<span class="cmd-pos">' + pos + '</span>';
     hint.innerHTML = html;
     hint.style.display = 'block';
     var ps = hint.querySelectorAll('.cmd-param');
@@ -2199,7 +2203,8 @@
       var hint = document.getElementById('cmd-hint');
       if (ev.key === 'Tab') {
         if (cmdCands.length) { ev.preventDefault(); cmdComplete(cmdCands[cmdSel]); }
-        else if (cmdParamJump(1, true, true)) { ev.preventDefault(); }
+        // Shift+Tab = 反向跳参（同样循环）；不在模板内时行为不变
+        else if (cmdParamJump(ev.shiftKey ? -1 : 1, true, true)) { ev.preventDefault(); }
       } else if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && cmdCands.length) {
         ev.preventDefault();
         cmdSel = (cmdSel + (ev.key === 'ArrowDown' ? 1 : cmdCands.length - 1)) % cmdCands.length;

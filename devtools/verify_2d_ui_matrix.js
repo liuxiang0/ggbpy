@@ -1031,6 +1031,20 @@ function check(name, ok, detail) {
   await page.waitForTimeout(150);
   abT = await abSnap();
   check('末参再 Tab 循环回第 1 个参数', abT.s === 9 && abT.cur === 0, JSON.stringify({ s: abT.s, cur: abT.cur }));
+  // Shift+Tab 反向跳参（循环）
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('Tab');
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(150);
+  abT = await abSnap();
+  check('Shift+Tab 从第 1 个参数反向跳到最后一个（循环）', abT.s === 12 && abT.cur === 1,
+        JSON.stringify({ s: abT.s, cur: abT.cur }));
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('Tab');
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(150);
+  abT = await abSnap();
+  check('Shift+Tab 再按 → 回到上一个参数', abT.s === 9 && abT.cur === 0, JSON.stringify({ s: abT.s, cur: abT.cur }));
   // Enter 在中间参数上跳参（不提交）
   await page.fill('#cmd', 'Angle');
   await page.waitForTimeout(200);
@@ -1062,6 +1076,25 @@ function check(name, ok, detail) {
   await page.waitForTimeout(200);
   abT = await abSnap();
   check('参数按顶层逗号切分（(x,y) 内逗号不切）', abT.n === 4, JSON.stringify({ n: abT.n }));
+  // 可选参数（签名里带 ?）淡显 + 位序提示（数字，语言无关）
+  await page.fill('#cmd', 'Slider');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Tab');                 // 候选 → 补全（6 个参数，其中 4 个可选）
+  await page.waitForTimeout(200);
+  const abTpl = await page.evaluate(() => {
+    const h = document.getElementById('cmd-hint');
+    const ps = [...h.querySelectorAll('.cmd-param')];
+    return { n: ps.length, opt: ps.filter((x) => x.className.indexOf('cmd-opt') >= 0).length,
+             cur: ps.findIndex((x) => x.className.indexOf('cur') >= 0),
+             pos: (h.querySelector('.cmd-pos') || {}).textContent || '' };
+  });
+  check('模板提示标出可选参数（`步长?/(x,y)?/vertical?/px?` 共 4 个）并给出位序 1/6',
+        abTpl.n === 6 && abTpl.opt === 4 && abTpl.cur === 0 && abTpl.pos === '1/6',
+        JSON.stringify(abTpl));
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(150);
+  const abPos2 = await page.evaluate(() => (document.querySelector('#cmd-hint .cmd-pos') || {}).textContent || '');
+  check('跳参后位序跟随（2/6）', abPos2 === '2/6', abPos2);
   await page.fill('#cmd', '');
   await page.waitForTimeout(150);
   abT = await abSnap();
