@@ -120,6 +120,9 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 - **统计图 8 类**（**统一缩放策略**：柱高/饼半径/箱高等几何都按**世界坐标**绘制 —— 滚轮缩放时整图同步放大缩小；字体与线宽仍为屏幕固定以保证可读性）：`BarChart` / `Histogram` / `BoxPlot` / `PieChart` / `LineChart` / `ScatterPlot` / `DotPlot` / **`StemPlot`**（茎叶图：十位为茎、个位为叶，非负数据）（另有 3D 三类，见下节）。数据校验都给出明确报错：饼图须非负且总和为正、直方图须非空且数据有变化（否则无法分组）、折线图 x/y 序列须等长且非空；每张图是**可整体拖动的对象**（世界坐标 `offset`，随 `.ggk` v4 保存）
 - **撤销/重做**：撤销栈上限 `UNDO_LIMIT = 200`（超出丢弃最早快照）；重做走计算记忆（见下），不是重新求值
+- **计算记忆的硬约束**：compute 闭包必须**返回完整 state**（`return {a, ctype, semi_a, …}`）——
+  命中记忆时只会 `apply_state(缓存)` 且**不再调用闭包**；「写元素后 `return {}`」会让
+  **新构造/新会话**里的同名对象停在默认值（第九十四批修的真 bug：第二个会话的椭圆退化成 `general`）
 - **计算记忆**（`kernel/memo.py`）：派生元素按「定义式 + 依赖几何状态签名」缓存，条目 ≤ 96、规模 ≤ 约 60 万坐标（超限淘汰最久未用）；**随机类命令**（`RandomPointIn` 等）显式不参与记忆，保证每次重算都重新随机
 - **嵌套命令**：参数里的 `Cmd[...]` 最多 **4 层**（`_NESTED_MAX_DEPTH`，超出明确报错）；嵌套产生的匿名辅助元素不进对象列表 / 撤销 / 序列化
 - **轨迹**：`Locus[依赖点, 圆上动点]` 采样生成轨迹点（检测断言 >5 点），随驱动参数采样
@@ -147,7 +150,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 #### 2D 检测矩阵（可重复执行）
 
-- `devtools/test_2d_matrix.py`（内核 266 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
+- `devtools/test_2d_matrix.py`（内核 270 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
 - `devtools/test_2d_api.py`（76 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出、**`/api/commands` 的 `sigs`（190 条全覆盖 / 无 `[…]` 回退 / 前缀 == 显示名）**等
 - `devtools/verify_2d_ui_matrix.js`（183 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 命令补全模板态（参数高亮 + Tab/Shift+Tab 跳参 + 可选参数与位序 + 无参命令不进模板态）/ **格点吸附**（开关 / Shift 临时 / 复用已有点 / 吸附取原点）/ **原点无标记** / **全局快捷键 Ctrl+Shift+G·X·S** / **指针捕获** / 竖直滑块值拖动与整体移动 / 会话隔离
 - `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
@@ -644,7 +647,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 15 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 266 + 2D API 76 + 3D 496/181/149 + 2D 前端 183 + 代码质量 25 = 1788 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 15 + 仓库 18 + 容差 20 + 模块 336 + 会话 24 + 2D 内核 270 + 2D API 76 + 3D 496/181/149 + 2D 前端 183 + 代码质量 25 = 1793 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 496 + API 181 + 浏览器 149
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）

@@ -124,15 +124,15 @@ def _mk_conic(cons, cls, defn, deps, fn):
     el.free = False
 
     def compute(deps):
+        # **必须返回完整 state**（而不是写 el 后 return {}）：计算记忆命中时只 apply_state(缓存)，
+        # 不会再调用本函数 → 空 state 会让新构造里的圆锥曲线停在默认值（ctype=general, semi_a=0）✗
         st = fn(deps)
-        el.a, el.b, el.c, el.d, el.e, el.f = st["coeffs"]
-        el.ctype = st["ctype"]
-        el.cx, el.cy = st.get("cx", 0.0), st.get("cy", 0.0)
-        el.semi_a, el.semi_b = st.get("semi_a", 0.0), st.get("semi_b", 0.0)
-        el.angle = st.get("angle", 0.0)
-        el.focus = st.get("focus")
-        el.directrix = st.get("directrix")
-        return {}   # 闭包自行写状态，返回空 state
+        a_, b_, c_, d_, e_, f_ = st["coeffs"]
+        return {"a": a_, "b": b_, "c": c_, "d": d_, "e": e_, "f": f_,
+                "ctype": st["ctype"], "cx": st.get("cx", 0.0), "cy": st.get("cy", 0.0),
+                "semi_a": st.get("semi_a", 0.0), "semi_b": st.get("semi_b", 0.0),
+                "angle": st.get("angle", 0.0), "focus": st.get("focus"),
+                "directrix": st.get("directrix")}
     el.set_deps(deps, compute)
     return cons.add(el)
 

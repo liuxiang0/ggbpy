@@ -344,11 +344,8 @@ def _cmd_rectsum(cons, defn, args, variant):
                     continue
                 rects.append([x0, x1, y])
                 total += w * y
-        el.rects = rects
-        el.value = float(total)
-        el.n = n
-        el.a, el.b = a, b
-        return {}
+        # 返回完整 state（不能只写 el 后 return {}，否则计算记忆命中时新构造会空 ✗）
+        return {"rects": rects, "value": float(total), "n": n, "a": a, "b": b}
 
     el.set_deps(deps, fn)
     el.compute()

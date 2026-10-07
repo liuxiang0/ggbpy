@@ -131,7 +131,9 @@ class GeoElement:
             state = self._fn(self.deps)
             self.apply_state(state)
             self.error = None
-            if _memo is not None:
+            # 只缓存**非空** state：闭包若「直接写 el 再 return {}」，空 state 命中时
+            # 既恢复不了也跳过了计算 → 新构造里的对象会停在默认值（曾致第二个会话的圆锥曲线退化 ✗）
+            if _memo is not None and state:
                 try:
                     _memo.put(mkey, state)
                 except Exception:  # 防御性捕获：该分支失败不应中断用户操作

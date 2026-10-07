@@ -201,6 +201,21 @@ check("TTL 过期会话被清理，default 保留", dropped >= 1 and left == {S.
 S.MAX_SESSIONS, S.TTL_SECONDS = _old_max, _old_ttl
 S.reset_for_tests()
 
+# ---------------------------------------------------------------------------
+print("\n=== 计算记忆：同一构造在两个会话里都要正确（跨会话污染回归）===")
+# 第九十四批修的真 bug：圆锥曲线闭包曾「写 el 后 return {}」→ 计算记忆命中时
+# 第二个会话里同名同 defn 的椭圆会退化成 ctype=general（画不出来）✗
+_mem_lines = ["A=(-1,-1)", "B=(1,-1)", "P=(0,-3)", "E=Ellipse[A,B,P]"]
+_path_counts = []
+for _sid in ("mem-a", "mem-b"):
+    req("/api/clear?sid=" + _sid, {})
+    req("/api/batch?sid=" + _sid, {"script": "\n".join(_mem_lines)})
+    _st2, _h2, _raw2, _js2 = req("/api/export/svg?xmin=-4&xmax=4&ymin=-4&ymax=4&sid=" + _sid)
+    _svg2 = _raw2.decode("utf-8", "replace")
+    _path_counts.append(_svg2.count("<path") - 1)          # 减去箭头 marker 自带的 path
+check("同一圆锥曲线在两个会话里都正确导出（第二个走计算记忆命中）",
+      _path_counts == [1, 1], "椭圆路径数 %s" % _path_counts)
+
 print("\n" + "=" * 60)
 print("会话隔离检测：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

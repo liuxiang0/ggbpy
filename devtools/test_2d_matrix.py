@@ -1368,6 +1368,44 @@ check("长度越界 → 明确报错", "px" in (_msg_ll or ""), (_msg_ll or "")[
 check("draw() 暴露 slider_px（供前端按 px 绘制）",
       abs(float(_ll.elements["sL2"].draw((0, 0, 1, 1)).get("slider_px", 0)) - 240) < 1e-9, "")
 
+# ---------------------------------------------------------------------------
+section("Z18. 计算记忆跨构造正确性（副作用型 compute 不得污染第二个构造）")
+
+# 背景（第九十四批修的真 bug）：`_mk_conic` / 黎曼和闭包曾「直接写 el 再 return {}」，
+# 而 GeoElement.compute 命中记忆时只 apply_state(缓存) 且**不再调用闭包** → 第二个构造里
+# 同名同 defn 的圆锥曲线/黎曼和会停在默认值（ctype=general, semi_a=0）✗（跨会话可见）
+_memo.clear()
+
+
+def _mk_conic_case():
+    c = Construction()
+    for ln in ("A=(-1,-1)", "B=(1,-1)", "P=(0,-3)", "E=Ellipse[A,B,P]"):
+        c.process(ln)
+    return c
+
+
+_c1 = _mk_conic_case()
+_s1 = _memo.stats()
+_c2 = _mk_conic_case()                      # 同一 key → 走记忆命中
+_s2 = _memo.stats()
+check("同 defn 的圆锥曲线在第二个构造里仍算对（ctype=ellipse、semi_a 一致）",
+      _c1.elements["E"].ctype == "ellipse" and _c2.elements["E"].ctype == "ellipse"
+      and abs(_c1.elements["E"].semi_a - _c2.elements["E"].semi_a) < 1e-9,
+      "%s/%.4f → %s/%.4f" % (_c1.elements["E"].ctype, _c1.elements["E"].semi_a,
+                             _c2.elements["E"].ctype, _c2.elements["E"].semi_a))
+check("第二次构造确实走了记忆命中（hits 增加，不是靠禁用缓存蒙对）",
+      _s2["hits"] > _s1["hits"], "hits %d → %d" % (_s1["hits"], _s2["hits"]))
+
+_r1, _ = build(["f(x)=x^2", "S=LeftSum[f,0,2,4]"])
+_r2, _ = build(["f(x)=x^2", "S=LeftSum[f,0,2,4]"])
+check("黎曼和（同类 side-effect compute）第二个构造同样正确",
+      abs(_r1.elements["S"].value - 1.75) < 1e-9 and abs(_r2.elements["S"].value - 1.75) < 1e-9,
+      "%.4f / %.4f" % (_r1.elements["S"].value, _r2.elements["S"].value))
+check("记忆里不存在空 state（通用防线：副作用型 compute 不入缓存）",
+      not any(isinstance(v, dict) and not v for v in _memo._STORE.values()),
+      str(len(_memo._STORE)))
+_memo.clear()
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
