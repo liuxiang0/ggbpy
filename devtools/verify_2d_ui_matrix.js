@@ -1617,6 +1617,59 @@ function check(name, ok, detail) {
   check('坐标轴渲染无新增 JS 错误', JS_ERRORS.length === adErrBefore,
         JS_ERRORS.slice(adErrBefore).join(';').slice(0, 60));
 
+  // -------------------------------------------------------------------------
+  section('AE. 全局快捷键（Ctrl+Shift+G/X/S，复用菜单按钮同一实现）');
+  const aeErrBefore = JS_ERRORS.length;
+  const aeState = () => page.evaluate(() => ({
+    grid: document.getElementById('btn-grid').classList.contains('active'),
+    axes: document.getElementById('btn-axes').classList.contains('active'),
+    snapOn: window.__ggbpyDebug.snapState().on,
+    msg: (document.getElementById('msg') || {}).textContent || ''
+  }));
+  const ae0 = await aeState();
+  await page.keyboard.press('Control+Shift+KeyG');
+  await page.waitForTimeout(220);
+  const aeG1 = await aeState();
+  await page.keyboard.press('Control+Shift+KeyG');
+  await page.waitForTimeout(220);
+  const aeG2 = await aeState();
+  check('Ctrl+Shift+G 切换网格显示（再按恢复）',
+        aeG1.grid === !ae0.grid && aeG2.grid === ae0.grid,
+        JSON.stringify({ 初始: ae0.grid, 一次: aeG1.grid, 两次: aeG2.grid }));
+  await page.keyboard.press('Control+Shift+KeyX');
+  await page.waitForTimeout(220);
+  const aeX1 = await aeState();
+  await page.keyboard.press('Control+Shift+KeyX');
+  await page.waitForTimeout(220);
+  const aeX2 = await aeState();
+  check('Ctrl+Shift+X 切换坐标轴显示（再按恢复）',
+        aeX1.axes === !ae0.axes && aeX2.axes === ae0.axes,
+        JSON.stringify({ 初始: ae0.axes, 一次: aeX1.axes, 两次: aeX2.axes }));
+  await page.keyboard.press('Control+Shift+KeyS');
+  await page.waitForTimeout(220);
+  const aeS1 = await aeState();
+  check('Ctrl+Shift+S 切换吸附并给出提示',
+        aeS1.snapOn === !ae0.snapOn && /吸附/.test(aeS1.msg),
+        JSON.stringify({ snapOn: aeS1.snapOn, msg: aeS1.msg.slice(0, 20) }));
+  await page.keyboard.press('Control+Shift+KeyS');           // 还原
+  await page.waitForTimeout(200);
+  // 误触守护：无修饰键的字母（在命令框里打字）不应触发任何切换
+  await page.fill('#cmd', 'gx');
+  await page.waitForTimeout(200);
+  const aePlain = await aeState();
+  check('无修饰键的字母不会误触（命令框输入 gx 后状态不变）',
+        aePlain.grid === ae0.grid && aePlain.axes === ae0.axes && aePlain.snapOn === ae0.snapOn,
+        JSON.stringify({ grid: aePlain.grid, axes: aePlain.axes, snapOn: aePlain.snapOn }));
+  await page.fill('#cmd', '');
+  await page.waitForTimeout(150);
+  const aeTitles = await page.evaluate(() => ['btn-grid', 'btn-axes', 'btn-snap']
+    .map((i) => document.getElementById(i).getAttribute('title') || ''));
+  check('三个开关的悬停提示写明快捷键（可发现性）',
+        aeTitles[0].indexOf('Ctrl+Shift+G') >= 0 && aeTitles[1].indexOf('Ctrl+Shift+X') >= 0
+        && aeTitles[2].indexOf('Ctrl+Shift+S') >= 0, JSON.stringify(aeTitles));
+  check('全局快捷键无新增 JS 错误', JS_ERRORS.length === aeErrBefore,
+        JS_ERRORS.slice(aeErrBefore).join(';').slice(0, 60));
+
   section('J. JS 错误');
   check('全流程无未捕获 JS 错误', JS_ERRORS.length === 0, JS_ERRORS.slice(0, 3).join(' | '));
 

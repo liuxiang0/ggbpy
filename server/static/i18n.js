@@ -4,6 +4,8 @@
 window.GGB_I18N = {
     zh: {
       undo: '↶ 撤销', redo: '↷ 重做', snap: '吸附', demo: '示例', grid: '网格', axes: '坐标轴',
+      grid_t: '显示/隐藏网格（Ctrl+Shift+G）', axes_t: '显示/隐藏坐标轴（Ctrl+Shift+X）',
+      snap_t: '格点吸附开关（Ctrl+Shift+S；关着时按住 Shift 临时吸附）',
       clear: '清空', save: '保存', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', gltf: 'GLTF', svg3d: 'SVG·3D', objin: '📥OBJ', load: '加载', cas: 'CAS', d3: '3D',
       help_t: '命令帮助', save_t: '保存为 .ggk（含样式与视口）', cas_t: '打开/关闭 CAS 视图',
       cmd_ph: '代数输入：A=(1,2)  f(x)=x^2  M=Midpoint[A,B]  c=Circle[A,B]  P=Intersect[c,g] …',
@@ -83,6 +85,8 @@ window.GGB_I18N = {
     },
     en: {
       undo: '↶ Undo', redo: '↷ Redo', snap: 'Snap', demo: 'Demo', grid: 'Grid', axes: 'Axes',
+      grid_t: 'Show/hide grid (Ctrl+Shift+G)', axes_t: 'Show/hide axes (Ctrl+Shift+X)',
+      snap_t: 'Toggle grid snap (Ctrl+Shift+S; hold Shift for temporary snap)',
       clear: 'Clear', save: 'Save', svg: 'SVG', png: 'PNG', obj: 'OBJ', stl: 'STL', gltf: 'GLTF', svg3d: 'SVG·3D', objin: '📥OBJ', load: 'Load', cas: 'CAS', d3: '3D',
       help_t: 'Command help', save_t: 'Save as .ggk (styles + viewport)', cas_t: 'Toggle CAS panel',
       cmd_ph: 'Algebra input: A=(1,2)  f(x)=x^2  M=Midpoint[A,B]  c=Circle[A,B]  P=Intersect[c,g] …',

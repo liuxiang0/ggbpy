@@ -1005,6 +1005,25 @@
     setMsg(snapOn ? t('snapOn') : t('snapOff'), false);
   });
 
+  // ---------- 全局快捷键：Ctrl+Shift+<键>（macOS：Cmd+Shift+<键>）----------
+  // 规范（详见 README《全局快捷键》）：
+  //   ① 只绑定「切换类」低频动作，**不用单键**（避免与输入、工具、浏览器快捷键冲突）；
+  //   ② 一律带 Ctrl/Cmd+Shift 双修饰，且只用浏览器**未占用**的字母（禁用表见 README）；
+  //   ③ 助记优先：网格 Grid→G、坐标轴 →X、吸附 Snap→S；
+  //   ④ 用 `ev.code` 匹配（不受键盘布局影响），命中即 preventDefault；
+  //   ⑤ 动作**复用菜单按钮的 click 处理器**（含 active 类与状态提示），与鼠标路径同一实现。
+  var VIEW_SHORTCUTS = { g: 'btn-grid', x: 'btn-axes', s: 'btn-snap' };
+  document.addEventListener('keydown', function (ev) {
+    if (!(ev.ctrlKey || ev.metaKey) || !ev.shiftKey || ev.altKey) return;
+    var code = String(ev.code || '');
+    var k = code.indexOf('Key') === 0 ? code.slice(3).toLowerCase() : String(ev.key || '').toLowerCase();
+    var id = VIEW_SHORTCUTS[k];
+    if (!id) return;
+    ev.preventDefault();
+    var el = document.getElementById(id);
+    if (el) el.click();
+  });
+
   // 智能吸附：优先吸附到已有点（对象吸附，12px 阈值），否则吸附到网格交点
   function snapPoint(wx, wy, step, sx, sy) {
     if (sx !== undefined && sy !== undefined) {

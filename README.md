@@ -83,6 +83,15 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 - **视图按钮（顶栏，即时生效）**：**放大** / **缩小**（各 ×1.3，**以画布中心为锚点**，该点世界坐标保持不动）/ **复位**（回到启动视图：纵向恰好 -8..8、原点居中）；
   2D 专用（3D 仍用滚轮/拖动缩放）；滚轮缩放不受影响
 - **坐标系保持干净**：网格 / 坐标轴开关只画线，**原点不画标记**（旧版在原点画「灰点 + 圆环 + O」，2D/3D 均已移除）；需要 (0,0) / (0,0,0) 时用**吸附**（网格吸附含原点；2D 实测点击靠近原点即落 (0,0)）或直接按坐标输入
+- **全局快捷键（规范）**：统一用 **`Ctrl+Shift+<键>`**（macOS 用 `Cmd+Shift+<键>`），只绑定**切换类**低频动作，**不用单键**（避免与输入/工具冲突）：
+
+  | 快捷键 | 动作 | 助记 |
+  |---|---|---|
+  | `Ctrl+Shift+G` | 网格显示 / 隐藏 | **G**rid |
+  | `Ctrl+Shift+X` | 坐标轴显示 / 隐藏 | **X** 轴 |
+  | `Ctrl+Shift+S` | 格点吸附开关（关着时仍可按住 Shift 临时吸附） | **S**nap |
+
+  规范细则：① **只用浏览器未占用的字母**（禁用表：`Ctrl+Shift+A` Chrome 标签搜索、`T` 恢复标签、`N` 隐身窗口、`W` 关闭窗口、`I/J/C` 开发者工具、`D` 收藏所有标签、`B/O` 书签栏/管理器、`P`(Firefox) 命令面板、`R` 强制刷新、`F`(Firefox) 全屏、`Delete` 清除浏览数据）；② 匹配用 `ev.code`（**不受键盘布局影响**），命中即 `preventDefault`；③ 动作**复用菜单按钮的 click 处理器**（与鼠标路径同一实现，含 `active` 类与状态提示）；④ **新增快捷键必须同时**：写进本表 + 按钮 `title`（i18n 中英对称）+ 2D 矩阵断言 + CHANGELOG
 - **控件可拖动位置**：在画布上**拖动控件本体**即移动锚点（**点击**才是执行动作：按钮跑脚本 / 复选框切显示 / 输入框改数值）；
   移动由 `SetWidgetPos[控件|滑动条, (x,y)]` 完成，并**同步重写 defn** → `.ggk` 往返位置一致
 - **交互控件（新「控件」工具组）**：工具面板新增 **控件** 分类 = `滑块`（沿用）/ `文本`（原在测量分类下，已移入）/ `插入图片` /
@@ -140,7 +149,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 
 - `devtools/test_2d_matrix.py`（内核 266 断言）：对象 / 命令 / 圆锥曲线 / 统计图 / 命名 / 偏移 / 锁定 / `.ggk` 往返
 - `devtools/test_2d_api.py`（76 断言）：`/api/state`、`/api/input`、`/api/demo`、`/api/load`、`/api/download`、`/api/share`、`/api/cas`、`/api/image`、导出、**`/api/commands` 的 `sigs`（190 条全覆盖 / 无 `[…]` 回退 / 前缀 == 显示名）**等
-- `devtools/verify_2d_ui_matrix.js`（177 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 命令补全模板态（参数高亮 + Tab/Shift+Tab 跳参 + 可选参数与位序 + 无参命令不进模板态）/ **格点吸附**（开关 / Shift 临时 / 复用已有点）/ **指针捕获** / 竖直滑块值拖动与整体移动 / 会话隔离
+- `devtools/verify_2d_ui_matrix.js`（183 断言，浏览器）：编辑栏 / CAS / 分享 / 图片插入 / 导出 / 工具分类与统计图入口 / 键盘面板 / 命令补全模板态（参数高亮 + Tab/Shift+Tab 跳参 + 可选参数与位序 + 无参命令不进模板态）/ **格点吸附**（开关 / Shift 临时 / 复用已有点 / 吸附取原点）/ **原点无标记** / **全局快捷键 Ctrl+Shift+G·X·S** / **指针捕获** / 竖直滑块值拖动与整体移动 / 会话隔离
 - `devtools/bench_blocking.py`（性能）：跨会话阻塞压测（重计算期间的请求排队延迟，含 A/B 环境开关）
 - `devtools/bench_undo.py`（性能）：撤销/重做压测（快照字节数、snapshot/restore 耗时、记忆冷/热对照、LRU）
 
@@ -627,7 +636,7 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 15 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 266 + 2D API 76 + 3D 496/181/149 + 2D 前端 177 + 代码质量 19 = 1776 断言
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 15 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 266 + 2D API 76 + 3D 496/181/149 + 2D 前端 183 + 代码质量 19 = 1782 断言
 bash devtools/run_3d_detection.sh       # 仅 3D：内核 496 + API 181 + 浏览器 149
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
