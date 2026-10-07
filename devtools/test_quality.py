@@ -90,17 +90,25 @@ def main() -> int:
         _, mut_bare = scan(list(bad.glob("*.py")))
         check("注入的裸 except 会被抓到", len(mut_bare) >= 1, str(mut_bare))
 
-    print("\n=== D. 文档章节完整性（README 限制/边界章节，防漂移） ===")
+    print("\n=== D. 文档职责与结构（README 只写当前状态；历史归 CHANGELOG） ===")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    # 防误截断：曾有文档脚本把 README 写成空文件并提交（0 行），CI 未拦住
-    check("README 非空且规模正常（≥ 400 行，防误截断）", len(readme.splitlines()) >= 400,
-          "lines=%d bytes=%d" % (len(readme.splitlines()), len(readme.encode("utf-8"))))
-    check("README 含变更历史与快速开始（结构完整）",
-          "## 🚀 快速开始" in readme and "第五十六批" in readme, "")
-    check("README 含「2D 限制」章节（与 3D 章节对称）", "#### 2D 限制" in readme, "")
-    check("README 含「2D 检测矩阵」章节", "#### 2D 检测矩阵" in readme, "")
-    if "#### 2D 限制" in readme:
-        sec = readme[readme.index("#### 2D 限制"):readme.index("### 3D 视图")]
+    rl = len(readme.splitlines())
+    # 防误截断（曾有脚本把 README 写成 0 行并提交）；上限防再次膨胀成"变更日志"
+    check("README 规模正常（150–500 行）", 150 <= rl <= 500,
+          "lines=%d bytes=%d" % (rl, len(readme.encode("utf-8"))))
+    check("README 含标准章节（简介 / 快速开始 / 功能总览 / 检测 / 许可）",
+          all(k in readme for k in ("## ✨ 项目简介", "## 🚀 快速开始", "## 🎯 功能总览",
+                                    "## 🧪 检测与质量", "## 📄 许可与致谢")), "")
+    # **职责分离**：README 不得再出现批次流水账（历史一律在 CHANGELOG）
+    check("README 不重复变更历史（无「第N批」流水账，且明确指向 CHANGELOG.md）",
+          re.search(r"第[一二三四五六七八九十百零]+批", readme) is None and "CHANGELOG.md" in readme,
+          "命中=%s" % (re.findall(r"第[一二三四五六七八九十百零]+批", readme)[:3]))
+    check("README 含「2D 限制」「3D 限制」两节（对称）",
+          "#### 2D 限制" in readme and "#### 3D 限制" in readme, "")
+    check("README 给出可复现检测入口（全量 + 分范围）",
+          "run_all_detection.sh" in readme and "run_scope.sh" in readme, "")
+    if "#### 2D 限制" in readme and "#### 3D 限制" in readme:
+        sec = readme[readme.index("#### 2D 限制"):readme.index("#### 3D 限制")]
         bullets = [l for l in sec.splitlines() if l.startswith("- **")]
         check("2D 限制章节条目 ≥ 8（覆盖撤销/记忆/嵌套/统计图/工具等）", len(bullets) >= 8,
               "n=%d" % len(bullets))
