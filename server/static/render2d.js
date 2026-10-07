@@ -186,6 +186,20 @@ window.GGB_R2D = (function () {
         // 旧实现在此画「灰点 + 深色圆环 + 字母 O」，用户反馈多余 ✗（第九十一批移除）
       }
 
+      // 面填充色：取元素颜色 + 低透明度（`#rrggbb` → `#rrggbb1a`）；非十六进制色回退旧淡蓝
+      // 注意：**不写正则字面量** —— `devtools/check_frontend_modules.js` 的标识符扫描器不认正则，
+      // 会把 `[0-9a-fA-F]` 里的 fA/F 当成未定义标识符 ✗（这里用逐字符判断替代）
+      function fillOf(e) {
+        var c = String(colorOf(e) || '');
+        if (c.length !== 7 || c.charAt(0) !== '#') return 'rgba(59,130,246,.10)';
+        for (var i = 1; i < 7; i++) {
+          var ch = c.charAt(i);
+          var hex = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
+          if (!hex) return 'rgba(59,130,246,.10)';
+        }
+        return c + '1a';
+      }
+
       function colorOf(e) {
         var C = env.get('C');
         // 锁定对象：统一灰色，表示不可移动/编辑
@@ -248,7 +262,7 @@ window.GGB_R2D = (function () {
         if (e.visible === false) return;   // 隐藏对象（如刚性多边形的非手柄顶点）不渲染
         var i, j;
         if (e.kind === 'polygon' && e.pts && e.pts.length >= 2) {
-          ctx.fillStyle = 'rgba(59,130,246,.10)';
+          ctx.fillStyle = fillOf(e);          // 填充跟随元素颜色（旧实现固定淡蓝，SetColor 只改描边 ✗）
           ctx.strokeStyle = colorOf(e);
           ctx.lineWidth = 2;
           ctx.beginPath();

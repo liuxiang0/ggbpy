@@ -1,0 +1,893 @@
+{
+ "format": "ggk",
+ "version": 5,
+ "order": [
+  "O",
+  "S",
+  "sun",
+  "R1",
+  "R2",
+  "ray0",
+  "ray1",
+  "ray2",
+  "ray3",
+  "ray4",
+  "ray5",
+  "ray6",
+  "ray7",
+  "CL0",
+  "cloud0",
+  "CL1",
+  "cloud1",
+  "CL2",
+  "cloud2",
+  "G1",
+  "G2",
+  "G3",
+  "G4",
+  "grass",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "walls",
+  "T1",
+  "T2",
+  "T3",
+  "roof",
+  "K1",
+  "K2",
+  "K3",
+  "K4",
+  "chimney",
+  "SU1",
+  "smoke1",
+  "SU2",
+  "smoke2",
+  "D1",
+  "D2",
+  "D3",
+  "D4",
+  "door",
+  "DH",
+  "knob",
+  "V1",
+  "V2",
+  "win",
+  "V3",
+  "V4",
+  "winH",
+  "V5",
+  "V6",
+  "winV",
+  "B1",
+  "B2",
+  "TR3",
+  "TR4",
+  "trunk",
+  "CF1",
+  "CF2",
+  "CP",
+  "canopy",
+  "CT",
+  "canopy2",
+  "PF1",
+  "PF2",
+  "PP",
+  "pool",
+  "DL1",
+  "DL2",
+  "_dl",
+  "PFOC",
+  "jet",
+  "SP1",
+  "spray",
+  "F",
+  "PFA1",
+  "PFA2",
+  "PPA",
+  "petal0",
+  "petal1",
+  "petal2",
+  "petal3",
+  "petal4",
+  "petal5",
+  "core",
+  "Q1",
+  "Q2",
+  "Q3",
+  "Q4",
+  "path",
+  "tx1"
+ ],
+ "defns": {
+  "O": "O=(0,0)",
+  "S": "S=(6,4.5)",
+  "sun": "sun=Circle[S,0.72]",
+  "R1": "R1=(6,5.32)",
+  "R2": "R2=(6,5.86)",
+  "ray0": "ray0=Segment[R1,R2]",
+  "ray1": "ray1=Rotate[ray0,45,S]",
+  "ray2": "ray2=Rotate[ray0,90,S]",
+  "ray3": "ray3=Rotate[ray0,135,S]",
+  "ray4": "ray4=Rotate[ray0,180,S]",
+  "ray5": "ray5=Rotate[ray0,225,S]",
+  "ray6": "ray6=Rotate[ray0,270,S]",
+  "ray7": "ray7=Rotate[ray0,315,S]",
+  "CL0": "CL0=(-4.8,4.5)",
+  "cloud0": "cloud0=Circle[CL0,0.55]",
+  "CL1": "CL1=(-4.1,4.8)",
+  "cloud1": "cloud1=Circle[CL1,0.70]",
+  "CL2": "CL2=(-3.4,4.5)",
+  "cloud2": "cloud2=Circle[CL2,0.50]",
+  "G1": "G1=(-8,-4.6)",
+  "G2": "G2=(8,-4.6)",
+  "G3": "G3=(8,-1.35)",
+  "G4": "G4=(-8,-1.35)",
+  "grass": "grass=Polygon[G1,G2,G3,G4]",
+  "H1": "H1=(-5.4,-1.35)",
+  "H2": "H2=(-1,-1.35)",
+  "H3": "H3=(-1,1.55)",
+  "H4": "H4=(-5.4,1.55)",
+  "walls": "walls=Polygon[H1,H2,H3,H4]",
+  "T1": "T1=(-6,1.55)",
+  "T2": "T2=(-3.2,3.75)",
+  "T3": "T3=(-0.4,1.55)",
+  "roof": "roof=Polygon[T1,T2,T3]",
+  "K1": "K1=(-4.9,2.35)",
+  "K2": "K2=(-4.2,2.35)",
+  "K3": "K3=(-4.2,3.55)",
+  "K4": "K4=(-4.9,3.55)",
+  "chimney": "chimney=Polygon[K1,K2,K3,K4]",
+  "SU1": "SU1=(-4.9,3.95)",
+  "smoke1": "smoke1=Circle[SU1,0.28]",
+  "SU2": "SU2=(-4.35,4.45)",
+  "smoke2": "smoke2=Circle[SU2,0.22]",
+  "D1": "D1=(-4.4,-1.35)",
+  "D2": "D2=(-3,-1.35)",
+  "D3": "D3=(-3,0.55)",
+  "D4": "D4=(-4.4,0.55)",
+  "door": "door=Polygon[D1,D2,D3,D4]",
+  "DH": "DH=(-3.25,-0.35)",
+  "knob": "knob=Circle[DH,0.09]",
+  "V1": "V1=(-2.5,0.05)",
+  "V2": "V2=(-1.55,0.05)",
+  "win": "win=RegularPolygon[V1,V2,4]",
+  "V3": "V3=(-2.44,0.05)",
+  "V4": "V4=(-1.61,0.05)",
+  "winH": "winH=Segment[V3,V4]",
+  "V5": "V5=(-2.025,-0.42)",
+  "V6": "V6=(-2.025,0.52)",
+  "winV": "winV=Segment[V5,V6]",
+  "B1": "B1=(1.5,-1.35)",
+  "B2": "B2=(2.5,-1.35)",
+  "TR3": "TR3=(2.35,0.85)",
+  "TR4": "TR4=(1.65,0.85)",
+  "trunk": "trunk=Polygon[B1,B2,TR3,TR4]",
+  "CF1": "CF1=(1.5,2)",
+  "CF2": "CF2=(2.5,2)",
+  "CP": "CP=(2,3.6)",
+  "canopy": "canopy=Ellipse[CF1,CF2,CP]",
+  "CT": "CT=(2.6,2.9)",
+  "canopy2": "canopy2=Dilate[canopy,0.62,CT]",
+  "PF1": "PF1=(4,-2.85)",
+  "PF2": "PF2=(6.4,-2.85)",
+  "PP": "PP=(5.2,-2.05)",
+  "pool": "pool=Ellipse[PF1,PF2,PP]",
+  "DL1": "DL1=(3,-2.85)",
+  "DL2": "DL2=(7.4,-2.85)",
+  "_dl": "_dl=Line[DL1,DL2]",
+  "PFOC": "PFOC=(5.2,-2.42)",
+  "jet": "jet=Parabola[PFOC,_dl]",
+  "SP1": "SP1=(5.2,0.35)",
+  "spray": "spray=Circle[SP1,0.22]",
+  "F": "F=(-1.4,-2.6)",
+  "PFA1": "PFA1=(-1.4,-3.75)",
+  "PFA2": "PFA2=(-1.4,-1.45)",
+  "PPA": "PPA=(-1.62,-2.6)",
+  "petal0": "petal0=Ellipse[PFA1,PFA2,PPA]",
+  "petal1": "petal1=Rotate[petal0,60,F]",
+  "petal2": "petal2=Rotate[petal0,120,F]",
+  "petal3": "petal3=Rotate[petal0,180,F]",
+  "petal4": "petal4=Rotate[petal0,240,F]",
+  "petal5": "petal5=Rotate[petal0,300,F]",
+  "core": "core=Circle[F,0.24]",
+  "Q1": "Q1=(-2.6,-1.35)",
+  "Q2": "Q2=(-1.9,-2.3)",
+  "Q3": "Q3=(-2.4,-3.3)",
+  "Q4": "Q4=(-1.5,-4.6)",
+  "path": "path=Polyline[Q1,Q2,Q3,Q4]",
+  "tx1": "tx1=Text[\"小屋与花园 · ggbpy\", (-7.8,5.35)]"
+ },
+ "styles": {
+  "O": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "S": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "sun": [
+   "#fbbf24",
+   true,
+   false,
+   false,
+   null
+  ],
+  "R1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "R2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "ray0": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "ray1": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "ray2": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "ray3": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "ray4": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "ray5": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "ray6": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "ray7": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "CL0": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "cloud0": [
+   "#e2e8f0",
+   true,
+   false,
+   false,
+   null
+  ],
+  "CL1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "cloud1": [
+   "#e2e8f0",
+   true,
+   false,
+   false,
+   null
+  ],
+  "CL2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "cloud2": [
+   "#e2e8f0",
+   true,
+   false,
+   false,
+   null
+  ],
+  "G1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "G2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "G3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "G4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "grass": [
+   "#86efac",
+   true,
+   false,
+   false,
+   null
+  ],
+  "H1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "H2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "H3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "H4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "walls": [
+   "#fef3c7",
+   true,
+   false,
+   false,
+   null
+  ],
+  "T1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "T2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "T3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "roof": [
+   "#b45309",
+   true,
+   false,
+   false,
+   null
+  ],
+  "K1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "K2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "K3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "K4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "chimney": [
+   "#94a3b8",
+   true,
+   false,
+   false,
+   null
+  ],
+  "SU1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "smoke1": [
+   "#e5e7eb",
+   true,
+   false,
+   false,
+   null
+  ],
+  "SU2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "smoke2": [
+   "#f1f5f9",
+   true,
+   false,
+   false,
+   null
+  ],
+  "D1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "D2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "D3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "D4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "door": [
+   "#92400e",
+   true,
+   false,
+   false,
+   null
+  ],
+  "DH": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "knob": [
+   "#facc15",
+   true,
+   false,
+   false,
+   null
+  ],
+  "V1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "V2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "win": [
+   "#93c5fd",
+   true,
+   false,
+   false,
+   null
+  ],
+  "V3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "V4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "winH": [
+   "#1e3a8a",
+   true,
+   false,
+   false,
+   null
+  ],
+  "V5": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "V6": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "winV": [
+   "#1e3a8a",
+   true,
+   false,
+   false,
+   null
+  ],
+  "B1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "B2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "TR3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "TR4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "trunk": [
+   "#92400e",
+   true,
+   false,
+   false,
+   null
+  ],
+  "CF1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "CF2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "CP": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "canopy": [
+   "#22c55e",
+   true,
+   false,
+   false,
+   null
+  ],
+  "CT": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "canopy2": [
+   "#4ade80",
+   true,
+   false,
+   false,
+   null
+  ],
+  "PF1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PF2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PP": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "pool": [
+   "#60a5fa",
+   true,
+   false,
+   false,
+   null
+  ],
+  "DL1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "DL2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "_dl": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PFOC": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "jet": [
+   "#38bdf8",
+   true,
+   false,
+   false,
+   null
+  ],
+  "SP1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "spray": [
+   "#7dd3fc",
+   true,
+   false,
+   false,
+   null
+  ],
+  "F": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PFA1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PFA2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PPA": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "petal0": [
+   "#f472b6",
+   true,
+   false,
+   false,
+   null
+  ],
+  "petal1": [
+   "#f9a8d4",
+   true,
+   false,
+   false,
+   null
+  ],
+  "petal2": [
+   "#f9a8d4",
+   true,
+   false,
+   false,
+   null
+  ],
+  "petal3": [
+   "#f9a8d4",
+   true,
+   false,
+   false,
+   null
+  ],
+  "petal4": [
+   "#f9a8d4",
+   true,
+   false,
+   false,
+   null
+  ],
+  "petal5": [
+   "#f9a8d4",
+   true,
+   false,
+   false,
+   null
+  ],
+  "core": [
+   "#facc15",
+   true,
+   false,
+   false,
+   null
+  ],
+  "Q1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "Q2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "Q3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "Q4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "path": [
+   "#d6d3d1",
+   true,
+   false,
+   false,
+   null
+  ],
+  "tx1": [
+   "#1a1a1a",
+   true,
+   false,
+   false,
+   null
+  ]
+ },
+ "images": {},
+ "meshes": {},
+ "macros": {},
+ "values": {},
+ "view": [
+  -8.2,
+  8.2,
+  -4.9,
+  6.1
+ ]
+}

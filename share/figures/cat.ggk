@@ -1,0 +1,614 @@
+{
+ "format": "ggk",
+ "version": 5,
+ "order": [
+  "O",
+  "F1",
+  "F2",
+  "PS",
+  "shadow",
+  "tail",
+  "BF1",
+  "BF2",
+  "BP",
+  "body",
+  "PW1",
+  "PW2",
+  "pawL",
+  "PW3",
+  "PW4",
+  "pawR",
+  "H",
+  "head",
+  "L1",
+  "L2",
+  "L3",
+  "earL",
+  "_ax",
+  "earR",
+  "L4",
+  "L5",
+  "L6",
+  "inL",
+  "inR",
+  "EL",
+  "eyeL",
+  "ER",
+  "eyeR",
+  "PL",
+  "pupL",
+  "PR",
+  "pupR",
+  "HL",
+  "HR",
+  "N1",
+  "N2",
+  "N3",
+  "nose",
+  "M1",
+  "M2",
+  "MC",
+  "mouth",
+  "W0A",
+  "W0B",
+  "WL0",
+  "WR0",
+  "W1A",
+  "W1B",
+  "WL1",
+  "WR1",
+  "W2A",
+  "W2B",
+  "WL2",
+  "WR2",
+  "C1",
+  "C2",
+  "collar",
+  "B1",
+  "B2",
+  "bell",
+  "tx1"
+ ],
+ "defns": {
+  "O": "O=(0,0)",
+  "F1": "F1=(-1.6,-3.35)",
+  "F2": "F2=(1.6,-3.35)",
+  "PS": "PS=(0,-3.15)",
+  "shadow": "shadow=Ellipse[F1,F2,PS]",
+  "tail": "tail=Parametric[2.0+1.15*sin(2*pi*t), -2.6+3.1*t+0.25*sin(4*pi*t), t, 0, 1]",
+  "BF1": "BF1=(-1,-1.75)",
+  "BF2": "BF2=(1,-1.75)",
+  "BP": "BP=(0,-3.35)",
+  "body": "body=Ellipse[BF1,BF2,BP]",
+  "PW1": "PW1=(-1.35,-3.85)",
+  "PW2": "PW2=(-0.45,-3.85)",
+  "pawL": "pawL=Semicircle[PW1,PW2]",
+  "PW3": "PW3=(0.45,-3.85)",
+  "PW4": "PW4=(1.35,-3.85)",
+  "pawR": "pawR=Semicircle[PW3,PW4]",
+  "H": "H=(0,1.15)",
+  "head": "head=Circle[H,1.85]",
+  "L1": "L1=(-1.6,2.05)",
+  "L2": "L2=(-0.62,2.72)",
+  "L3": "L3=(-1.28,4.05)",
+  "earL": "earL=Polygon[L1,L2,L3]",
+  "_ax": "_ax=Line[(0,-6),(0,6)]",
+  "earR": "earR=Reflect[earL,_ax]",
+  "L4": "L4=(-1.38,2.48)",
+  "L5": "L5=(-1.02,2.78)",
+  "L6": "L6=(-1.26,3.45)",
+  "inL": "inL=Polygon[L4,L5,L6]",
+  "inR": "inR=Reflect[inL,_ax]",
+  "EL": "EL=(-0.62,1.72)",
+  "eyeL": "eyeL=Circle[EL,0.34]",
+  "ER": "ER=(0.62,1.72)",
+  "eyeR": "eyeR=Circle[ER,0.34]",
+  "PL": "PL=(-0.62,1.7)",
+  "pupL": "pupL=Circle[PL,0.17]",
+  "PR": "PR=(0.62,1.7)",
+  "pupR": "pupR=Circle[PR,0.17]",
+  "HL": "HL=(-0.7,1.78)",
+  "HR": "HR=(0.54,1.78)",
+  "N1": "N1=(-0.2,1.02)",
+  "N2": "N2=(0.2,1.02)",
+  "N3": "N3=(0,0.78)",
+  "nose": "nose=Polygon[N1,N2,N3]",
+  "M1": "M1=(-0.46,0.62)",
+  "M2": "M2=(0.46,0.62)",
+  "MC": "MC=(0,1)",
+  "mouth": "mouth=Arc[M1,M2,MC]",
+  "W0A": "W0A=(-0.22,0.92)",
+  "W0B": "W0B=(-2.05,1.28)",
+  "WL0": "WL0=Segment[W0A,W0B]",
+  "WR0": "WR0=Reflect[WL0,_ax]",
+  "W1A": "W1A=(-0.22,0.84)",
+  "W1B": "W1B=(-2.15,0.8)",
+  "WL1": "WL1=Segment[W1A,W1B]",
+  "WR1": "WR1=Reflect[WL1,_ax]",
+  "W2A": "W2A=(-0.22,0.76)",
+  "W2B": "W2B=(-2,0.32)",
+  "WL2": "WL2=Segment[W2A,W2B]",
+  "WR2": "WR2=Reflect[WL2,_ax]",
+  "C1": "C1=(-1.05,-0.55)",
+  "C2": "C2=(1.05,-0.55)",
+  "collar": "collar=Segment[C1,C2]",
+  "B1": "B1=(-0.22,-0.95)",
+  "B2": "B2=(0.22,-0.95)",
+  "bell": "bell=RegularPolygon[B1,B2,5]",
+  "tx1": "tx1=Text[\"小猫 · ggbpy\", (-5.5,5.1)]"
+ },
+ "styles": {
+  "O": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "F1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "F2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PS": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "shadow": [
+   "#e5e7eb",
+   true,
+   false,
+   false,
+   null
+  ],
+  "tail": [
+   "#f97316",
+   true,
+   false,
+   false,
+   null
+  ],
+  "BF1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "BF2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "BP": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "body": [
+   "#fb923c",
+   true,
+   false,
+   false,
+   null
+  ],
+  "PW1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PW2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "pawL": [
+   "#fdba74",
+   true,
+   false,
+   false,
+   null
+  ],
+  "PW3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PW4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "pawR": [
+   "#fdba74",
+   true,
+   false,
+   false,
+   null
+  ],
+  "H": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "head": [
+   "#fb923c",
+   true,
+   false,
+   false,
+   null
+  ],
+  "L1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "L2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "L3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "earL": [
+   "#fb923c",
+   true,
+   false,
+   false,
+   null
+  ],
+  "_ax": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "earR": [
+   "#fb923c",
+   true,
+   false,
+   false,
+   null
+  ],
+  "L4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "L5": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "L6": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "inL": [
+   "#fda4af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "inR": [
+   "#fda4af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "EL": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "eyeL": [
+   "#ffffff",
+   true,
+   false,
+   false,
+   null
+  ],
+  "ER": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "eyeR": [
+   "#ffffff",
+   true,
+   false,
+   false,
+   null
+  ],
+  "PL": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "pupL": [
+   "#111827",
+   true,
+   false,
+   false,
+   null
+  ],
+  "PR": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "pupR": [
+   "#111827",
+   true,
+   false,
+   false,
+   null
+  ],
+  "HL": [
+   "#ffffff",
+   false,
+   false,
+   false,
+   null
+  ],
+  "HR": [
+   "#ffffff",
+   false,
+   false,
+   false,
+   null
+  ],
+  "N1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "N2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "N3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "nose": [
+   "#f472b6",
+   true,
+   false,
+   false,
+   null
+  ],
+  "M1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "M2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "MC": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "mouth": [
+   "#7c2d12",
+   true,
+   false,
+   false,
+   null
+  ],
+  "W0A": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "W0B": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "WL0": [
+   "#78350f",
+   true,
+   false,
+   false,
+   null
+  ],
+  "WR0": [
+   "#78350f",
+   true,
+   false,
+   false,
+   null
+  ],
+  "W1A": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "W1B": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "WL1": [
+   "#78350f",
+   true,
+   false,
+   false,
+   null
+  ],
+  "WR1": [
+   "#78350f",
+   true,
+   false,
+   false,
+   null
+  ],
+  "W2A": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "W2B": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "WL2": [
+   "#78350f",
+   true,
+   false,
+   false,
+   null
+  ],
+  "WR2": [
+   "#78350f",
+   true,
+   false,
+   false,
+   null
+  ],
+  "C1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "C2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "collar": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "B1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "B2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "bell": [
+   "#facc15",
+   true,
+   false,
+   false,
+   null
+  ],
+  "tx1": [
+   "#1a1a1a",
+   true,
+   false,
+   false,
+   null
+  ]
+ },
+ "images": {},
+ "meshes": {},
+ "macros": {},
+ "values": {},
+ "view": [
+  -6.4,
+  6.4,
+  -4.9,
+  5.7
+ ]
+}

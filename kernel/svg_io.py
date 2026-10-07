@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import List, Tuple
 
 from .elements import _fmt as _f
@@ -104,8 +105,11 @@ def export_svg(cons, view: Tuple[float, float, float, float], width: int = 1000,
         elif el.kind == "polygon":
             pts = [[x, y] for x, y in zip(el.xs, el.ys)]
             if len(pts) >= 3:
+                # 填充跟随元素颜色（低透明度）；旧实现固定淡蓝，SetColor 只改描边 ✗
+                _c = color(el)
+                _fill = (_c + "1f") if re.fullmatch(r"#[0-9a-fA-F]{6}", _c or "") else "rgba(59,130,246,.12)"
                 out.append('    <polygon points="' + " ".join(str(X(p[0])) + "," + str(Y(p[1])) for p in pts)
-                           + '" fill="rgba(59,130,246,.12)" stroke="' + color(el) + '" stroke-width="2"/>')
+                           + '" fill="' + _fill + '" stroke="' + _c + '" stroke-width="2"/>')
         elif el.kind == "function":
             samples = el.sample(xmin, xmax, 300)
             segs_pts = _split_nan(samples)
@@ -226,6 +230,21 @@ def export_svg(cons, view: Tuple[float, float, float, float], width: int = 1000,
         elif el.kind == "text":
             out.append('    <text x="' + str(X(el.x)) + '" y="' + str(Y(el.y)) + '" font-size="15"'
                        + ' fill="#111827">' + _esc(el.content) + '</text>')
+        elif el.kind in ("parametric", "polar"):
+            # 参数曲线 / 极坐标曲线：内核 draw() 已给出采样点 pts（曾漏导出 → SVG 里曲线消失 ✗）
+            d = el.draw(view) or {}
+            pts = d.get("pts") or []
+            if len(pts) >= 2:
+                out.append('    <path d="' + path_pts(pts) + '" fill="none" stroke="' + color(el)
+                           + '" stroke-width="2"/>')
+        elif el.kind == "implicit":
+            # 隐式曲线：draw() 给的是 marching squares 线段对 [x1,y1,x2,y2]
+            d = el.draw(view) or {}
+            for seg in d.get("segs", []):
+                if len(seg) >= 4:
+                    out.append('    <line x1="' + str(X(seg[0])) + '" y1="' + str(Y(seg[1]))
+                               + '" x2="' + str(X(seg[2])) + '" y2="' + str(Y(seg[3]))
+                               + '" stroke="' + color(el) + '" stroke-width="2"/>')
         elif el.kind == "locus":
             if len(el.pts) >= 2:
                 out.append('    <path d="' + path_pts(el.pts) + '" fill="none" stroke="#dc2626"'

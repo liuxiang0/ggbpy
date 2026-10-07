@@ -1406,6 +1406,30 @@ check("记忆里不存在空 state（通用防线：副作用型 compute 不入�
       str(len(_memo._STORE)))
 _memo.clear()
 
+# ---------------------------------------------------------------------------
+section("Z19. SVG 导出：曲线类型（参数/极坐标/隐式）+ 多边形填充跟随颜色")
+
+# 背景（第九十五批）：做示例图时发现 SVG 导出把 parametric/polar/implicit 静默丢掉 ✗，
+# 且多边形填充恒为淡蓝（SetColor 只改描边）✗ —— 两处都已修，这里锁住。
+from kernel.svg_io import export_svg as _export_svg  # noqa: E402
+
+_csvg = Construction()
+for _ln in ("O=(0,0)", "T=Parametric[2+0.5*sin(2*pi*t), -1+2*t, t, 0, 1]",
+            "Po=Polar[2*cos(theta)]", "Im=Implicit[x^2+y^2=4]",
+            "Q1=(-2,-2)", "Q2=(2,-2)", "Q3=(2,0)", "Pg=Polygon[Q1,Q2,Q3]"):
+    _csvg.process(_ln)
+_csvg.process('SetColor[Pg,"#22c55e"]')
+_svg = _export_svg(_csvg, (-4, 4, -4, 4))
+check("SVG 导出参数曲线 + 极坐标曲线（两条 path，另加箭头 marker）",
+      _svg.count("<path") >= 3, "path=%d" % _svg.count("<path"))
+check("SVG 导出隐式曲线（marching squares 线段，> 网格线数量）",
+      _svg.count("<line") > 60, "line=%d" % _svg.count("<line"))
+check("多边形填充跟随元素颜色（#22c55e + 透明度，不再是固定淡蓝）",
+      'fill="#22c55e1f"' in _svg and "rgba(59,130,246" not in _svg.split("<defs>")[0],
+      "fill 命中=%s" % ('#22c55e1f' in _svg))
+check("曲线与填充未引入 JS/导出错误（导出仍返回完整 SVG）",
+      _svg.startswith("<?xml") and _svg.rstrip().endswith("</svg>"), "len=%d" % len(_svg))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
