@@ -1544,6 +1544,7 @@
     },
     snapState: function () { return { on: !!snapOn, shift: !!shiftKeyPressed }; },
     gridStep: function () { return niceStep(); },
+    camState: function () { return { r: cam.r, theta: cam.theta, phi: cam.phi, tx: cam.tx, ty: cam.ty, tz: cam.tz }; },
     // pointerdown 早退点集中快照（定位「画布点击/拖动无反应」这类问题的唯一入口）
     panelState: function () {
       return { activeTool: activeTool, toolBusy: !!toolBusy, queue: (toolPointQueue || []).length,
@@ -1696,6 +1697,11 @@
     var st = document.getElementById('tool-status');
     if (st) st.textContent = '';
   }
+  // 指针捕获是**尽力而为**：合成事件/已失活指针会让 setPointerCapture 抛 DOMException，
+  // 任其抛出会中断整个 pointerdown 处理函数（3D 侧同样处理；**绝不能写成自递归** ✗）
+  function capturePointer3d(ev) {
+    try { cv3d.setPointerCapture(ev.pointerId); } catch (e) { /* 捕获失败不致命：继续处理 */ }
+  }
   cv3d.addEventListener('pointerdown', function (ev) {
     ev.preventDefault();
     if (tool3d) { tool3dClick(ev.offsetX, ev.offsetY); return; }
@@ -1708,7 +1714,7 @@
     // 右键：直接进入视图旋转（不受对象/点拾取影响）
     if (ev.button === 2) {
       camDrag = { x: ev.offsetX, y: ev.offsetY, shift: ev.shiftKey };
-      cv3d.setPointerCapture(ev.pointerId);
+      capturePointer3d(ev);
       return;
     }
     // 优先：点击 z 控制柄 → 拖动改 z（直观改高度）
@@ -1716,7 +1722,7 @@
     if (zh) {
       var zpe = proj3([zh.x, zh.y, zh.z]);
       dragZHandle = { label: zh.label, sy0: ev.offsetY, z0: (zh.z != null ? zh.z : 0), handleScreenY: zpe.y };
-      cv3d.setPointerCapture(ev.pointerId);
+      capturePointer3d(ev);
       return;
     }
     // 点击 3D 自由点 → 拖动（普通=沿基准平面 x/y；Shift=仅改 z 垂直移动）
@@ -1726,7 +1732,7 @@
       setSelected3d(hp.label);   // 点击控制点即选中（橙色菱形 + 光环）
       drag3d = { label: hp.label, sx: ev.offsetX, sy: ev.offsetY, z0: (hp.z != null ? hp.z : 0),
                  mode: ev.shiftKey ? 'z' : 'xy', moved: false, wasSelected: wasSelPt };
-      cv3d.setPointerCapture(ev.pointerId);
+      capturePointer3d(ev);
       return;
     }
     // 点击 3D 对象 → 选中并可直接拖动平移（普通=水平面 x/y；Shift=仅改 z 高度）
@@ -1741,12 +1747,12 @@
                     moved: false, wasSelected: wasSel3 };
       objShift3d.dx = 0; objShift3d.dy = 0; objShift3d.dz = 0; objShift3d.pushed = false;
       setMsg(lang === 'en' ? 'Selected — drag to translate (Shift+drag: height)' : '已选中 — 拖动平移（Shift+拖动改高度）', false);
-      cv3d.setPointerCapture(ev.pointerId);
+      capturePointer3d(ev);
       ev.preventDefault();
       return;
     }
     camDrag = { x: ev.offsetX, y: ev.offsetY, shift: ev.shiftKey };
-    cv3d.setPointerCapture(ev.pointerId);
+    capturePointer3d(ev);
   });
   // 阻止 3D 画布右键弹出浏览器菜单
   cv3d.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });

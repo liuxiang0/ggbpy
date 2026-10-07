@@ -934,6 +934,50 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   });
   check('三维统计图在 3D 画布上绘出（非背景像素 > 2000）', chart3dPx > 2000, String(chart3dPx));
 
+  section('G3. 3D 画布交互：右键旋转 + 指针捕获（合成/失活指针不中断处理函数）');
+  const g3ErrBefore = errs.length;
+  await page.evaluate(() => {
+    window.__pid3 = null;
+    const c = document.getElementById('cv3d');
+    c.addEventListener('pointerdown', (e) => { window.__pid3 = e.pointerId; }, true);
+  });
+  const cam0 = await page.evaluate(() => window.__ggbpyDebug.camState());
+  {
+    const r = await rect3d();
+    const q = { x: r.x + r.width * 0.3, y: r.y + r.height * 0.3 };
+    await page.mouse.move(q.x, q.y, { steps: 3 });
+    await page.mouse.down({ button: 'right' });
+    await page.waitForTimeout(100);
+    const held = await page.evaluate(() => {
+      const c = document.getElementById('cv3d');
+      return window.__pid3 == null ? false : c.hasPointerCapture(window.__pid3);
+    });
+    await page.mouse.move(r.x + r.width * 0.58, r.y + r.height * 0.46, { steps: 6 });
+    await page.mouse.up({ button: 'right' });
+    await page.waitForTimeout(350);
+    const cam1 = await page.evaluate(() => window.__ggbpyDebug.camState());
+    check('右键拖动 → 相机旋转（theta/phi 改变）',
+          cam1.theta !== cam0.theta || cam1.phi !== cam0.phi,
+          JSON.stringify({ theta: cam0.theta + '→' + cam1.theta, phi: cam0.phi + '→' + cam1.phi }));
+    check('按下 3D 画布后 cv3d **捕获**该指针', held === true, String(held));
+  }
+  // 合成/失活指针：setPointerCapture 会抛 NotFoundError → 必须被吞掉，不能中断 pointerdown
+  // （未包装时该异常会冒成未捕获错误，此处断言会红 ✗）
+  await page.evaluate(() => {
+    const c = document.getElementById('cv3d');
+    const b = c.getBoundingClientRect();
+    const opt = { bubbles: true, cancelable: true, pointerId: 987654, pointerType: 'mouse',
+                  button: 2, buttons: 2, clientX: b.left + b.width * 0.4, clientY: b.top + b.height * 0.4 };
+    c.dispatchEvent(new PointerEvent('pointerdown', opt));
+    c.dispatchEvent(new PointerEvent('pointerup', opt));
+  });
+  await page.waitForTimeout(250);
+  check('失活指针的 pointerdown 不产生未捕获错误（捕获失败被吞）',
+        errs.length === g3ErrBefore, errs.slice(g3ErrBefore).join(' | ').slice(0, 90));
+  const cam2 = await page.evaluate(() => window.__ggbpyDebug.camState());
+  check('处理函数未被异常中断（相机状态仍可读、未损坏）',
+        cam2 && typeof cam2.theta === 'number' && typeof cam2.r === 'number', JSON.stringify(cam2));
+
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));
 

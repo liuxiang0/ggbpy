@@ -626,8 +626,8 @@ pip install -r requirements.txt      # fastapi / uvicorn / sympy / numpy
 #### 3D 检测矩阵（可重复执行）
 
 ```bash
-bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 266 + 2D API 74 + 3D 496/181/142 + 2D 前端 168 + 代码质量 19 = 1752 断言
-bash devtools/run_3d_detection.sh       # 仅 3D：内核 496 + API 181 + 浏览器 142
+bash devtools/run_all_detection.sh       # 全量 11 步：注册表 9 + 仓库 18 + 容差 20 + 模块 336 + 会话 23 + 2D 内核 266 + 2D API 74 + 3D 496/181/146 + 2D 前端 168 + 代码质量 19 = 1756 断言
+bash devtools/run_3d_detection.sh       # 仅 3D：内核 496 + API 181 + 浏览器 146
 python3 -B devtools/test_sessions.py    # 多会话隔离（cookie/?sid=、构造/宏/state3d 独立性）
 python3 -B devtools/test_stores.py      # 内容寻址仓库（图片/网格）
 python3 -B devtools/test_modules.py     # 模块边界（内核拆分/前端文案外置/词条一致性）
@@ -636,7 +636,7 @@ python3 -B devtools/test_tolerance.py   # 统一容差（零魔数扫描/前后�
 
 - `devtools/test_3d_matrix.py` —— 内核层（3D 类型 × 输入形式 × 退化 × 网格完整性 × 嵌套 × Volume/Area × 3D 求交（空间圆/体∩体/球×球/两圆）× 求交容差 × 显式/参数/隐式曲面 × FitPlane × OBJ·STL 导入 × 样式快照 × 序列化 × 3D 度量语义）
 - `devtools/test_3d_api.py` —— API 层（`/api/state3d` schema（含 section）、错误传播、undo/redo、`.ggb` 警告、`.ggk` 载入、功能验收）
-- `devtools/verify_3d_ui_matrix.js` —— 浏览器层（15 个工具全部路径、退化与取消、工具切换、滑块驱动、嵌套输入、截面/空间圆渲染、样式撤销重做、OBJ/STL 真实下载、像素校验、零 JS 错误）
+- `devtools/verify_3d_ui_matrix.js` —— 浏览器层（15 个工具全部路径、退化与取消、工具切换、滑块驱动、嵌套输入、截面/空间圆渲染、样式撤销重做、OBJ/STL 真实下载、像素校验、**右键旋转与指针捕获（含失活指针不中断处理函数）**、零 JS 错误）
 
 ### 定理证明器 / 脚本 / 导出 / 协作
 
