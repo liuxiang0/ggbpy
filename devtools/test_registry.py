@@ -104,6 +104,45 @@ check("DISPLAY_NAMES 的键都是真实命令（无孤儿显示名）", not orph
 zh_dup = sorted(k for k in C.ALIASES if k in C.DISPLAY_NAMES)
 check("中文别名不与显示名冲突", not zh_dup, str(zh_dup[:8]))
 
+# 8) 参数签名表（kernel/signatures.py）：**全覆盖 + 无失效 key + 前缀 == 显示名**
+#    前缀必须等于显示名：前端 Tab 补全会把签名整串填入，前缀不对就会填出另一条命令 ✗
+#    （本轮修掉的真实缺陷：9 条 key 失效 → 对应命令一直无参数提示，另有 1 条前缀写成了别的命令）
+from kernel.signatures import SIGNATURES  # noqa: E402
+
+def _disp(k):
+    return C.DISPLAY_NAMES.get(k) or (k[:1].upper() + k[1:])
+
+def _split_top(sig):
+    """只按**顶层**「 或 」切分（括号内的「或」是参数名的一部分，如 Solve[方程 或 方程组, 变量?]）。"""
+    out, depth, cur, i = [], 0, "", 0
+    while i < len(sig):
+        ch = sig[i]
+        if ch in "[({":
+            depth += 1
+        elif ch in "])}":
+            depth -= 1
+        if depth == 0 and sig.startswith(" 或 ", i):
+            out.append(cur); cur = ""; i += len(" 或 "); continue
+        cur += ch; i += 1
+    out.append(cur)
+    return [x.strip() for x in out if x.strip()]
+
+dead_sig = sorted(k for k in SIGNATURES if k not in cmds)
+check("签名表没有失效 key（都挂在真实命令上）", not dead_sig, str(dead_sig[:8]))
+missing_sig = sorted(k for k in cmds if k not in SIGNATURES)
+check("190 条命令全部登记参数签名（不再回退 名字[…]）", not missing_sig, str(missing_sig[:8]))
+fallback = sorted(k for k in cmds if SIGNATURES.get(k, "").endswith("[…]"))
+check("签名表无 […] 回退项", not fallback, str(fallback[:8]))
+bad_pre = [(k, SIGNATURES[k]) for k in SIGNATURES
+           if k in cmds and not SIGNATURES[k].lower().startswith(_disp(k).lower())]
+check("签名前缀 == 该命令的显示名", not bad_pre, str(bad_pre[:4]))
+bad_alt = [(k, v, p) for k, v in SIGNATURES.items() for p in _split_top(v)
+           if k in cmds and not p.lower().startswith(_disp(k).lower())]
+check("签名的每个顶层备选形式都以显示名开头", not bad_alt, str(bad_alt[:3]))
+bad_bracket = [(k, v) for k, v in SIGNATURES.items()
+               if v.count("[") != v.count("]") or v.count("]") < 1]
+check("签名括号配对且至少一组参数", not bad_bracket, str(bad_bracket[:4]))
+
 print("\n" + "=" * 56)
 print("注册表检查：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

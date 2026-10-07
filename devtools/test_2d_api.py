@@ -526,10 +526,16 @@ _cmdj = __import__("json").loads(_cmds.decode("utf-8"))
 check("API：/api/commands 返回 sigs（每条命令都有签名）",
       isinstance(_cmdj.get("sigs"), dict) and len(_cmdj["sigs"]) == len(_cmdj["commands"]),
       "sigs=%d commands=%d" % (len(_cmdj.get("sigs", {})), len(_cmdj["commands"])))
-check("API：签名含参数（Slider 带 min/max/step/vertical/px；未登记回退 名字[…]）",
-      "最小值" in _cmdj["sigs"].get("slider", "") and "px" in _cmdj["sigs"].get("slider", "")
-      and _cmdj["sigs"].get("abs", "").endswith("[…]"),
-      "%s | %s" % (_cmdj["sigs"].get("slider"), _cmdj["sigs"].get("abs")))
+check("API：签名含参数（Slider 带 min/max/step/vertical/px）",
+      "最小值" in _cmdj["sigs"].get("slider", "") and "px" in _cmdj["sigs"].get("slider", ""),
+      "%s" % _cmdj["sigs"].get("slider"))
+# 第九十批起：190 条命令**全部登记**签名（不再有 `名字[…]` 回退项）——旧断言曾以 Abs 作"未登记"样例 ✗
+_fb = sorted(k for k, v in _cmdj["sigs"].items() if v.endswith("[…]"))
+check("API：190 条命令全部有真实签名（0 条回退 名字[…]）", not _fb, "回退项=%s" % _fb[:6])
+check("API：签名前缀 == 该命令的显示名（Tab 补全填出的就是这条命令）",
+      not [k for k, v in _cmdj["sigs"].items()
+           if not v.lower().startswith(str(_cmdj["display"].get(k) or k).lower())],
+      "sigs=%d" % len(_cmdj["sigs"]))
 
 print("\n" + "=" * 60)
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))

@@ -2104,6 +2104,7 @@
       else if (c0 === ']') { depth--; if (depth === 0) { close = i; break; } }
     }
     if (close <= open) return null;                 // 还没闭合 → 不算模板态
+    if (!v.slice(open + 1, close).trim()) return null;   // `名字[]` = 无参数命令（如 MacroList[]）→ 不进模板态
     var inner = v.slice(open + 1, close), parts = [], from = 0, d = 0;
     for (var j = 0; j < inner.length; j++) {
       var c = inner.charAt(j);

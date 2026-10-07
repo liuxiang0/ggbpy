@@ -1,16 +1,18 @@
 """命令**参数签名**（供前端补全/帮助显示「完整输入内容」）。
 
 设计：
-- 只列「值得展示参数」的常用命令；未列出的命令回退为 ``名字[…]``（覆盖可增量扩充）
+- **190 条命令全部登记**（签名只作输入体验提示，真实校验仍在各命令处理器里）
 - 签名用**中英混排的中性写法**：``?`` 表示可选，``…`` 表示可继续追加
-- 真实校验仍在各命令处理器里（这里只为输入体验服务，不作为唯一真相）
+- **前缀必须等于该命令的显示名**（前端 Tab 补全会把签名整串填入 → 前缀不对就填出别的命令 ✗）；
+  由 ``devtools/test_registry.py`` 断言「无失效 key / 全覆盖 / 前缀 == 显示名」
+- 多形式（``A[x] 或 A[y]``）补全时只填**首个** `[...]`（见前端 ``cmdComplete``）
 """
+
 from __future__ import annotations
 
 from typing import Dict
 
 SIGNATURES: Dict[str, str] = {
-    # —— 滑块与交互控件 ——
     "slider": "Slider[最小值, 最大值, 步长?, (x,y)?, vertical?, px?]",
     "setslider": "SetSlider[滑块, 最小值, 最大值, 步长?]",
     "setsliderlength": "SetSliderLength[滑块, 像素长度]",
@@ -24,8 +26,6 @@ SIGNATURES: Dict[str, str] = {
     "setinput": 'SetInput[目标, "数值或表达式"]',
     "text": 'Text["模板(可含 + 引用)", 点或(x,y)]',
     "image": "Image[角点1, 角点2, 图片数据或URL]",
-    # —— 点/线/圆/多边形 ——
-    "point": "Point[(x,y)] 或 点标签= (x,y)",
     "midpoint": "Midpoint[点, 点] 或 Midpoint[线段]",
     "intersect": "Intersect[对象1, 对象2]",
     "segment": "Segment[点, 点]",
@@ -36,23 +36,16 @@ SIGNATURES: Dict[str, str] = {
     "semicircle": "Semicircle[点, 点]",
     "arc": "Arc[圆心, 点, 点]",
     "polygon": "Polygon[点1, 点2, 点3, …]",
-    "regpoly": "Polygon[点, 点, 边数]",
     "incircle": "Incircle[点, 点, 点]",
-    "circumcircle": "Circle[点, 点, 点] 三点外接圆",
-    "perpbis": "PerpendicularBisector[点, 点]",
-    "anglebis": "AngleBisector[点, 点, 点]",
+    "circumcircle": "CircumCircle[点, 点, 点]（三点外接圆）",
     "tangent": "Tangent[点, 圆] 或 Tangent[点, 曲线]",
-    "compass": "Compass[点, 线段]",
     "polyline": "Polyline[点1, 点2, …]",
     "locus": "Locus[点, 动点]",
-    # —— 测量 ——
     "distance": "Distance[对象1, 对象2]",
     "angle": "Angle[点A, 顶点B, 点C]（有向 0..360°）",
     "slope": "Slope[直线]",
     "area": "Area[多边形或圆]",
     "perimeter": "Perimeter[多边形或圆]",
-    # —— 函数与统计图 ——
-    "function": "f(x)=表达式 或 Function[表达式]",
     "barchart": "BarChart[{值…}] 或 BarChart[{值…}, {标签…}]",
     "dotplot": "DotPlot[{值…}]",
     "linechart": "LineChart[{值…}]",
@@ -61,15 +54,12 @@ SIGNATURES: Dict[str, str] = {
     "histogram": "Histogram[{值…}, 组数]",
     "boxplot": "BoxPlot[{值…}]",
     "piechart": "PieChart[{值…}]",
-    # —— 剖分 ——
     "delaunay": "Delaunay[{点…}]",
     "voronoi": "Voronoi[{点…}]",
-    # —— 变换 ——
     "reflect": "Reflect[对象, 直线或点]",
     "rotate": "Rotate[对象, 角度, 旋转中心]",
     "translate": "Translate[对象, 向量]",
     "dilate": "Dilate[对象, 比例, 中心]",
-    # —— 编辑与脚本 ——
     "setvalue": "SetValue[数值对象, 新值]",
     "setcoords": "SetCoords[自由点, x, y]",
     "setcolor": 'SetColor[对象, "颜色名或#RRGGBB"]',
@@ -78,8 +68,6 @@ SIGNATURES: Dict[str, str] = {
     "rename": "Rename[对象, 新标签]",
     "redefine": "Redefine[对象, 对象=新定义]",
     "delete": "Delete[对象]",
-    "zoom": "ZoomIn[(x,y)] 需先选工具",
-    # —— CAS ——
     "solve": "Solve[方程 或 方程组, 变量?]",
     "nsolve": "NSolve[方程, 变量?, 初值?]",
     "limit": "Limit[表达式, 变量→值]",
@@ -88,22 +76,150 @@ SIGNATURES: Dict[str, str] = {
     "substitute": "Substitute[表达式, 替换规则]",
     "solveode": "SolveODE[方程, 函数名, 自变量]",
     "partialfractions": "PartialFractions[表达式, 变量]",
-    # —— 3D ——
     "sphere": "Sphere[球心, 半径]",
     "cube": "Cube[点, 点]",
     "cone": "Cone[底心, 顶点, 半径]",
     "cylinder": "Cylinder[底心, 顶心, 半径]",
     "prism": "Prism[多边形, 高度]",
     "pyramid": "Pyramid[多边形, 高度]",
-    "tetra": "Tetrahedron[点, 点, 点, 点]",
-    "plane3d": "Plane[点, 点, 点]",
     "surfacearea": "SurfaceArea[立体]",
     "volume": "Volume[立体]",
+    # —— 以下为按实现补登记的 119 条（覆盖全部命令）——
+    # —— 数值与统计（补登记） ——
+    "abs": "Abs[数值或复数]",
+    "sum": "Sum[数值列表]",
+    "mean": "Mean[数值列表]",
+    "median": "Median[数值列表]",
+    "mode": "Mode[数值列表]",
+    "variance": "Variance[数值列表]",
+    "stdev": "Stdev[数值列表]",
+    "min": "Min[数值列表]",
+    "max": "Max[数值列表]",
+    "sort": "Sort[数值列表]",
+    "q1": "Q1[{值…}] 或 Q1[值1, 值2, …]",
+    "q3": "Q3[{值…}] 或 Q3[值1, 值2, …]",
+    "iqr": "Iqr[{值…}] 或 Iqr[值1, 值2, …]",
+    "normal": "Normal[均值, 标准差, x]",
+    "gcd": "Gcd[数值1, 数值2, …]",
+    "lcm": "Lcm[数值1, 数值2, …]",
+    "ncr": "Ncr[n, r]",
+    "npr": "Npr[n, r]",
+    "isfinite": "IsFinite[数值或表达式]",
+    "isprime": "IsPrime[整数]",
+    "divisors": "Divisors[正整数]",
+    "factorslist": "FactorsList[整数 ≥ 2]",
+    "randombetween": "RandomBetween[最小值, 最大值]",
+    "randomize": "Randomize[随机数值]",
+    "pmcc": "Pmcc[{点…}] 或 Pmcc[{x…}, {y…}]",
+    "correlationcoefficient": "CorrelationCoefficient[{点…}] 或 CorrelationCoefficient[{x…}, {y…}]",
+    # —— 矩阵与复数（补登记） ——
+    "matrix": "Matrix[{{1,2},{3,4}}]",
+    "det": "Det[矩阵]",
+    "transpose": "Transpose[矩阵]",
+    "inverse": "Inverse[矩阵]",
+    "dot": "Dot[向量1, 向量2]",
+    "conj": "Conj[复数]",
+    "conjugate": "Conjugate[复数]",
+    "re": "Re[复数]",
+    "im": "Im[复数]",
+    "arg": "Arg[复数]",
+    # —— 测量与判定/证明（补登记） ——
+    "length": "Length[线段或列表]",
+    "circumference": "Circumference[圆或椭圆]",
+    "radius": "Radius[圆或圆弧]",
+    "diameter": "Diameter[圆或圆弧]",
+    "semiperimeter": "SemiPerimeter[点, 点, 点] 或 SemiPerimeter[多边形]",
+    "areparallel": "AreParallel[对象1, 对象2]",
+    "areperpendicular": "ArePerpendicular[对象1, 对象2]",
+    "arecollinear": "AreCollinear[点, 点, 点]",
+    "areconcurrent": "AreConcurrent[点, 点, 点]",
+    "areconcyclic": "AreConcyclic[点, 点, 点, 点]",
+    "arecongruent": "AreCongruent[对象1, 对象2]",
+    "prove": "Prove[命题]",
+    # —— 三角形心（补登记） ——
+    "orthocenter": "OrthoCenter[点, 点, 点] 或 OrthoCenter[三角形]",
+    "circumcenter": "CircumCenter[点, 点, 点] 或 CircumCenter[三角形]",
+    "excenter": "Excenter[点, 点, 点] 或 Excenter[三角形]",
+    "incenter": "Incenter[三角形]",
+    "centroid": "Centroid[多边形] 或 Centroid[{点…}]",
+    # —— 3D 统计图（补登记） ——
+    "barchart3d": "BarChart3D[{值…}]",
+    "scatterplot3d": "ScatterPlot3D[{三维点…}]",
+    "surfacechart3d": "SurfaceChart3D[{值…}, 列数]",
+    # —— 圆锥曲线（补登记） ——
+    "ellipse": "Ellipse[焦点A, 焦点B, 过点C]",
+    "hyperbola": "Hyperbola[焦点A, 焦点B, 过点C]",
+    "parabola": "Parabola[焦点F, 准线直线]",
+    "conic": "Conic[点1, 点2, 点3, 点4, 点5]",
+    "focus": "Focus[圆锥曲线或圆]",
+    "parametric": "Parametric[x(t), y(t), 起点, 终点] 或 Parametric[x(t), y(t), 参数名, 起点, 终点]",
+    "polar": "Polar[r(θ)] 或 Polar[r, 参数名]",
+    "implicit": "Implicit[含 x、y 的方程]",
+    # —— 拟合与点云（补登记） ——
+    "fitpoly": "FitPoly[{点…}, 次数?]",
+    "fitexp": "Fitexp[{点…}]",
+    "fitlog": "Fitlog[{点…}]",
+    "fitpow": "Fitpow[{点…}]",
+    "fitsin": "Fitsin[{点…}]",
+    "covarianceellipsoid": "CovarianceEllipsoid[{点…}, 倍数?]",
+    "covariance": "Covariance[{点…}]",
+    "fitplane": "FitPlane[{点…}]",
+    "fitsphere": "FitSphere[{点…}]",
+    "convexhull": "ConvexHull[{点…}]",
+    "boundingbox": "BoundingBox[{点…}]",
+    # —— 微积分/数列/逼近（补登记） ——
+    "root": "Root[函数] 或 Root[函数, 起点] 或 Root[函数, 下界, 上界]",
+    "extremum": "Extremum[函数, 下界, 上界]",
+    "fitexpr": "FitExpr[y~a*x+b]",
+    "sequence": "Sequence[表达式, 变量, 起点, 终点, 步长?]",
+    "normaldist": "NormalDist[均值, 标准差]",
+    "solveineq": "SolveIneq[不等式, 变量?]",
+    "rectanglesum": "RectangleSum[函数, 下限, 上限, 分割数, 采样位置?]",
+    "leftsum": "LeftSum[函数, 下限, 上限, 分割数, 采样位置?]",
+    "rightsum": "RightSum[函数, 下限, 上限, 分割数, 采样位置?]",
+    "midpointsum": "MidpointSum[函数, 下限, 上限, 分割数, 采样位置?]",
+    "lowersum": "LowerSum[函数, 下限, 上限, 分割数, 采样位置?]",
+    "uppersum": "UpperSum[函数, 下限, 上限, 分割数, 采样位置?]",
+    "trapezoidalsum": "TrapezoidalSum[函数, 下限, 上限, 分割数, 采样位置?]",
+    # —— 平面几何（补登记） ——
+    "rigidpolygon": "RigidPolygon[点1, 点2, 点3, …]",
+    "fitline": "FitLine[{点…}]",
+    "perpendicularline": "PerpendicularLine[点, 直线]",
+    "perpendicularbisector": "PerpendicularBisector[线段] 或 PerpendicularBisector[点, 点]",
+    "anglebisector": "AngleBisector[点A, 顶点B, 点C]",
+    "foot": "Foot[点, 直线]",
+    "regularpolygon": "RegularPolygon[点A, 点B, 边数]",
+    "pointoncircle": "PointOnCircle[圆, 角度?]",
+    "pointonpath": "PointOnPath[线/线段/射线/圆/多边形/圆弧]",
+    "sector": "Sector[起点, 终点, 圆心]",
+    "randompointin": "RandomPointIn[圆或多边形]",
+    "invert": "Invert[对象, 反演圆]",
+    # —— 迭代/宏/杂项（补登记） ——
+    "iteration": "Iteration[函数, 初值, 次数]",
+    "iterationlist": "IterationList[函数, 初值, 次数]",
+    "macrocreate": "MacroCreate[名称, {输入对象…}, {输出对象…}]",
+    "macrolist": "MacroList[]",
+    "macrodelete": "MacroDelete[宏名]",
+    "setwire": "SetWire[3D物体, true/false]",
+    # —— 3D 与曲面（补登记） ——
+    "surface": "Surface[z=f(x,y), xmin, xmax, ymin, ymax, 网格数?]",
+    "surfaceparam": "SurfaceParam[x(s,t), y(s,t), z(s,t), s, t, smin, smax, tmin, tmax, 网格数?]",
+    "implicitsurface": "ImplicitSurface[f(x,y,z)=0, xmin, xmax, ymin, ymax, zmin, zmax, 分辨率?]",
+    "surfaceisoline": "SurfaceIsoline[曲面, 参数值, 维度?]",
+    "surfacepoint": "SurfacePoint[曲面, u, v]",
+    "surfaceproject": "SurfaceProject[点, 曲面]",
+    "mesh": "Mesh[网格id]",
+    "plane": "Plane[点, 点, 点]",
+    "tetrahedron": "Tetrahedron[点, 点, 点]（AB 为棱，C 定朝向）",
+    "octahedron": "Octahedron[中心, 半径点, 方向点]",
+    "hexahedron": "Hexahedron[中心, 半径点, 方向点]",
+    "icosahedron": "Icosahedron[中心, 半径点, 方向点]",
+    "dodecahedron": "Dodecahedron[中心, 半径点, 方向点]",
 }
 
 
 def signature_of(key: str, display: str) -> str:
-    """取签名；未登记的命令回退为 ``名字[…]``（提示「有参数但未登记」）。"""
+    """取签名；未登记的命令回退为 ``名字[…]``（正常不应发生：已全覆盖，检测会拦）。"""
     sig = SIGNATURES.get(key)
     if sig:
         return sig

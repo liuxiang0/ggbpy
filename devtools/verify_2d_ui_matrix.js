@@ -1076,6 +1076,23 @@ function check(name, ok, detail) {
   await page.waitForTimeout(200);
   abT = await abSnap();
   check('参数按顶层逗号切分（(x,y) 内逗号不切）', abT.n === 4, JSON.stringify({ n: abT.n }));
+  // 本轮补登记的签名可用：候选带参数、补全只填首个形式（备选形式不整串塞入）
+  await page.fill('#cmd', 'PerpendicularBisector');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(200);
+  abT = await abSnap();
+  check('补登记的签名可用（PerpendicularBisector 补全只填首个形式、并选中首参）',
+        abT.v === 'PerpendicularBisector[线段]' && abT.sel === '线段' && abT.cur === 0,
+        JSON.stringify({ v: abT.v, sel: abT.sel, cur: abT.cur }));
+  await page.fill('#cmd', 'MacroList');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(200);
+  abT = await abSnap();
+  check('无参数命令（MacroList[]）不进模板态：只填名字、不显示参数位提示',
+        abT.v === 'MacroList[]' && abT.shown === false && abT.n === 0,
+        JSON.stringify({ v: abT.v, shown: abT.shown, n: abT.n }));
   // 可选参数（签名里带 ?）淡显 + 位序提示（数字，语言无关）
   await page.fill('#cmd', 'Slider');
   await page.waitForTimeout(200);
