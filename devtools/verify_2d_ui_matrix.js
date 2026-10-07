@@ -1148,27 +1148,67 @@ function check(name, ok, detail) {
         !!vtBox && vtBox.axis === 'y' && vtBox.vert === true
         && Math.abs((vtBox.wy1 - vtBox.wy0) - 3) < 1e-6 && vtBox.playY0 > vtBox.y1,
         JSON.stringify({ axis: vtBox && vtBox.axis, playY0: vtBox && vtBox.playY0, y1: vtBox && vtBox.y1 }));
-  // 值拖动：**本矩阵未覆盖**（说明见下），但已用单页探针验证通过：
-  //   独立页面里对轨道靠顶派发 pointerdown/up → 值 10（max）；靠底 → 0（min）✓
-  //   在本矩阵里同一序列不生效（值恒 5）；已用钩子逐项排除：
-  //     __ggbpyDebug.toolState().activeTool === null ✓
-  //     __ggbpyDebug.selectMode() === false ✓（并试过 Esc 前置、主动关闭选择模式）
-  //   → 剩余最可能：前面多个用例的**合成指针事件残留了多指状态**（画布 pointerdown 开头
-  //     有 `touches[pointerId] = ...`，累计 ≥2 会进入 pinch 分支并直接 return ✗）
-  //   → 本轮已加 __ggbpyDebug.touchState()：实测 touch 0→0，**多指假设排除** ✗
-  //   → 本轮同时发现并修掉一个**真实缺陷**：合成/失活指针会让 setPointerCapture 抛异常，
-  //     从而中断整个 pointerdown 处理函数（已改为 capturePointer 尽力而为 + pointercancel 清理）；
-  //     但异常消除后**值拖动仍未触发** ✗ → 仍有其它早退原因未定位
-  //   → 本轮再获关键证据：**「整体移动」也在矩阵里失效**（同一序列在独立页面通过 ✓：
-  //     拖轨道 → (-2,2) → (-0.4158,1.0948)，defn 保留 vertical ✓）
-  //     即：**两种交互（改值 / 移动）在矩阵里被同一个原因挡住**；而已知 JS 错误为 0、
-  //     touches=0、activeTool=null、selectMode=false → 处理函数没有抛错，而是**在到达
-  //     滑块分支前就 return 了**（唯一未排查的早退点：`Object.keys(touches) >= 2` 的
-  //     pinch 分支、`macroPickMode`、以及更早的 `widgetHit` 命中判定）
-  //   → 下次定位（一次即可确定）：在 pointerdown 各早退点前打点
-  //     （__ggbpyDebug.breakdown = { stage: '...' }），运行一次矩阵看实际走到哪一步
-  //   为了不留"必红"用例，这里只测不影响的状态断言。
-  // 取值路径本身：sliderValueAt(label, wx, wy) 按命中框 axis 取比例（x/y 共用同一实现）。
+  // 值拖动：**本轮已定位并覆盖** —— 老问题真因不是合成指针，而是**命中框重叠取第一个**：
+  //   AA 的 vtS 与 U 段的 uS 同在 (-2,2)：横滑块的矩形罩住竖滑块的滑钮 → sliderAt 返回 uS
+  //   → 按下的其实是 uS → 拖竖滑块"没反应"（值恒 5）。已改为按「到各自轨道的垂距」取最近者。
+  //   独立页面可复现（devtools/probe_widget_overlap.js）：修复前 drag label=uS，修复后=竖滑块。
+  // 这里用**自建的一对同锚点横/竖滑块**做回归（不依赖 U 段的残留状态）。
+  await typeCmd('ovH=Slider[0,10,1,(5,3)]');
+  await typeCmd('ovV=Slider[0,10,1,(5,3),vertical]');
+  await page.waitForTimeout(500);
+  const ovPair = await page.evaluate(() => {
+    const w = window.__ggbpyDebug.widgetBoxes();
+    const u = w['ovH'], v = w['ovV'];
+    return {
+      u: u && { axis: u.axis, x0: u.x0, x1: u.x1, y0: u.y0, y1: u.y1, knobX: u.knobX },
+      v: v && { axis: v.axis, x0: v.x0, x1: v.x1, y0: v.y0, y1: v.y1, knobX: v.knobX, knobY: v.knobY },
+      hitVknob: v ? window.__ggbpyDebug.sliderAt(v.knobX, v.knobY) : null,
+      hitHknob: u ? window.__ggbpyDebug.sliderAt(u.knobX, (u.y0 + u.y1) / 2) : null
+    };
+  });
+  check('同锚点横/竖滑块：竖滑块的滑钮命中**竖滑块**（修复前返回横滑块 ✗）',
+        ovPair.hitVknob === 'ovV' && !!ovPair.v && !!ovPair.u
+        && ovPair.v.knobX >= ovPair.u.x0 && ovPair.v.knobX <= ovPair.u.x1
+        && ovPair.v.knobY >= ovPair.u.y0 && ovPair.v.knobY <= ovPair.u.y1,   // 该点确实落在横滑块矩形内
+        JSON.stringify({ hit: ovPair.hitVknob, hitH: ovPair.hitHknob }));
+  {
+    const r = await page.evaluate(() => { const q = document.getElementById('cv').getBoundingClientRect(); return { left: q.left, top: q.top }; });
+    const before = await state();
+    const vt0 = (before.filter((e) => e.label === 'ovV')[0] || {}).value;
+    const ht0 = (before.filter((e) => e.label === 'ovH')[0] || {}).value;
+    await page.mouse.move(r.left + ovPair.v.knobX, r.top + ovPair.v.knobY);
+    await page.mouse.down();
+    await page.waitForTimeout(80);
+    const dDown = await page.evaluate(() => window.__ggbpyDebug.dragState());
+    await page.mouse.move(r.left + ovPair.v.knobX, r.top + ovPair.v.y0 + 4, { steps: 6 });   // 拖到轨道顶部 = max
+    await page.mouse.up();
+    await page.waitForTimeout(450);
+    const after = await state();
+    const vt1 = (after.filter((e) => e.label === 'ovV')[0] || {}).value;
+    const ht1 = (after.filter((e) => e.label === 'ovH')[0] || {}).value;
+    check('拖竖滑块的滑钮 → 抓到的是竖滑块', dDown && dDown.label === 'ovV' && dDown.slider === true,
+          JSON.stringify(dDown));
+    check('拖竖滑块滑钮到顶部 → 竖滑块值变到最大（10），横滑块不受影响',
+          /10/.test(String(vt1)) && ht1 === ht0 && vt1 !== vt0,
+          JSON.stringify({ vt: vt0 + '→' + vt1, ht: ht0 + '→' + ht1 }));
+    // 同源的「整体移动」：抓轨道（非滑钮）拖动 → 锚点移动，且 vertical 标志保留
+    const vBox = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['ovV']);
+    const midY = (vBox.y0 + vBox.y1) / 2;
+    check('抓竖直滑块轨道（非滑钮）命中仍是竖滑块',
+          (await page.evaluate(([x, y]) => window.__ggbpyDebug.sliderAt(x, y), [vBox.x0 + (vBox.x1 - vBox.x0) / 2, midY])) === 'ovV');
+    await page.mouse.move(r.left + vBox.x0 + (vBox.x1 - vBox.x0) / 2, r.top + midY);
+    await page.mouse.down();
+    await page.waitForTimeout(80);
+    const dPos = await page.evaluate(() => window.__ggbpyDebug.dragState());
+    await page.mouse.move(r.left + vBox.x0 + (vBox.x1 - vBox.x0) / 2 + 40, r.top + midY, { steps: 5 });
+    await page.mouse.up();
+    await page.waitForTimeout(450);
+    const movedEl = (await state()).filter((e) => e.label === 'ovV')[0] || {};
+    const anchorX = (String(movedEl.defn).match(/\(([-0-9.]+),/) || [])[1];
+    check('拖轨道 → 滑块整体移动（锚点变、defn 仍带 vertical）',
+          /vertical/.test(String(movedEl.defn)) && anchorX !== undefined && Math.abs(Number(anchorX) - 5) > 0.3,
+          JSON.stringify({ defn: movedEl.defn, anchorX: anchorX, drag: dPos }));
+  }
   await typeCmd('SetValue[vtS,5]');
   await page.waitForTimeout(300);
   const vtBox2 = await page.evaluate(() => window.__ggbpyDebug.widgetBoxes()['vtS'] || null);
@@ -1388,6 +1428,109 @@ function check(name, ok, detail) {
   check('Voronoi 结果进入对象列表', tessRows.indexOf('Vor') >= 0, String(tessRows.slice(-4)));
   check('绘制多边形列表无新增 JS 错误', JS_ERRORS.length === tessErrBefore,
         JS_ERRORS.slice(tessErrBefore).join(';').slice(0, 60));
+
+  // -------------------------------------------------------------------------
+  section('AC. 格点吸附（默认关 / 开启吸附到格点 / 吸附后复用已有点 / Shift 临时吸附）');
+  const acErrBefore = JS_ERRORS.length;
+  const acSnap = () => page.evaluate(() => window.__ggbpyDebug.snapState());
+  const acStep = await page.evaluate(() => window.__ggbpyDebug.gridStep());
+  const acGrid = (v) => Math.abs(v / acStep - Math.round(v / acStep)) < 1e-6;
+  const acPts = async () => (await state()).filter((e) => e.kind === 'point');
+  const acToolPoint = async () => {
+    // 工具按钮是「选中再点取消」→ 必须先看状态，否则会把工具点没 ✗
+    const t = await page.evaluate(() => window.__ggbpyDebug.toolState());
+    if (t.activeTool !== 'point') { await page.click('#cat-tools .tool-btn[data-tool="point"]'); await page.waitForTimeout(200); }
+  };
+  const acClickWorld = async (wx, wy, shift) => {
+    const s = await page.evaluate(([x, y]) => window.__ggbpyDebug.toScreen(x, y), [wx, wy]);
+    const r = await page.evaluate(() => { const q = document.getElementById('cv').getBoundingClientRect(); return { left: q.left, top: q.top }; });
+    if (shift) await page.keyboard.down('Shift');
+    await page.mouse.click(r.left + s.x, r.top + s.y);
+    await page.waitForTimeout(450);
+    if (shift) await page.keyboard.up('Shift');
+  };
+  // 复位必须走**页面自己的清空按钮**：HTTP /api/clear 不通知前端 → 页面本地仍有旧对象，
+  // 点击会被 hitAnyPoint/widgetHit 截走，表现为「点了没反应」（曾据此误判吸附坏了 ✗）
+  await clickBtn('btn-clear');
+  await page.waitForTimeout(450);
+  check('吸附默认关闭（按钮无 active）',
+        (await acSnap()).on === false && !(await page.evaluate(() => document.getElementById('btn-snap').classList.contains('active'))),
+        JSON.stringify(await acSnap()));
+  await acToolPoint();
+  await acClickWorld(-5.37, -3.63);                       // 明显不在格点上
+  let acList = await acPts();
+  check('未开吸附 → 落点保留原始坐标（不吸附）',
+        acList.length === 1 && Math.abs(acList[0].x + 5.37) < 0.01 && Math.abs(acList[0].y + 3.63) < 0.01,
+        JSON.stringify(acList.map((e) => [e.label, e.x, e.y])));
+  // 开启吸附
+  await page.evaluate(() => { const h = document.querySelector('#m-view .menu-btn'); if (h) h.click(); });
+  await page.waitForTimeout(120);
+  await page.click('#btn-snap');
+  await page.waitForTimeout(250);
+  check('点「吸附」→ 开启 + 按钮 active + 明确提示',
+        (await acSnap()).on === true
+        && (await page.evaluate(() => document.getElementById('btn-snap').classList.contains('active')))
+        && /吸附/.test(await page.textContent('#msg')),
+        (await page.textContent('#msg')).slice(0, 24));
+  await clickBtn('btn-clear');
+  await page.waitForTimeout(450);
+  await acToolPoint();
+  await acClickWorld(-5.37, -3.63);
+  acList = await acPts();
+  check('开吸附 → 落点吸附到格点（坐标是步长整数倍）',
+        acList.length === 1 && acGrid(acList[0].x) && acGrid(acList[0].y),
+        JSON.stringify({ step: acStep, got: acList.map((e) => [e.x, e.y]) }));
+  check('吸附确实改变了落点（≠ 原始 -5.37/-3.63）',
+        acList.length === 1 && (Math.abs(acList[0].x + 5.37) > 1e-9 || Math.abs(acList[0].y + 3.63) > 1e-9),
+        JSON.stringify(acList.map((e) => [e.x, e.y])));
+  const acLabel = acList.length ? acList[0].label : null;
+  await acToolPoint();
+  await acClickWorld(-5.37, -3.63);                       // 同一落点 → 吸附到同一格点
+  acList = await acPts();
+  check('吸附后同一落点再点 → 复用已有点（格点处不新建重叠点）',
+        acList.length === 1 && acLabel !== null && acList[0].label === acLabel,
+        JSON.stringify(acList.map((e) => e.label)));
+  // Shift 临时吸附
+  await page.evaluate(() => { const h = document.querySelector('#m-view .menu-btn'); if (h) h.click(); });
+  await page.waitForTimeout(120);
+  await page.click('#btn-snap');
+  await page.waitForTimeout(250);
+  await clickBtn('btn-clear');
+  await page.waitForTimeout(450);
+  await acToolPoint();
+  await acClickWorld(-5.37, -3.63, true);
+  acList = await acPts();
+  check('未开吸附 + 按住 Shift → 临时吸附到格点',
+        (await acSnap()).on === false && acList.length === 1 && acGrid(acList[0].x) && acGrid(acList[0].y),
+        JSON.stringify(acList.map((e) => [e.x, e.y])));
+  // 指针捕获：曾误写成自递归 capturePointer(ev) → 栈溢出被吞 → 捕获**静默失效** ✗（已修）
+  await clickBtn('btn-clear');
+  await page.waitForTimeout(400);
+  await typeCmd('PC1=(0,0)');
+  // 必须先退出工具态：工具分支在 pointerdown 里直接 return（不走拖拽/捕获路径）
+  const acToolNow = await page.evaluate(() => window.__ggbpyDebug.toolState().activeTool);
+  if (acToolNow) {
+    await page.click('#cat-tools .tool-btn[data-tool="' + acToolNow + '"]');
+    await page.waitForTimeout(250);
+  }
+  check('拖拽前已退出工具态（否则 pointerdown 走工具分支，不建捕获）',
+        (await page.evaluate(() => window.__ggbpyDebug.toolState().activeTool)) === null,
+        JSON.stringify(await page.evaluate(() => window.__ggbpyDebug.toolState())));
+  const pcScreen = await page.evaluate(() => window.__ggbpyDebug.toScreen(0, 0));
+  const pcRect = await page.evaluate(() => { const q = document.getElementById('cv').getBoundingClientRect(); return { left: q.left, top: q.top }; });
+  await page.evaluate(() => { window.__pid = null; document.getElementById('cv').addEventListener('pointerdown', (e) => { window.__pid = e.pointerId; }, true); });
+  await page.mouse.move(pcRect.left + pcScreen.x, pcRect.top + pcScreen.y);
+  await page.mouse.down();
+  await page.waitForTimeout(150);
+  const pcHeld = await page.evaluate(() => {
+    const cv = document.getElementById('cv');
+    return window.__pid != null ? cv.hasPointerCapture(window.__pid) : false;
+  });
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  check('按下画布对象后画布**捕获**该指针（修复前自递归 → 捕获静默失效）', pcHeld === true, String(pcHeld));
+  check('格点吸附/指针捕获无新增 JS 错误', JS_ERRORS.length === acErrBefore,
+        JS_ERRORS.slice(acErrBefore).join(';').slice(0, 60));
 
   section('J. JS 错误');
   check('全流程无未捕获 JS 错误', JS_ERRORS.length === 0, JS_ERRORS.slice(0, 3).join(' | '));

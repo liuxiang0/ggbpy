@@ -294,12 +294,19 @@
   function fmtNum() { return _panels.fmtNum.apply(null, arguments); }
   // 画布滑块（线段 + 滑钮）：命中与取值（与对象列表里的 range 控件共用 /api/drag 语义）
   function sliderAt(sx, sy) {
+    // 命中框是**矩形**：横滑块的矩形会罩住同锚点竖滑块的轨道/滑钮（反之亦然）→
+    // 若只取"第一个命中"，拖竖滑块的滑钮会抓到横滑块（"竖直滑块拖不动"的根因之一）。
+    // 改为按**到各自轨道的垂距**取最近者：竖滑块比 |sx-轨道x|、横滑块比 |sy-轨道y|。
+    var best = null, bestD = Infinity;
     for (var k in widgetBoxes) {
       if (!Object.prototype.hasOwnProperty.call(widgetBoxes, k)) continue;
       var b = widgetBoxes[k];
-      if (b && b.kind === 'slider' && sx >= b.x0 && sx <= b.x1 && sy >= b.y0 && sy <= b.y1) return k;
+      if (!b || b.kind !== 'slider') continue;
+      if (!(sx >= b.x0 && sx <= b.x1 && sy >= b.y0 && sy <= b.y1)) continue;
+      var d = (b.axis === 'y') ? Math.abs(sx - (b.x0 + b.x1) / 2) : Math.abs(sy - (b.y0 + b.y1) / 2);
+      if (d < bestD) { bestD = d; best = k; }
     }
-    return null;
+    return best;
   }
   function sliderPlayAt(sx, sy) {
     for (var k in widgetBoxes) {
@@ -1211,7 +1218,9 @@
   // 指针捕获是**尽力而为**：真实指针能成功；合成事件或已失活指针会抛 DOMException，
   // 若任其抛出会中断整个 pointerdown 处理函数（历史上导致"拖动无反应"且难定位）。
   function capturePointer(ev) {
-    try { capturePointer(ev); } catch (e) { /* 捕获失败不致命：继续处理 */ }
+    // 注意：这里必须调 canvas.setPointerCapture —— 曾误写成自递归 capturePointer(ev)，
+    // 递归到栈溢出被自身 try 吞掉 → 指针捕获**静默失效**（拖动出画布就丢事件）✗
+    try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* 捕获失败不致命：继续处理 */ }
   }
 
   function dropPointer(ev) {
@@ -1532,6 +1541,15 @@
     resetCounters: function () { dbgProjCalls = 0; dbgOccTests = 0; dbgProjReuse = 0; },
     toolState: function () {
       return { activeTool: activeTool, pending: !!pendingImage, sel: (toolSel || []).length };
+    },
+    snapState: function () { return { on: !!snapOn, shift: !!shiftKeyPressed }; },
+    gridStep: function () { return niceStep(); },
+    // pointerdown 早退点集中快照（定位「画布点击/拖动无反应」这类问题的唯一入口）
+    panelState: function () {
+      return { activeTool: activeTool, toolBusy: !!toolBusy, queue: (toolPointQueue || []).length,
+               selectMode: !!selectMode, snapOn: !!snapOn, shift: !!shiftKeyPressed,
+               pending: !!pendingImage, touches: Object.keys(touches).length,
+               drag: !!drag, pan: !!pan, pinch: !!pinch, macroPick: !!macroPickMode };
     },
     els3dCount: function () { return (typeof els3d !== 'undefined' && els3d) ? els3d.length : -1; },
     mode3d: function () { return typeof mode3d !== 'undefined' ? !!mode3d : null; },
