@@ -1,52 +1,51 @@
-# --- Python ---
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
 
+!devtools/verify_2d_ui_matrix.js
+!devtools/verify_3d_ui_matrix.js
+!share/.gitkeep
+# --- OS / 编辑器 ---
+# --- Python ---
 # --- 开发过程产物（不上传） ---
+# --- 服务器 PID / 临时 ---
+# --- 运行期生成 ---
+# 3D 检测矩阵：浏览器层脚本入库（唯一例外，便于回归复现）
+# 开发期截图整目录排除（98 张 / 11MB）
+*.egg-info/
 *.log
+*.py[cod]
+*.run.log
+*.swp
+.DS_Store
+.audit_cmds.txt
+.idea/
+.server.pid
+.venv/
+.vscode/
+DSH工作阶段记录.md
+GAP_ANALYSIS.md
+GITEE*.md
+PROJECT_SUMMARY.md
+Thumbs.db
+USER.md
+__pycache__/
+_shared.js
 audit*.js
 audit*.png
+audit_*.png
+checkpoint*.js
+cleanup.js
+diag*.js
+ggbpy-2026*.md
+ggbpy全面检测报告*.md
+memory/
+probe*.js
+restore.js
+screenshot_*.png
+screenshots/
+share/*.ggk
+shot3d*.png
+shot_*.png
+test_*.js
+tmp_*
+venv/
 verify*.js
 verify_*.js
-# 3D 检测矩阵：浏览器层脚本入库（唯一例外，便于回归复现）
-!devtools/verify_3d_ui_matrix.js
-!devtools/verify_2d_ui_matrix.js
-diag*.js
-probe*.js
-test_*.js
-_shared.js
-cleanup.js
-restore.js
-checkpoint*.js
-*.run.log
-screenshot_*.png
-shot_*.png
-shot3d*.png
-audit_*.png
-# 开发期截图整目录排除（98 张 / 11MB）
-screenshots/
-ggbpy全面检测报告*.md
-ggbpy-2026*.md
-GAP_ANALYSIS.md
-PROJECT_SUMMARY.md
-DSH工作阶段记录.md
-.audit_cmds.txt
-GITEE*.md
-
-# --- 运行期生成 ---
-share/*.ggk
-!share/.gitkeep
-
-# --- OS / 编辑器 ---
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-
-# --- 服务器 PID / 临时 ---
-.server.pid
-tmp_*
