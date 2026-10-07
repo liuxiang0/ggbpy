@@ -479,7 +479,7 @@
 
   // 选中对象 XOR 高亮（橙色虚线轮廓）
 
-  // 坐标轴覆盖层：箭头、x/y 标签、原点 O（在元素之上绘制）
+  // 坐标轴覆盖层：箭头、x/y 标签（原点不标记，保持坐标系干净）
 
 
 
@@ -1469,7 +1469,7 @@
   // 正交：s=1，由 z 约束直接解 z_cam
 
 
-  // 3D 坐标轴：带箭头的彩色轴 + x/y/z 标签 + 原点；左下角微缩坐标轴指示器
+  // 3D 坐标轴：带箭头的彩色轴 + x/y/z 标签（原点不标记）；左下角微缩坐标轴指示器
   // 箭头：屏幕空间画法——方向 = base→tip 投影方向（保证朝外），尖在 tip，两翼向后张开
   // 左下角微缩坐标轴：用当前相机的旋转方向画三条短轴 + 标签（屏幕固定位置）
   // 大网格渲染预算：面数超限时只画面积最大的面（LOD，保轮廓），
@@ -1545,6 +1545,7 @@
     snapState: function () { return { on: !!snapOn, shift: !!shiftKeyPressed }; },
     gridStep: function () { return niceStep(); },
     camState: function () { return { r: cam.r, theta: cam.theta, phi: cam.phi, tx: cam.tx, ty: cam.ty, tz: cam.tz }; },
+    proj3At: function (p) { return proj3([p[0], p[1], p[2]]); },   // 3D 世界坐标 → 画布屏幕坐标（检测用）
     // pointerdown 早退点集中快照（定位「画布点击/拖动无反应」这类问题的唯一入口）
     panelState: function () {
       return { activeTool: activeTool, toolBusy: !!toolBusy, queue: (toolPointQueue || []).length,
@@ -1562,7 +1563,7 @@
 
   function render3d() {
     ctx3.clearRect(0, 0, cssW, cssH);
-    // 坐标轴（带箭头 + 标签 + 原点）
+    // 坐标轴（带箭头 + 标签；原点不标记）
     drawAxes3d();
     // 工作平面网格画在坐标轴之下（已在上方画箭头，这里只画基准平面网格）
     _overlay.drawBasePlane();

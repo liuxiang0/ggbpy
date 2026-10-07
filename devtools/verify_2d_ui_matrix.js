@@ -1540,6 +1540,15 @@ function check(name, ok, detail) {
   check('吸附后同一落点再点 → 复用已有点（格点处不新建重叠点）',
         acList.length === 1 && acLabel !== null && acList[0].label === acLabel,
         JSON.stringify(acList.map((e) => e.label)));
+  // 原点不再画标记后，用户仍可用**吸附**取到 (0,0)：点靠近原点处 → 落点恰为 (0,0)
+  await clickBtn('btn-clear');
+  await page.waitForTimeout(450);
+  await acToolPoint();
+  await acClickWorld(0.2, -0.2);
+  acList = await acPts();
+  check('原点无标记后仍可吸附取到 (0,0)',
+        acList.length === 1 && Math.abs(acList[0].x) < 1e-9 && Math.abs(acList[0].y) < 1e-9,
+        JSON.stringify(acList.map((e) => [e.x, e.y])));
   // Shift 临时吸附
   await page.evaluate(() => { const h = document.querySelector('#m-view .menu-btn'); if (h) h.click(); });
   await page.waitForTimeout(120);
@@ -1581,6 +1590,32 @@ function check(name, ok, detail) {
   check('按下画布对象后画布**捕获**该指针（修复前自递归 → 捕获静默失效）', pcHeld === true, String(pcHeld));
   check('格点吸附/指针捕获无新增 JS 错误', JS_ERRORS.length === acErrBefore,
         JS_ERRORS.slice(acErrBefore).join(';').slice(0, 60));
+
+  // -------------------------------------------------------------------------
+  section('AD. 坐标系：原点不画标记（保持干净）');
+  const adErrBefore = JS_ERRORS.length;
+  await clickBtn('btn-clear');
+  await page.waitForTimeout(400);
+  await clickBtn('btn-home');                       // 复位视图 → 原点回到画布中心
+  await page.waitForTimeout(350);
+  for (const id of ['btn-grid', 'btn-axes']) {      // 确保网格/坐标轴开启（否则断言会空转）
+    const on = await page.evaluate((i) => document.getElementById(i).classList.contains('active'), id);
+    if (!on) { await clickBtn(id); await page.waitForTimeout(150); }
+  }
+  const adOrigin = await page.evaluate(() => {
+    const s = window.__ggbpyDebug.toScreen(0, 0);
+    const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+    const R = 14, n = R * 2 + 1;
+    const d = ctx.getImageData(Math.round(s.x - R), Math.round(s.y - R), n, n).data;
+    let drawn = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] !== 0) drawn++;   // 空白处 alpha=0，必须按 alpha 判
+    return { ox: Math.round(s.x), oy: Math.round(s.y), box: n * n, drawn: drawn };
+  });
+  // 实测：仅有坐标轴 ≈ 165；旧「灰点+圆环+O」≈ 253；坐标轴关掉 ≈ 0
+  check('2D 原点邻域只有坐标轴、没有原点标记（60 < 已绘制像素 < 200）',
+        adOrigin.drawn > 60 && adOrigin.drawn < 200, JSON.stringify(adOrigin));
+  check('坐标轴渲染无新增 JS 错误', JS_ERRORS.length === adErrBefore,
+        JS_ERRORS.slice(adErrBefore).join(';').slice(0, 60));
 
   section('J. JS 错误');
   check('全流程无未捕获 JS 错误', JS_ERRORS.length === 0, JS_ERRORS.slice(0, 3).join(' | '));

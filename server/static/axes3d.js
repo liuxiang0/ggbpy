@@ -57,7 +57,7 @@ window.GGB_AX3 = (function () {
             ctx3.fillStyle = axisTicks3d.labelColor;
             ctx3.font = axisTicks3d.font;
             for (var t = Math.ceil(-ad.len / tstep) * tstep; t <= ad.len + 0.001; t += tstep) {
-              if (Math.abs(t) < tstep / 2) continue;   // 跳过原点附近（原点单独标 O）
+              if (Math.abs(t) < tstep / 2) continue;   // 跳过原点附近：三条轴交汇处不标 0（避免重叠）
               var pA = [dir[0] * t, dir[1] * t, dir[2] * t];
               var pA2 = [dir[0] * t + off[0] * axisTicks3d.tickLen * 0.06, dir[1] * t + off[1] * axisTicks3d.tickLen * 0.06, dir[2] * t + off[2] * axisTicks3d.tickLen * 0.06];
               var pr1 = proj3(pA), pr2 = proj3(pA2);
@@ -90,15 +90,8 @@ window.GGB_AX3 = (function () {
         ctx3.fillText('z', lz.x + 8, lz.y + 6);
         ctx3.textAlign = 'left';
         ctx3.textBaseline = 'alphabetic';
-        // 原点
-        var op = proj3([0, 0, 0]);
-        ctx3.fillStyle = '#374151';
-        ctx3.beginPath();
-        ctx3.arc(op.x, op.y, 3, 0, Math.PI * 2);
-        ctx3.fill();
-        ctx3.fillStyle = C.text;
-        ctx3.font = '12px sans-serif';
-        ctx3.fillText('O', op.x + 5, op.y + 4);
+        // 原点**不标记**（三条轴交汇处保持干净）：需要 (0,0,0) 时用「吸附」或按坐标输入
+        // （旧实现在此画圆点 + 字母 O，用户反馈多余 ✗ —— 第九十一批移除）
       }
 
       function arrowHead3(tip, base, color) {

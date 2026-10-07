@@ -978,6 +978,30 @@ const TOOLS = ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone
   check('处理函数未被异常中断（相机状态仍可读、未损坏）',
         cam2 && typeof cam2.theta === 'number' && typeof cam2.r === 'number', JSON.stringify(cam2));
 
+  section('G4. 3D 坐标系：原点不画标记（保持干净）');
+  const g4ErrBefore = errs.length;
+  await reset();                                   // 清空 + 刷新 + 进 3D（页面自清，避免前端残留）
+  const g4 = await page.evaluate(() => {
+    const p3 = window.__ggbpyDebug.proj3At([0, 0, 0]);
+    const cv = document.getElementById('cv3d'), ctx = cv.getContext('2d');
+    const R = 14, n = R * 2 + 1;
+    const d = ctx.getImageData(Math.round(p3.x - R), Math.round(p3.y - R), n, n).data;
+    let drawn = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] !== 0) drawn++;   // 空白 alpha=0
+    return { ox: Math.round(p3.x), oy: Math.round(p3.y), box: n * n, drawn: drawn };
+  });
+  // 实测：只有三条轴 + 基准网格 ≈ 384；旧「圆点 + O」≈ 432（A/B 对照，阈值取 410）
+  check('3D 原点邻域没有原点标记（200 < 已绘制像素 < 410）',
+        g4.drawn > 200 && g4.drawn < 410, JSON.stringify(g4));
+  // 需要 (0,0,0) 时按坐标输入即可（原点不再有可点的标记）
+  await typeCmd('g4O=(0,0,0)');
+  const g4el = (await state3d()).filter((e) => e.label === 'g4O')[0];
+  check('3D 可直接用坐标输入取到原点 (0,0,0)',
+        !!g4el && g4el.x === 0 && g4el.y === 0 && g4el.z === 0,
+        JSON.stringify(g4el && { x: g4el.x, y: g4el.y, z: g4el.z }));
+  check('3D 坐标系渲染无新增 JS 错误', errs.length === g4ErrBefore,
+        errs.slice(g4ErrBefore).join(' | ').slice(0, 80));
+
   section('H. JS 错误');
   check('零 JS 错误（favicon/404 除外）', errs.length === 0, errs.slice(0, 3).join(' | '));
 

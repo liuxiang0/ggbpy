@@ -182,23 +182,8 @@ window.GGB_R2D = (function () {
           ctx.textBaseline = 'bottom';
           ctx.fillText('y', ox + 10, ay + 22);  // 下移且右偏：原 ay-12 超出画布顶；与轴线错开避免重叠
         }
-        // 原点 O：特有的标记点（灰点 + 深色圆环 + 标签）
-        if (axIn && ayIn && view.xmin <= 0 && view.xmax >= 0 && view.ymin <= 0 && view.ymax >= 0) {
-          ctx.fillStyle = C.tick;
-          ctx.beginPath();
-          ctx.arc(ox, oy, 4.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = C.axis;
-          ctx.lineWidth = 1.6;
-          ctx.beginPath();
-          ctx.arc(ox, oy, 4.5, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.fillStyle = C.axis;
-          ctx.font = '13px sans-serif';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'top';
-          ctx.fillText('O', ox + 7, oy + 4);
-        }
+        // 原点**不标记**（保持坐标系干净）：需要 (0,0) 时用「吸附」（网格吸附含原点）或按坐标输入 ——
+        // 旧实现在此画「灰点 + 深色圆环 + 字母 O」，用户反馈多余 ✗（第九十一批移除）
       }
 
       function colorOf(e) {
