@@ -1430,6 +1430,62 @@ check("多边形填充跟随元素颜色（#22c55e + 透明度，不再是固定
 check("曲线与填充未引入 JS/导出错误（导出仍返回完整 SVG）",
       _svg.startswith("<?xml") and _svg.rstrip().endswith("</svg>"), "len=%d" % len(_svg))
 
+# ---------------------------------------------------------------------------
+section("Z20. SVG 导出覆盖「每种可绘制元素」+ XML 合法性（防静默漏画）")
+
+# 背景：parametric/polar/implicit 曾被导出器静默丢弃 ✗（第九十五批修）；circle3d/section 同理（第九十八批）。
+# 判据用「加了该元素后导出必须变化」——比按颜色找更可靠（很多分支用固定配色）。
+from xml.etree import ElementTree as _ET  # noqa: E402
+
+_2D_PRE = ["A=(1,1)", "B=(3,1)", "Cc=(2,3)", "O=(0,0)", "f(x)=x^2", "L={1,2,3,4}", "N=5"]
+
+
+def _exp2(lines):
+    _c = Construction()
+    for _l in lines:
+        _c.process(_l)
+    return _export_svg(_c, (-20, 20, -20, 20))
+
+
+_2D_BASE = _exp2(_2D_PRE)
+_2D_CASES = [
+    ("point", "P1=(2,2)"), ("segment", "S1=Segment[A,B]"), ("line", "Ln=Line[A,B]"),
+    ("ray", "Ry=Ray[A,B]"), ("vector", "v1=(1,2)"), ("circle", "Ci=Circle[O,2]"),
+    ("arc", "Ar=Arc[A,B,Cc]"), ("polygon", "Pg=Polygon[A,B,Cc]"), ("polyline", "Pl=Polyline[A,B,Cc]"),
+    ("conic", "Co=Ellipse[A,B,Cc]"), ("function", "Fx=Derivative[f]"), ("implicit", "Im=Implicit[x^2+y^2=4]"),
+    ("parametric", "Pa=Parametric[2+cos(t),1+sin(t),t,0,6.283]"), ("polar", "Po=Polar[2*cos(theta)]"),
+    ("text", 'Tx=Text["hi",(2,2)]'), ("angle", "An=Angle[A,O,B]"), ("sumrect", "Su=LeftSum[f,0,2,4]"),
+    ("barchart", "Bc=BarChart[L]"), ("piechart", "Pc=PieChart[L]"), ("boxplot", "Bx=BoxPlot[L]"),
+    ("linechart", "Lc=LineChart[L]"), ("scatterplot", "Sc=ScatterPlot[L]"), ("dotplot", "Dp=DotPlot[L]"),
+    ("stemplot", "St=StemPlot[L]"), ("inequality", "Iq=x+y>1"),
+    ("button", 'Bu=Button["b","Delete[P1]",(1,-2)]'), ("checkbox", 'Ck=CheckBox["c",Pg,(3,-2)]'),
+    ("inputbox", "Ib=InputBox[N,(5,-2)]"),
+]
+_missing2 = [_k for _k, _l in _2D_CASES if _exp2(_2D_PRE + [_l]) == _2D_BASE]
+# 已知「画布有、SVG 2D 导出没有」的类型：**必须逐个显式列出**（新类型漏画会直接红 ✗）
+# TODO（待办）：统计图 7 类 + 控件 3 类目前不在 2D SVG 导出范围内（画布专用绘制）
+_KNOWN_NOT_EXPORTED_2D = ["barchart", "piechart", "boxplot", "linechart", "scatterplot", "dotplot",
+                          "stemplot", "button", "checkbox", "inputbox"]
+check("2D 导出：除已知缺口外全部可绘制元素都能导出（%d/%d）" % (len(_2D_CASES) - len(_KNOWN_NOT_EXPORTED_2D), len(_2D_CASES)),
+      sorted(_missing2) == sorted(_KNOWN_NOT_EXPORTED_2D), "实际缺口=%s" % _missing2)
+
+_notgeom = []
+for _l in ("N2=5", "L2={1,2}", "b2=IsFinite[1]", "M2=Matrix[{{1,2},{3,4}}]", "Z2=2+3i", "Cu2=Cube[(0,0,0),(1,0,0)]"):
+    if _exp2(_2D_PRE + [_l]) != _2D_BASE:
+        _notgeom.append(_l)
+check("2D 导出明确不画非几何类型（数字/列表/布尔/矩阵/复数/geo3d）", not _notgeom, str(_notgeom))
+
+_2D_XML_CASES = [("普通元素", _2D_PRE + ["Pg=Polygon[A,B,Cc]", "Tt=Text[\"x\",(0,0)]"]),
+                 ("曲线齐活", _2D_PRE + ["Pa=Parametric[2+cos(t),1+sin(t),t,0,6.283]", "Po=Polar[2*cos(theta)]",
+                                     "Im=Implicit[x^2+y^2=4]", "Ar=Arc[A,B,Cc]"])]
+_xml_bad2 = []
+for _name, _lines in _2D_XML_CASES:
+    try:
+        _ET.fromstring(_exp2(_lines))
+    except Exception as _e:      # noqa: BLE001 —— 检测脚本：解析失败即失败
+        _xml_bad2.append((_name, repr(_e)[:60]))
+check("导出的 SVG 是合法 XML（文本里裸写 '<' 曾让整份失效）", not _xml_bad2, str(_xml_bad2))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

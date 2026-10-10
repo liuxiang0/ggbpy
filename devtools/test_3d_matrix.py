@@ -1639,7 +1639,78 @@ if e61 is None:
           svg.count("<circle") >= 2 and svg.count("<text") >= 2,
           "circle=%d text=%d" % (svg.count("<circle"), svg.count("<text")))
     check("SVG 内无 nan/None 数值", "nan" not in svg and "None" not in svg)
-    # —— 本批补的三类导出：空间圆 / 截面 / 默认俯视 + 机位参数 ——
+    # —— XML 合法性：`<desc>` 里裸写 '<' 曾让整份 SVG 失效（Chrome 直接报错页）——
+    _xml_ok3 = True
+    try:
+        ET.fromstring(svg)
+    except Exception:      # noqa: BLE001 —— 检测脚本：解析失败即失败
+        _xml_ok3 = False
+    check("3D 导出 SVG 是合法 XML", _xml_ok3, "")
+    # —— 每种 objtype 都必须真的被画出来（circle3d/section 曾静默漏画 ✗）——
+    def _svg3d_of(lines):
+        _c, _e = build(lines)
+        return _svg3d(_c) if _e is None else None
+    _pre3 = ["A=(-1,-1,0)", "B=(1,-1,0)"]
+    _base3 = _svg3d_of(_pre3)
+    _cases3 = [
+        ("cube", ["cu=Cube[A,B]"]),
+        ("polyhedron(prism)", ["pr=Prism[A,B,(0,0,2)]"]),
+        ("polyhedron(pyramid)", ["py=Pyramid[A,B,(0,0,2)]"]),
+        ("polyhedron(tetrahedron)", ["te=Tetrahedron[A,B,(0,0,2)]"]),
+        ("polyhedron(dodecahedron)", ["dd=Dodecahedron[A,B,(0,0,2)]"]),
+        ("sphere", ["sp=Sphere[A,1.5]"]),
+        ("plane", ["pl=Plane[A,B,(0,0,2)]"]),
+        ("polyhedron(cylinder)", ["cy=Cylinder[A,(2,-1,0),(0,0,2)]"]),
+        ("polyhedron(cone)", ["cn=Cone[A,(2,-1,0),(0,0,2)]"]),
+        ("circle3d", ["sp=Sphere[A,1.5]", "pl=Plane[A,B,(0,0,2)]", "ci=Intersect[sp,pl]"]),
+        ("section", ["cu=Cube[A,B]", "pl=Plane[A,B,(0,0,2)]", "se=Intersect[pl,cu]"]),
+    ]
+    _miss3 = [_k for _k, _ls in _cases3 if _svg3d_of(_pre3 + _ls) == _base3]
+    check("3D 导出覆盖每种可投影 objtype（加该元素后导出必须变化）", not _miss3, str(_miss3))
+    # 说明：objtype 单一来源是 kernel/schemas.py（新增类型后需在上面 _cases3 里补一行）
+    # —— 平面四边形：必须与画布端同一语义（a 角点、u/v 整条边）——
+    # 判据：**复刻导出器的取景公式**算期望屏幕坐标，与 SVG 里的四点精确比对
+    #（曾把 u/v 当 ±1 半宽 → 四边形大出一倍；归一化比较分辨不出"同形状不同尺寸" ✗）
+    from kernel.svg_io import _rot3 as _r3, _scene_points as _sp  # noqa: E402
+    _pl_lines = ["A=(0,0,0)", "B=(2,0,0)", "Cc=(0,2,0)", "pl=Plane[A,B,Cc]"]
+    _pc, _pe = build(_pl_lines)
+    if _pe is None:
+        _d = _pc.elements["pl"].data
+        _a = [_d["ax"], _d["ay"], _d["az"]]
+        _u = [_d["ux"], _d["uy"], _d["uz"]]
+        _v = [_d["vx"], _d["vy"], _d["vz"]]
+        _rot = _r3(-0.62, -0.52)
+        _pts3 = _sp(_pc)
+        _us = [_rot(q)[0] for q in _pts3]
+        _vs = [_rot(q)[1] for q in _pts3]
+        _span_u = max(1e-6, max(_us) - min(_us)) * 1.16
+        _span_v = max(1e-6, max(_vs) - min(_vs)) * 1.16
+        _sc = min((1000 - 40) / _span_u, (700 - 60) / _span_v)
+        _cu = (min(_us) + max(_us)) / 2.0
+        _cv = (min(_vs) + max(_vs)) / 2.0
+
+        def _P(q3):
+            _uu, _vv, _zz = _rot(q3)
+            return (round((_uu - _cu) * _sc + 500, 2), round(350 - (_vv - _cv) * _sc, 2))
+
+        def _want(corners):
+            return sorted(_P([_a[i] + su * _u[i] + sv * _v[i] for i in range(3)]) for su, sv in corners)
+
+        _pgs = [l for l in _svg3d(_pc).split("\n") if l.strip().startswith("<polygon")]
+        _got_raw = None
+        if _pgs:
+            _got_raw = sorted((float(q.split(",")[0]), float(q.split(",")[1]))
+                              for q in re.search(r'points="([^"]+)"', _pgs[0]).group(1).split())
+
+        def _close(a, b, tol=0.05):
+            return bool(a) and bool(b) and len(a) == len(b) and all(
+                abs(p[0] - q[0]) <= tol and abs(p[1] - q[1]) <= tol for p, q in zip(a, b))
+
+        _ok_corner = _close(_got_raw, _want(((0, 0), (1, 0), (1, 1), (0, 1))))
+        _is_half = _close(_got_raw, _want(((-1, -1), (1, -1), (1, 1), (-1, 1))), tol=0.5)
+        check("平面四边形与画布语义一致（a 为角点、u/v 为整条边；非 ±1 半宽）",
+              _ok_corner and not _is_half, "got=%s want=%s" % (_got_raw, _want(((0, 0), (1, 0), (1, 1), (0, 1)))))
+    # —— 第九十八批补的三类导出：空间圆 / 截面 / 默认俯视 + 机位参数 ——
     _circ = [l for l in svg.split("\n") if l.strip().startswith("<polyline") and l.count(",") >= 60]
     check("空间圆（circle3d）导出为 65 点折线（此前静默漏画 ✗）", len(_circ) >= 1, "n=%d" % len(_circ))
     c64, _e64 = build(["A=(-1,-1,0)", "B=(1,-1,0)", "cu=Cube[A,B]",
@@ -1664,8 +1735,6 @@ if e61 is None:
               len(_dots) == 2 and _dots.get("B", 0) < _dots.get("A", 0), str(_dots))
         check("yaw/pitch 机位参数生效（换角度输出不同）",
               _svg3d(_c65, yaw=0.4, pitch=-0.2) != _sup, "")
-    check("画家算法：polygon 按深度排序输出（含 depth 递减的先后关系）",
-          svg.index("<polygon") < svg.rindex("<polygon"), "")
     # 面预算
     c62, _e62 = build(["big=ImplicitSurface[x^2+y^2+z^2-4=0,-2.2,2.2,-2.2,2.2,-2.2,2.2,24]"])
     svg_big = _svg3d(c62, face_budget=500)

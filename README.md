@@ -3,7 +3,7 @@
 > 用 Python 从头实现的「动态几何 + 代数 + CAS + 3D + 定理证明」一体化教学平台
 > （GeoGebra 启发的交互理念，代码完全原创，BSD-3-Clause）。
 
-`Python 3.12` · `FastAPI` · 原生 HTML5 Canvas（零构建）· **190 条命令** · 检测 **11/11 全绿（1807 断言）**
+`Python 3.12` · `FastAPI` · 原生 HTML5 Canvas（零构建）· **190 条命令** · 检测 **11/11 全绿（1812 断言）**
 
 ---
 
@@ -159,6 +159,7 @@ M=Midpoint[A,B]  # 中点
 - **`.ggk` / `.ggb`**：`.ggk` 为 JSON（样式/视口/宏/滑块值）；`.ggb` 按命令重放，网格与图片数据内嵌 `<ggbpyData>`（base64+JSON），仅当仓库缺数据时才跳过并给 `X-GGB-Warnings`
 - **作图工具入口**：工具面板 **11 个分类**；统计图分类含 11 个按钮（2D 八类 + 3D 三类）
 - **多语言词条**：zh / en 各 **203 条**，键集合完全一致（由检测锁定，防漏翻；主题 light/dark 记忆在 localStorage）
+- **SVG 导出的范围**：2D 导出覆盖点/线/圆/圆弧/多边形/折线/向量/函数/圆锥曲线/参数曲线/极坐标/隐式/轨迹/角度/黎曼和/不等式/文本；**统计图 7 类与控件 3 类目前只在画布上绘制、不随 SVG 导出**（由检测白名单锁定，属已知边界）
 - **有意为之的边界**：`Perimeter` 只接受多边形 / 圆；`Implicit` 需含 x、y 的方程；立体相关的体积/截面积等运算属 3D
 
 #### 3D 限制
@@ -177,7 +178,7 @@ bash devtools/run_all_detection.sh      # 全量 11 步（提交前门禁）
 bash devtools/run_scope.sh quick        # 迭代用：按改动层跑最小范围（见下）
 ```
 
-### 全量检测（11 步 / 1807 断言）
+### 全量检测（11 步 / 1812 断言）
 
 | 步骤 | 脚本 | 断言 | 覆盖 |
 |---|---|---|---|
@@ -186,9 +187,9 @@ bash devtools/run_scope.sh quick        # 迭代用：按改动层跑最小范�
 | 3 统一容差 | `test_tolerance.py` | 20 | 零魔数扫描、前后端常量一致、防漏导入 |
 | 4 模块边界 | `test_modules.py` | 336 | 内核拆分、薄包装、前端作用域/文案外置/词条一致 |
 | 5 多会话隔离 | `test_sessions.py` | 24 | `?sid=`/cookie、构造/宏/state3d 独立性、TTL |
-| 6 2D 内核 | `test_2d_matrix.py` | 274 | 对象/命令/圆锥曲线/统计图/命名/`.ggk` 往返/计算记忆 |
+| 6 2D 内核 | `test_2d_matrix.py` | 277 | 对象/命令/圆锥曲线/统计图/命名/`.ggk` 往返/计算记忆 |
 | 7 2D 平台 API | `test_2d_api.py` | 76 | `/api/*`（state/input/drag/load/download/share/cas/image/export…） |
-| 8 3D 三层 | `run_3d_detection.sh` | 501 / 183 / 149 | 3D 内核 / 3D API / 3D 浏览器 |
+| 8 3D 三层 | `run_3d_detection.sh` | 503 / 183 / 149 | 3D 内核 / 3D API / 3D 浏览器 |
 | 9 2D 前端回归 | `verify_2d_ui_matrix.js` | 183 | 编辑栏/CAS/工具/滑块/吸附/快捷键/指针捕获 |
 | 10 微积分·求根 smoke | `test_mixed_smoke.py` | — | 2D↔3D 混合冒烟 |
 | 11 代码质量策略 | `test_quality.py` | 26 | 宽泛捕获说明/预算、文档结构、CHANGELOG 批次完整性 |
