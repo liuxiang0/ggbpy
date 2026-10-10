@@ -290,6 +290,27 @@ def _esc(s: str) -> str:
 # 3D 投影导出（P2）：把 3D 场景按固定视角做正交投影，输出矢量图
 # ---------------------------------------------------------------------------
 
+# 3D 导出用的固定光照方向（世界坐标，左上前方）与明暗范围
+_LIGHT = (-0.42, -0.55, 0.72)
+
+
+def _lambert(verts, face) -> float:
+    """按面法向与光照方向算一个填充不透明度（0.16–0.58），给正交投影一点体积感。
+
+    只有网格面用它；平面/球等仍走各自的固定值。
+    """
+    try:
+        a, b, c = verts[face[0]], verts[face[1]], verts[face[2]]
+        ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+        vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
+        nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+        nl = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+        d = abs((nx * _LIGHT[0] + ny * _LIGHT[1] + nz * _LIGHT[2]) / nl)
+    except Exception:  # 防御性捕获：顶点/面索引异常不应让整份 SVG 导出失败，退化为中等明暗
+        d = 0.5
+    return 0.74 + 0.26 * d
+
+
 def _rot3(yaw: float, pitch: float):
     """返回 (x,y,z) → 相机坐标 (u, v, depth) 的旋转（先绕 z 偏航，再绕 x 俯仰）。"""
     cy, sy = math.cos(yaw), math.sin(yaw)
@@ -333,12 +354,31 @@ def _scene_points(cons) -> List[List[float]]:
                 th = 2 * math.pi * k / 8
                 pts.append([cx + r * math.cos(th), cy + r * math.sin(th), cz])
                 pts.append([cx, cy + r * math.cos(th), cz + r * math.sin(th)])
+        if getattr(el, "objtype", "") == "plane" and isinstance(d, dict):
+            # 平面按 a/u/v 展开为四边形，取景必须算上它的四个角点，否则四边形会越出画布 ✗
+            a3 = [float(d.get(k, 0)) for k in ("ax", "ay", "az")]
+            u3 = [float(d.get(k, 0)) for k in ("ux", "uy", "uz")]
+            v3 = [float(d.get(k, 0)) for k in ("vx", "vy", "vz")]
+            for su, sv in ((0, 0), (1, 0), (1, 1), (0, 1)):
+                pts.append([a3[i] + su * u3[i] + sv * v3[i] for i in range(3)])
+        if getattr(el, "objtype", "") == "circle3d" and isinstance(d, dict):
+            # 空间圆没有 verts/segs，取景必须单独采样，否则导出会溢出画布（曾致 PNG 边框变大 ✗）
+            cx3, cy3, cz3 = float(d.get("cx", 0)), float(d.get("cy", 0)), float(d.get("cz", 0))
+            r3 = float(d.get("r", 0))
+            u3 = d.get("u") or [1, 0, 0]
+            v3 = d.get("v") or [0, 1, 0]
+            for k in range(24):
+                th = 2 * math.pi * k / 24
+                pts.append([cx3 + r3 * (math.cos(th) * u3[i] + math.sin(th) * v3[i]) for i in range(3)])
     return pts
 
 
 def export_svg3d(cons, width: int = 1000, height: int = 700, yaw: float = -0.62,
-                 pitch: float = 0.52, face_budget: int = 4000) -> str:
+                 pitch: float = -0.52, face_budget: int = 4000) -> str:
     """把 3D 场景导出为 SVG（正交投影 + 画家算法）。
+
+    注意俯仰号约定：`pitch > 0` 是**从下往上看**，`pitch < 0` 才是俯视 ——
+    默认取 −0.52（俯视），与画布 3D 视图的默认机位观感一致。
 
     - 网格/多面体：按深度从远到近绘制多边形（超 face_budget 时只画面积最大的若干面）
     - 球：经纬线；直线/线段/射线/交线：折线；点：圆点 + 标签
@@ -409,7 +449,7 @@ def export_svg3d(cons, width: int = 1000, height: int = 700, yaw: float = -0.62,
                 pr = [P(verts[i]) for i in f]
                 zavg = sum(q[2] for q in pr) / max(1, len(pr))
                 pts_s = " ".join("%s,%s" % (q[0], q[1]) for q in pr)
-                polys.append((zavg, pts_s, col))
+                polys.append((zavg, pts_s, col + "|" + "%.2f" % _lambert(verts, f)))
             for e2 in (d.get("edges") or [])[:20000]:
                 a, b = verts[e2[0]], verts[e2[1]]
                 pa, pb = P(a), P(b)
@@ -432,13 +472,35 @@ def export_svg3d(cons, width: int = 1000, height: int = 700, yaw: float = -0.62,
             a3 = [float(d.get("ax", 0)), float(d.get("ay", 0)), float(d.get("az", 0))]
             u3 = [float(d.get("ux", 1)), float(d.get("uy", 0)), float(d.get("uz", 0))]
             v3 = [float(d.get("vx", 0)), float(d.get("vy", 1)), float(d.get("vz", 0))]
+            # 与画布端一致：a 是**角点**、u/v 是**整条边**（早前误当 ±1 半宽 → 四边形大出一倍 ✗）
             quad = [[a3[i] + su * u3[i] + sv * v3[i] for i in range(3)]
-                    for su, sv in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+                    for su, sv in ((0, 0), (1, 0), (1, 1), (0, 1))]
             pr = [P(q) for q in quad]
             polys.append((sum(q[2] for q in pr) / 4.0,
-                          " ".join("%s,%s" % (q[0], q[1]) for q in pr), col))
+                          " ".join("%s,%s" % (q[0], q[1]) for q in pr), col + "|0.30"))
+        elif obj == "circle3d":
+            # 空间圆：data 给 (cx,cy,cz,r,u,v)，采样 64 点画闭合折线（原先漏画 ✗）
+            cx3, cy3, cz3 = float(d.get("cx", 0)), float(d.get("cy", 0)), float(d.get("cz", 0))
+            r3 = float(d.get("r", 0))
+            u3 = d.get("u") or [1, 0, 0]
+            v3 = d.get("v") or [0, 1, 0]
+            seq = []
+            for k in range(65):
+                th = 2 * math.pi * k / 64
+                seq.append(P([cx3 + r3 * (math.cos(th) * u3[i] + math.sin(th) * v3[i]) for i in range(3)]))
+            lines.append((sum(q[2] for q in seq) / len(seq),
+                          " ".join("%s,%s" % (q[0], q[1]) for q in seq), col))
+        elif isinstance(d.get("pts"), list) and len(d.get("pts") or []) >= 2:
+            # 截面多边形（section）/ 交线（curve3d）：data.pts 为三维点序列（原先漏画 ✗）
+            pr = [P(q) for q in d["pts"] if isinstance(q, (list, tuple)) and len(q) >= 3]
+            zavg = sum(q[2] for q in pr) / max(1, len(pr))
+            pts_s = " ".join("%s,%s" % (q[0], q[1]) for q in pr)
+            if obj == "section":
+                polys.append((zavg, pts_s, col + "|0.45"))
+            else:
+                lines.append((zavg, pts_s, col))
         else:
-            # 线段/直线/射线/交线/空间圆/截面/曲面等：用 segs 折线
+            # 线段/直线/射线/曲面等：用 segs 折线
             segs = d.get("segs")
             if isinstance(segs, list):
                 for seg in segs[:6000]:
@@ -454,14 +516,17 @@ def export_svg3d(cons, width: int = 1000, height: int = 700, yaw: float = -0.62,
     out.append('<?xml version="1.0" encoding="utf-8"?>')
     out.append('<svg xmlns="http://www.w3.org/2000/svg" width="' + str(w) + '" height="' + str(h)
                + '" viewBox="0 0 ' + str(w) + ' ' + str(h) + '">')
-    out.append('  <desc>ggbpy 3D 投影导出（yaw=%.3f pitch=%.3f）</desc>' % (yaw, pitch))
+    # 注意：desc 是 XML 文本，**不能出现裸 '<'**（`pitch<0` 会让 SVG 变成非法 XML ✗）
+    out.append('  <desc>ggbpy 3D 投影导出（yaw=%.3f pitch=%.3f；pitch 取负值即俯视）</desc>' % (yaw, pitch))
     out.append('  <rect width="100%" height="100%" fill="#ffffff"/>')
     for _z, pts_s, col in polys:
+        col, _, op = col.partition("|")   # 注意分隔符不能用 '#'（颜色本身就是 #rrggbb）
         out.append('  <polygon points="' + pts_s + '" fill="' + col
-                   + '" fill-opacity="0.12" stroke="' + col + '" stroke-width="1" stroke-opacity="0.55"/>')
+                   + '" fill-opacity="' + (op or "0.3") + '" stroke="' + col
+                   + '" stroke-width="1.1" stroke-opacity="0.8"/>')
     for _z, pts_s, col in lines:
         out.append('  <polyline points="' + pts_s + '" fill="none" stroke="' + col
-                   + '" stroke-width="1.1" stroke-opacity="0.75"/>')
+                   + '" stroke-width="1.2" stroke-opacity="0.85"/>')
     for z, x, y, lab in sorted(dots, key=lambda t: -t[0]):
         out.append('  <circle cx="%s" cy="%s" r="3.2" fill="#111827"/>' % (x, y))
         out.append('  <text x="%s" y="%s" font-size="12" fill="#111827">%s</text>'

@@ -303,13 +303,16 @@ def do_demo():
 
 @app.get("/api/export/svg")
 def export_svg(xmin: float = -10.0, xmax: float = 10.0, ymin: float = -10.0, ymax: float = 10.0,
-               view3d: int = 0):
-    """SVG 导出：默认 2D 视图；view3d=1 输出 3D 场景的正交投影（画家算法）。"""
+               view3d: int = 0, yaw: float = -0.62, pitch: float = -0.52):
+    """SVG 导出：默认 2D 视图；view3d=1 输出 3D 场景的正交投影（画家算法）。
+
+    view3d=1 时可用 `yaw` / `pitch`（弧度）指定观察角；`pitch < 0` 为俯视（默认 −0.52）。
+    """
     if view3d:
         from kernel.elements import GeoError
         from kernel.svg_io import export_svg3d as _exp3
         try:
-            svg3 = _exp3(cons)
+            svg3 = _exp3(cons, yaw=yaw, pitch=pitch)
         except GeoError as e:
             return Response(content=str(e), media_type="text/plain", status_code=400)
         return Response(

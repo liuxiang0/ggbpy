@@ -12,6 +12,7 @@
 """
 
 import math
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -1638,6 +1639,31 @@ if e61 is None:
           svg.count("<circle") >= 2 and svg.count("<text") >= 2,
           "circle=%d text=%d" % (svg.count("<circle"), svg.count("<text")))
     check("SVG 内无 nan/None 数值", "nan" not in svg and "None" not in svg)
+    # —— 本批补的三类导出：空间圆 / 截面 / 默认俯视 + 机位参数 ——
+    _circ = [l for l in svg.split("\n") if l.strip().startswith("<polyline") and l.count(",") >= 60]
+    check("空间圆（circle3d）导出为 65 点折线（此前静默漏画 ✗）", len(_circ) >= 1, "n=%d" % len(_circ))
+    c64, _e64 = build(["A=(-1,-1,0)", "B=(1,-1,0)", "cu=Cube[A,B]",
+                       "X1=(0,-3,0)", "X2=(0,3,0)", "X3=(0,0,4)", "pl=Plane[X1,X2,X3]",
+                       "sec=Intersect[pl,cu]", 'SetColor[sec,"#ef4444"]'])
+    check("截面用例构造", _e64 is None, str(_e64))
+    if _e64 is None:
+        _sv = _svg3d(c64)
+        check("截面多边形（section）按元素颜色导出（此前静默漏画 ✗）",
+              'stroke="#ef4444"' in _sv and "<polygon" in _sv, "")
+        _c65, _ = build(["A=(0,0,0)", "B=(0,0,2)"])
+        _sup = _svg3d(_c65)
+        _dots, _last = {}, None
+        for _l in _sup.split("\n"):
+            if "<circle" in _l:
+                _m = re.search(r'cy="([-\d.]+)"', _l)
+                _last = float(_m.group(1)) if _m else None
+            elif "<text" in _l and _last is not None:
+                _dots[re.sub(r"<[^>]+>", "", _l).strip()] = _last
+                _last = None
+        check("默认机位是俯视（z=2 的点在屏幕上高于 z=0 的点）",
+              len(_dots) == 2 and _dots.get("B", 0) < _dots.get("A", 0), str(_dots))
+        check("yaw/pitch 机位参数生效（换角度输出不同）",
+              _svg3d(_c65, yaw=0.4, pitch=-0.2) != _sup, "")
     check("画家算法：polygon 按深度排序输出（含 depth 递减的先后关系）",
           svg.index("<polygon") < svg.rindex("<polygon"), "")
     # 面预算

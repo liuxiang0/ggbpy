@@ -143,6 +143,46 @@ bad_bracket = [(k, v) for k, v in SIGNATURES.items()
                if v.count("[") != v.count("]") or v.count("]") < 1]
 check("签名括号配对且至少一组参数", not bad_bracket, str(bad_bracket[:4]))
 
+# ---------------------------------------------------------------------------
+# 签名的**语义**守卫：签名写的是真实可用的调用形式吗？
+# 背景（2026-10-10）：签名表 190/190 只保证了"结构完整"，但 arc/prism/pyramid/cylinder/cone
+# 五条的写法与内核实现不符（如 `Pyramid[多边形, 高度]` 实际是 `Pyramid[点,点,点]` 三棱锥）✗
+# —— 这里用「按签名形式真跑一遍」把它们钉死（新写签名也应尽量进这张表）。
+from kernel.construction import Construction  # noqa: E402
+
+SEMANTIC_CASES = [
+    # (说明, 前置, 用签名形式写的调用)
+    ("Arc[起点, 终点, 圆心]", ["A=(-1,0)", "B=(1,0)", "C=(0,0)"], "Arc[A,B,C]"),
+    ("Sector[起点, 终点, 圆心]", ["A=(-1,0)", "B=(1,0)", "C=(0,0)"], "Sector[A,B,C]"),
+    ("Semicircle[点, 点]", ["A=(-1,0)", "B=(1,0)"], "Semicircle[A,B]"),
+    ("Cube[点, 点]", ["A=(0,0,0)", "B=(2,0,0)"], "Cube[A,B]"),
+    ("Prism[点, 点, 点]（三棱柱）", ["A=(0,0,0)", "B=(2,0,0)", "C=(0,2,0)"], "Prism[A,B,C]"),
+    ("Pyramid[点, 点, 点]（三棱锥）", ["A=(0,0,0)", "B=(2,0,0)", "C=(0,2,0)"], "Pyramid[A,B,C]"),
+    ("Cylinder[底心, 底半径点, 顶心]", ["A=(0,0,0)", "R=(1,0,0)", "T=(0,0,3)"], "Cylinder[A,R,T]"),
+    ("Cone[底心, 底半径点, 顶点]", ["A=(0,0,0)", "R=(1,0,0)", "T=(0,0,3)"], "Cone[A,R,T]"),
+    ("Sphere[球心, 半径]", ["O=(0,0,0)"], "Sphere[O,2]"),
+    ("Plane[点, 点, 点]", ["A=(0,0,0)", "B=(1,0,0)", "C=(0,1,0)"], "Plane[A,B,C]"),
+    ("RegularPolygon[点A, 点B, 边数]", ["A=(0,0)", "B=(1,0)"], "RegularPolygon[A,B,6]"),
+    ("Delaunay[点列表]", ["L={(0,0),(1,0),(0,1)}"], "Delaunay[L]"),
+]
+sem_bad = []
+for _desc, _pre, _call in SEMANTIC_CASES:
+    _c = Construction()
+    try:
+        for _ln in _pre:
+            _c.process(_ln)
+        _msg = _c.process("X=" + _call)
+        if not _msg.startswith("OK"):
+            sem_bad.append((_desc, _msg[:50]))
+    except Exception as _e:            # noqa: BLE001 —— 检测脚本：任何异常都算失败
+        sem_bad.append((_desc, repr(_e)[:50]))
+check("签名语义：按签名形式实跑均成功（%d 例）" % len(SEMANTIC_CASES), not sem_bad, str(sem_bad[:3]))
+
+_bad_sig_text = [k for k, v in SIGNATURES.items()
+                 if "多边形, 高度" in v or "圆心, 点, 点" in v or "底心, 顶点, 半径" in v]
+check("签名表不含已确认错误的写法（多边形+高度 / 圆心在前 / 底心顶点半径）",
+      not _bad_sig_text, str(_bad_sig_text))
+
 print("\n" + "=" * 56)
 print("注册表检查：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

@@ -948,6 +948,13 @@ check("响应头标记 3D 模式与文件名", hdr3.get("x-svg-mode") == "3d"
 check("含多边形（立方体 6 面）与折线（球经纬线）",
       svg3.count("<polygon") >= 6 and svg3.count("<polyline") >= 4,
       "polygon=%d polyline=%d" % (svg3.count("<polygon"), svg3.count("<polyline")))
+_st4, _h4, raw4 = http("/api/export/svg?view3d=1&yaw=-0.72&pitch=-0.45")
+_svg4 = raw4.decode("utf-8", "replace")
+check("view3d 支持 yaw/pitch 机位参数（换角度输出不同）",
+      _st4 == 200 and _svg4.startswith("<?xml") and _svg4 != svg3,
+      "HTTP %s len=%d" % (_st4, len(raw4)))
+check("默认 3D 机位为俯视（desc 里标注 pitch 取负值为俯视）",
+      "pitch 取负值即俯视" in svg3, "")
 check("含点标签", svg3.count("<circle") >= 1 and "<text" in svg3,
       "circle=%d" % svg3.count("<circle"))
 _st2, h2d, raw2d = http("/api/export/svg")

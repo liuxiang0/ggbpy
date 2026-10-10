@@ -1,0 +1,731 @@
+{
+ "format": "ggk",
+ "version": 5,
+ "order": [
+  "O",
+  "RW",
+  "rimR",
+  "FW",
+  "rimF",
+  "hubR",
+  "hubF",
+  "SR",
+  "spokeR0",
+  "SF",
+  "spokeF0",
+  "spokeR1",
+  "spokeF1",
+  "spokeR2",
+  "spokeF2",
+  "spokeR3",
+  "spokeF3",
+  "spokeR4",
+  "spokeF4",
+  "spokeR5",
+  "spokeF5",
+  "spokeR6",
+  "spokeF6",
+  "spokeR7",
+  "spokeF7",
+  "spokeR8",
+  "spokeF8",
+  "spokeR9",
+  "spokeF9",
+  "spokeR10",
+  "spokeF10",
+  "spokeR11",
+  "spokeF11",
+  "BB",
+  "ST",
+  "HB",
+  "HT",
+  "chainstay",
+  "seatstay",
+  "seattube",
+  "downtube",
+  "toptube",
+  "headtube",
+  "fork",
+  "SD",
+  "seatpost",
+  "SA1",
+  "SA2",
+  "SA3",
+  "SA4",
+  "saddle",
+  "H1",
+  "H2",
+  "stem",
+  "bar",
+  "grip",
+  "BT1",
+  "BT2",
+  "BTP",
+  "bottle",
+  "chainring",
+  "cog",
+  "CH1",
+  "CH2",
+  "chainT",
+  "CH3",
+  "CH4",
+  "chainB",
+  "PD1",
+  "crank1",
+  "crank2",
+  "PA1",
+  "PA2",
+  "pedal1",
+  "pedal2",
+  "GD1",
+  "GD2",
+  "ground",
+  "tx1"
+ ],
+ "defns": {
+  "O": "O=(0,0)",
+  "RW": "RW=(-2.6,0)",
+  "rimR": "rimR=Circle[RW,1.0]",
+  "FW": "FW=(2.6,0)",
+  "rimF": "rimF=Circle[FW,1.0]",
+  "hubR": "hubR=Circle[RW,0.13]",
+  "hubF": "hubF=Circle[FW,0.13]",
+  "SR": "SR=(-1.6,0)",
+  "spokeR0": "spokeR0=Segment[RW,SR]",
+  "SF": "SF=(3.6,0)",
+  "spokeF0": "spokeF0=Segment[FW,SF]",
+  "spokeR1": "spokeR1=Rotate[spokeR0,30,RW]",
+  "spokeF1": "spokeF1=Rotate[spokeF0,30,FW]",
+  "spokeR2": "spokeR2=Rotate[spokeR0,60,RW]",
+  "spokeF2": "spokeF2=Rotate[spokeF0,60,FW]",
+  "spokeR3": "spokeR3=Rotate[spokeR0,90,RW]",
+  "spokeF3": "spokeF3=Rotate[spokeF0,90,FW]",
+  "spokeR4": "spokeR4=Rotate[spokeR0,120,RW]",
+  "spokeF4": "spokeF4=Rotate[spokeF0,120,FW]",
+  "spokeR5": "spokeR5=Rotate[spokeR0,150,RW]",
+  "spokeF5": "spokeF5=Rotate[spokeF0,150,FW]",
+  "spokeR6": "spokeR6=Rotate[spokeR0,180,RW]",
+  "spokeF6": "spokeF6=Rotate[spokeF0,180,FW]",
+  "spokeR7": "spokeR7=Rotate[spokeR0,210,RW]",
+  "spokeF7": "spokeF7=Rotate[spokeF0,210,FW]",
+  "spokeR8": "spokeR8=Rotate[spokeR0,240,RW]",
+  "spokeF8": "spokeF8=Rotate[spokeF0,240,FW]",
+  "spokeR9": "spokeR9=Rotate[spokeR0,270,RW]",
+  "spokeF9": "spokeF9=Rotate[spokeF0,270,FW]",
+  "spokeR10": "spokeR10=Rotate[spokeR0,300,RW]",
+  "spokeF10": "spokeF10=Rotate[spokeF0,300,FW]",
+  "spokeR11": "spokeR11=Rotate[spokeR0,330,RW]",
+  "spokeF11": "spokeF11=Rotate[spokeF0,330,FW]",
+  "BB": "BB=(-0.15,-0.55)",
+  "ST": "ST=(-1.45,1.3)",
+  "HB": "HB=(2.05,0.6)",
+  "HT": "HT=(1.85,1.15)",
+  "chainstay": "chainstay=Segment[RW,BB]",
+  "seatstay": "seatstay=Segment[RW,ST]",
+  "seattube": "seattube=Segment[BB,ST]",
+  "downtube": "downtube=Segment[BB,HB]",
+  "toptube": "toptube=Segment[ST,HT]",
+  "headtube": "headtube=Segment[HB,HT]",
+  "fork": "fork=Segment[HB,FW]",
+  "SD": "SD=(-1.55,1.45)",
+  "seatpost": "seatpost=Segment[ST,SD]",
+  "SA1": "SA1=(-2.05,1.52)",
+  "SA2": "SA2=(-1.05,1.58)",
+  "SA3": "SA3=(-1.12,1.7)",
+  "SA4": "SA4=(-2.02,1.72)",
+  "saddle": "saddle=Polygon[SA1,SA2,SA3,SA4]",
+  "H1": "H1=(1.92,1.62)",
+  "H2": "H2=(1.6,1.66)",
+  "stem": "stem=Segment[HT,H1]",
+  "bar": "bar=Segment[H1,H2]",
+  "grip": "grip=Circle[H2,0.07]",
+  "BT1": "BT1=(0.7,-0.05)",
+  "BT2": "BT2=(1,0.1)",
+  "BTP": "BTP=(0.92,-0.06)",
+  "bottle": "bottle=Ellipse[BT1,BT2,BTP]",
+  "chainring": "chainring=Circle[BB,0.32]",
+  "cog": "cog=Circle[RW,0.16]",
+  "CH1": "CH1=(-0.15,-0.23)",
+  "CH2": "CH2=(-2.6,0.16)",
+  "chainT": "chainT=Segment[CH1,CH2]",
+  "CH3": "CH3=(-0.15,-0.87)",
+  "CH4": "CH4=(-2.6,-0.16)",
+  "chainB": "chainB=Segment[CH3,CH4]",
+  "PD1": "PD1=(0.01,-0.27)",
+  "crank1": "crank1=Segment[BB,PD1]",
+  "crank2": "crank2=Rotate[crank1,180,BB]",
+  "PA1": "PA1=(0.01,-0.35)",
+  "PA2": "PA2=(0.17,-0.35)",
+  "pedal1": "pedal1=RegularPolygon[PA1,PA2,4]",
+  "pedal2": "pedal2=Rotate[pedal1,180,BB]",
+  "GD1": "GD1=(-5.2,-1.05)",
+  "GD2": "GD2=(5.2,-1.05)",
+  "ground": "ground=Segment[GD1,GD2]",
+  "tx1": "tx1=Text[\"自行车 · ggbpy\", (-5.0,2.75)]"
+ },
+ "styles": {
+  "O": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "RW": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "rimR": [
+   "#111827",
+   true,
+   false,
+   false,
+   null
+  ],
+  "FW": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "rimF": [
+   "#111827",
+   true,
+   false,
+   false,
+   null
+  ],
+  "hubR": [
+   "#6b7280",
+   true,
+   false,
+   false,
+   null
+  ],
+  "hubF": [
+   "#6b7280",
+   true,
+   false,
+   false,
+   null
+  ],
+  "SR": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "spokeR0": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "SF": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "spokeF0": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR1": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF1": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR2": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF2": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR3": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF3": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR4": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF4": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR5": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF5": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR6": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF6": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR7": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF7": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR8": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF8": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR9": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF9": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR10": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF10": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeR11": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "spokeF11": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "BB": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "ST": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "HB": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "HT": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "chainstay": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "seatstay": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "seattube": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "downtube": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "toptube": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "headtube": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "fork": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "SD": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "seatpost": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "SA1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "SA2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "SA3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "SA4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "saddle": [
+   "#1f2937",
+   true,
+   false,
+   false,
+   null
+  ],
+  "H1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "H2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "stem": [
+   "#dc2626",
+   true,
+   false,
+   false,
+   null
+  ],
+  "bar": [
+   "#111827",
+   true,
+   false,
+   false,
+   null
+  ],
+  "grip": [
+   "#1f2937",
+   true,
+   false,
+   false,
+   null
+  ],
+  "BT1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "BT2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "BTP": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "bottle": [
+   "#0ea5e9",
+   true,
+   false,
+   false,
+   null
+  ],
+  "chainring": [
+   "#6b7280",
+   true,
+   false,
+   false,
+   null
+  ],
+  "cog": [
+   "#6b7280",
+   true,
+   false,
+   false,
+   null
+  ],
+  "CH1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "CH2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "chainT": [
+   "#4b5563",
+   true,
+   false,
+   false,
+   null
+  ],
+  "CH3": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "CH4": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "chainB": [
+   "#4b5563",
+   true,
+   false,
+   false,
+   null
+  ],
+  "PD1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "crank1": [
+   "#374151",
+   true,
+   false,
+   false,
+   null
+  ],
+  "crank2": [
+   "#374151",
+   true,
+   false,
+   false,
+   null
+  ],
+  "PA1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "PA2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "pedal1": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "pedal2": [
+   "#f59e0b",
+   true,
+   false,
+   false,
+   null
+  ],
+  "GD1": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "GD2": [
+   "#1a1a1a",
+   false,
+   false,
+   false,
+   null
+  ],
+  "ground": [
+   "#9ca3af",
+   true,
+   false,
+   false,
+   null
+  ],
+  "tx1": [
+   "#1a1a1a",
+   true,
+   false,
+   false,
+   null
+  ]
+ },
+ "images": {},
+ "meshes": {},
+ "macros": {},
+ "values": {},
+ "view": [
+  -5.3,
+  5.3,
+  -1.5,
+  3.1
+ ]
+}

@@ -34,6 +34,11 @@ def P(label: str, x: float, y: float) -> str:
     return "%s=(%.4f,%.4f)" % (label, x, y)
 
 
+def P3(label: str, x: float, y: float, z: float) -> str:
+    """三维点：`label=(x,y,z)`（标签同样必须大写开头）。"""
+    return "%s=(%.4f,%.4f,%.4f)" % (label, x, y, z)
+
+
 def circ(cx: float, cy: float, r: float, deg: float) -> tuple[float, float]:
     a = math.radians(deg)
     return (cx + r * math.cos(a), cy + r * math.sin(a))
@@ -172,9 +177,113 @@ def house_script() -> list[str]:
     return hide_points(s)
 
 
+# ---------------------------------------------------------------------------
+# 图三：自行车（2D）—— 双圆轮 + Rorate 复制辐条 + 线段车架 + 正多边形脚踏 + 折线链条
+# ---------------------------------------------------------------------------
+def bike_script() -> list[str]:
+    s: list[str] = [P("O", 0, 0)]
+    RWH, FWH, WR = (-2.6, 0.0), (2.6, 0.0), 1.0
+    # —— 轮圈 + 花鼓 ——
+    s += [P("RW", *RWH), "rimR=Circle[RW,1.0]", 'SetColor[rimR,"#111827"]',
+          P("FW", *FWH), "rimF=Circle[FW,1.0]", 'SetColor[rimF,"#111827"]',
+          "hubR=Circle[RW,0.13]", 'SetColor[hubR,"#6b7280"]',
+          "hubF=Circle[FW,0.13]", 'SetColor[hubF,"#6b7280"]']
+    # —— 辐条：造 1 根 → Rotate 复制 11 根（每轮 12 根，30° 一步）——
+    s += [P("SR", RWH[0] + WR, RWH[1]), "spokeR0=Segment[RW,SR]", 'SetColor[spokeR0,"#9ca3af"]',
+          P("SF", FWH[0] + WR, FWH[1]), "spokeF0=Segment[FW,SF]", 'SetColor[spokeF0,"#9ca3af"]']
+    for k in range(1, 12):
+        s += ["spokeR%d=Rotate[spokeR0,%d,RW]" % (k, 30 * k), 'SetColor[spokeR%d,"#9ca3af"]' % k,
+              "spokeF%d=Rotate[spokeF0,%d,FW]" % (k, 30 * k), 'SetColor[spokeF%d,"#9ca3af"]' % k]
+    # —— 车架：钻石架（链支/座支/座管/下管/上管/头管/前叉）——
+    s += [P("BB", -0.15, -0.55), P("ST", -1.45, 1.30), P("HB", 2.05, 0.60), P("HT", 1.85, 1.15)]
+    frame = [("chainstay", "RW", "BB"), ("seatstay", "RW", "ST"), ("seattube", "BB", "ST"),
+             ("downtube", "BB", "HB"), ("toptube", "ST", "HT"), ("headtube", "HB", "HT"),
+             ("fork", "HB", "FW")]
+    for lab, a, b in frame:
+        s += ["%s=Segment[%s,%s]" % (lab, a, b), 'SetColor[%s,"#dc2626"]' % lab]
+    # —— 鞍座（多边形）+ 座管 ——
+    s += [P("SD", -1.55, 1.45), "seatpost=Segment[ST,SD]", 'SetColor[seatpost,"#dc2626"]',
+          P("SA1", -2.05, 1.52), P("SA2", -1.05, 1.58), P("SA3", -1.12, 1.70), P("SA4", -2.02, 1.72),
+          "saddle=Polygon[SA1,SA2,SA3,SA4]", 'SetColor[saddle,"#1f2937"]']
+    # —— 车把（立管 + 横把 + 把套）——
+    s += [P("H1", 1.92, 1.62), P("H2", 1.60, 1.66), "stem=Segment[HT,H1]", 'SetColor[stem,"#dc2626"]',
+          "bar=Segment[H1,H2]", 'SetColor[bar,"#111827"]',
+          "grip=Circle[H2,0.07]", 'SetColor[grip,"#1f2937"]',
+          # 水壶（椭圆，挂在立管旁）
+          P("BT1", 0.70, -0.05), P("BT2", 1.00, 0.10), P("BTP", 0.92, -0.06),
+          "bottle=Ellipse[BT1,BT2,BTP]", 'SetColor[bottle,"#0ea5e9"]']
+    # —— 传动：牙盘 + 飞轮 + 链条（上下两段）+ 曲柄 + 脚踏（正四边形，旋转 180° 出另一只）——
+    s += ["chainring=Circle[BB,0.32]", 'SetColor[chainring,"#6b7280"]',
+          "cog=Circle[RW,0.16]", 'SetColor[cog,"#6b7280"]',
+          P("CH1", -0.15, -0.23), P("CH2", -2.60, 0.16), "chainT=Segment[CH1,CH2]",
+          P("CH3", -0.15, -0.87), P("CH4", -2.60, -0.16), "chainB=Segment[CH3,CH4]",
+          'SetColor[chainT,"#4b5563"]', 'SetColor[chainB,"#4b5563"]',
+          P("PD1", 0.01, -0.27), "crank1=Segment[BB,PD1]", 'SetColor[crank1,"#374151"]',
+          "crank2=Rotate[crank1,180,BB]", 'SetColor[crank2,"#374151"]',
+          P("PA1", 0.01, -0.35), P("PA2", 0.17, -0.35), "pedal1=RegularPolygon[PA1,PA2,4]",
+          'SetColor[pedal1,"#f59e0b"]',
+          "pedal2=Rotate[pedal1,180,BB]", 'SetColor[pedal2,"#f59e0b"]']
+    # —— 地面 + 标题 ——
+    s += [P("GD1", -5.2, -1.05), P("GD2", 5.2, -1.05), "ground=Segment[GD1,GD2]",
+          'SetColor[ground,"#9ca3af"]',
+          'Text["自行车 · ggbpy", (-5.0,2.75)]']
+    return hide_points(s)
+
+
+# ---------------------------------------------------------------------------
+# 图四：3D 小屋与庭院（立方体房 + 三棱柱屋顶 + 圆柱/圆锥/球 + 平面地面 + 求交截面 + 正十二面体）
+#    注意：3D 基元的真实语义与「多边形+高度」无关 ——
+#      Cube[点,点]（棱长=|AB|，沿 +y+z 挤出）· Prism[点,点,点]（三棱柱，高=|AB|，沿 −y 挤出）
+#      Cylinder[底心, 底半径点, 顶心] · Cone[底心, 底半径点, 顶点] · Sphere[球心, 半径]
+# ---------------------------------------------------------------------------
+def scene3d_script() -> list[str]:
+    """一幅 3D「庭院陈列」：沿 x 轴一字排开，避免遮挡；机位由 FIGURES 的 yaw/pitch 定。"""
+    s: list[str] = [P("O", 0, 0)]
+    # —— 房身（立方体，棱长 2.6）+ 屋顶（三棱柱：截面三角形在 y=+1.3，向 −y 挤出 3.0 成双坡）——
+    s += [P3("A", -4.2, -1.3, 0), P3("B", -1.6, -1.3, 0), "house=Cube[A,B]",
+          'SetColor[house,"#fef3c7"]',
+          P3("R1", -4.4, 1.3, 2.6), P3("R2", -1.4, 1.3, 2.6), P3("R3", -2.9, 1.3, 3.8),
+          "roof=Prism[R1,R2,R3]", 'SetColor[roof,"#b45309"]',
+          P3("K1", -3.35, -0.55, 2.95), P3("K2", -2.9, -0.55, 2.95), "chimney=Cube[K1,K2]",
+          'SetColor[chimney,"#94a3b8"]']
+    # —— 树（圆柱干 + 球冠）——
+    s += [P3("T1", 0.6, 0.3, 0), P3("TR", 0.82, 0.3, 0), P3("T2", 0.6, 0.3, 1.3),
+          "trunk=Cylinder[T1,TR,T2]", 'SetColor[trunk,"#92400e"]',
+          P3("C1", 0.6, 0.3, 2.0), "canopy=Sphere[C1,0.95]", 'SetColor[canopy,"#22c55e"]']
+    # —— 松树（圆锥）——
+    s += [P3("P1", 2.6, 0.3, 0), P3("PR", 3.05, 0.3, 0), P3("P2", 2.6, 0.3, 2.2),
+          "pine=Cone[P1,PR,P2]", 'SetColor[pine,"#15803d"]']
+    # —— 喷泉（圆柱水池 + 圆锥水柱）——
+    s += [P3("F1", 4.6, 0.3, 0), P3("FR", 5.25, 0.3, 0), P3("F2", 4.6, 0.3, 0.35),
+          "basin=Cylinder[F1,FR,F2]", 'SetColor[basin,"#60a5fa"]',
+          P3("J1", 4.6, 0.3, 0.35), P3("JR", 4.78, 0.3, 0.35), P3("J2", 4.6, 0.3, 1.5),
+          "jet=Cone[J1,JR,J2]", 'SetColor[jet,"#7dd3fc"]']
+    # —— 前排摆件：四种正多面体（正四面体 / 正八面体 / 正十二面体 / 正二十面体）——
+    s += [P3("TA", -4.9, -3.2, 0), P3("TB", -4.3, -3.2, 0), P3("TC", -4.6, -2.9, 0.6),
+          "tetra=Tetrahedron[TA,TB,TC]", 'SetColor[tetra,"#f472b6"]',
+          P3("OA", -3.5, -3.2, 0.55), P3("OB", -3.1, -3.2, 0.55), P3("OC", -3.5, -2.8, 0.95),
+          "octa=Octahedron[OA,OB,OC]", 'SetColor[octa,"#a855f7"]',
+          P3("DA", -2.1, -3.2, 0.55), P3("DB", -1.7, -3.2, 0.55), P3("DC", -2.1, -2.8, 0.95),
+          "dodeca=Dodecahedron[DA,DB,DC]", 'SetColor[dodeca,"#0ea5e9"]',
+          P3("IA", -0.7, -3.2, 0.55), P3("IB", -0.3, -3.2, 0.55), P3("IC", -0.7, -2.8, 0.95),
+          "icosa=Icosahedron[IA,IB,IC]", 'SetColor[icosa,"#f59e0b"]']
+    # —— 太阳（球，高空）——
+    s += [P3("U1", -5.2, 2.3, 3.2), "sun=Sphere[U1,0.6]", 'SetColor[sun,"#fbbf24"]']
+    # —— 求交演示：水平切面 × 树冠球 → 空间圆（切面本身隐藏）——
+    s += [P3("X1", 0.6, -3, 2.0), P3("X2", 0.6, 3, 2.0), P3("X3", 3, 0.3, 2.0), "cut=Plane[X1,X2,X3]",
+          "SetVisible[cut,false]", "sect=Intersect[cut,canopy]", 'SetColor[sect,"#dc2626"]']
+    # —— 地面（平面；尺寸要贴近场景，否则自动取景会被它撑大）——
+    s += [P3("G1", -4.6, -3.5, 0), P3("G2", 5.4, -3.5, 0), P3("G3", 5.4, 2.4, 0),
+          "ground=Plane[G1,G2,G3]", 'SetColor[ground,"#e5e7eb"]']
+    return hide_points(s)
+
+
 FIGURES = {
     "cat": {"script": cat_script, "view": (-6.4, 6.4, -4.9, 5.7), "title": "小猫（点/线/面/圆/椭圆/参数曲线/正多边形/镜像）"},
     "house": {"script": house_script, "view": (-8.2, 8.2, -4.9, 6.1), "title": "小屋与花园（多边形/正多边形/圆/椭圆/抛物线/旋转/缩放）"},
+    "bike": {"script": bike_script, "view": (-5.3, 5.3, -1.5, 3.1), "title": "自行车（圆/线段车架/正多边形脚踏/Rotate 复制辐条/折线链条）"},
+    "scene3d": {"script": scene3d_script, "view": None, "yaw": -0.72, "pitch": -0.45,
+                "title": "3D 小屋与庭院（立方体+三棱柱屋顶 / 圆柱+球 / 圆锥 / 平面 / 四种正多面体 / 平面×球求交）"},
 }
 
 
@@ -201,9 +310,12 @@ def build(base: str, name: str) -> dict:
     kinds: dict[str, int] = {}
     for e in st["elements"]:
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
-    # 导出（按图形视口裁剪）
-    xmin, xmax, ymin, ymax = cfg["view"]
-    q = "xmin=%g&xmax=%g&ymin=%g&ymax=%g" % (xmin, xmax, ymin, ymax)
+    # 导出：2D 按图形视口裁剪；3D 走正交投影（view3d=1）
+    if cfg["view"]:
+        xmin, xmax, ymin, ymax = cfg["view"]
+        q = "xmin=%g&xmax=%g&ymin=%g&ymax=%g" % (xmin, xmax, ymin, ymax)
+    else:
+        q = "view3d=1&yaw=%g&pitch=%g" % (cfg.get("yaw", -0.62), cfg.get("pitch", -0.52))
     svg = req(base, "/api/export/svg?" + q, sid, raw=True).decode("utf-8")
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / (name + ".svg")).write_text(svg, encoding="utf-8")
@@ -229,7 +341,7 @@ def render_png(name: str) -> tuple[int, int]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default=DEFAULT_BASE)
-    ap.add_argument("--only", default="", help="只生成某幅（cat / house）")
+    ap.add_argument("--only", default="", help="只生成某幅（cat / house / bike / scene3d）")
     a = ap.parse_args()
     names = [a.only] if a.only else list(FIGURES)
     print("服务：%s" % a.base)
@@ -238,7 +350,8 @@ def main() -> int:
         w, h = render_png(name)
         print("\n【%s】%s" % (name, FIGURES[name]["title"]))
         print("  脚本 %d 行 / 元素 %d 个 / 类型 %s" % (info["lines"], info["elements"], info["kinds"]))
-        print("  视口 %s → SVG+GGK+PNG 已写入 share/figures/（预览 %dx%d）" % (info["view"], w, h))
+        where = ("视口 %s" % (info["view"],)) if info["view"] else "3D 正交投影（view3d=1）"
+        print("  %s → SVG+GGK+PNG 已写入 share/figures/（预览 %dx%d）" % (where, w, h))
     return 0
 
 
