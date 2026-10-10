@@ -72,7 +72,7 @@ def export_svg(cons, view: Tuple[float, float, float, float], width: int = 1000,
     # 对象
     for lab in cons.order:
         el = cons.elements[lab]
-        if not el.visible or el.kind in ("geo3d", "boolean", "number", "list", "barchart", "piechart"):
+        if not el.visible or el.kind in ("geo3d", "boolean", "number", "list", "matrix", "complex", "result"):
             continue
         if el.kind == "point":
             if getattr(el, "z", None) is not None:
@@ -230,6 +230,135 @@ def export_svg(cons, view: Tuple[float, float, float, float], width: int = 1000,
         elif el.kind == "text":
             out.append('    <text x="' + str(X(el.x)) + '" y="' + str(Y(el.y)) + '" font-size="15"'
                        + ' fill="#111827">' + _esc(el.content) + '</text>')
+        elif el.kind in ("barchart", "histogram"):
+            # 柱状图/直方图：与 charts.js drawBarChart 同几何（世界单位；基线 y=0，最大柱高 3.0）
+            d = el.draw(view) or {}
+            _ox, _oy = (list(d.get("offset") or [0.0, 0.0]) + [0.0, 0.0])[:2]
+            _counts = [float(c) for c in (d.get("counts") or [])]
+            _maxc = max([1.0] + _counts)
+            _barw = max(8.0 / s, float(d.get("width", 0.8)) * 0.6)
+            _edges = [float(v) for v in (d.get("edges") or [])]
+            _bins = [float(v) for v in (d.get("bins") or [])]
+            for _i, _c in enumerate(_counts):
+                if d.get("hist") and _i + 1 < len(_edges):
+                    _x0 = _edges[_i]
+                    _w = max(2.0 / s, (_edges[_i + 1] - _edges[_i]) * 0.96)
+                elif _i < len(_bins):
+                    _x0 = _bins[_i] - _barw / 2.0
+                    _w = _barw
+                else:
+                    continue
+                _h = 3.0 * _c / _maxc
+                out.append('    <rect x="' + str(X(_x0 + _ox)) + '" y="' + str(Y(_oy + _h)) + '" width="'
+                           + str(_w * s) + '" height="' + str(max(1.0, _h * s))
+                           + '" fill="rgba(59,130,246,.75)" stroke="#2563eb" stroke-width="1"/>')
+        elif el.kind == "boxplot":
+            # 箱线图：与 charts.js drawBoxPlot 同几何（水平箱 + 两条须 + 中位线）
+            d = el.draw(view) or {}
+            _ox, _oy = (list(d.get("offset") or [0.0, 0.0]) + [0.0, 0.0])[:2]
+            _fv = [float(v) + _ox for v in (d.get("five") or [])]
+            if len(_fv) == 5:
+                _by = float(d.get("base_y", 0.0)) + _oy
+                _bh = max(6.0 / s, float(d.get("box_h", 3.2)))
+                _y0, _y1 = _by - _bh / 2.0, _by + _bh / 2.0
+                out.append('    <rect x="' + str(X(_fv[1])) + '" y="' + str(Y(_y1)) + '" width="'
+                           + str(max(1.0, (_fv[3] - _fv[1]) * s)) + '" height="' + str(_bh * s)
+                           + '" fill="rgba(15,118,110,.18)" stroke="#0f766e" stroke-width="2"/>')
+                for _xa, _xb, _ya, _yb in ((_fv[0], _fv[4], _by, _by), (_fv[0], _fv[0], _y0, _y1),
+                                           (_fv[4], _fv[4], _y0, _y1), (_fv[2], _fv[2], _y0, _y1)):
+                    out.append('    <line x1="' + str(X(_xa)) + '" y1="' + str(Y(_ya)) + '" x2="' + str(X(_xb))
+                               + '" y2="' + str(Y(_yb)) + '" stroke="#0f766e" stroke-width="2"/>')
+        elif el.kind == "piechart":
+            # 饼图：与 charts.js drawPieChart 同几何（圆心=世界原点+offset，半径 3.0，同心白圆）
+            d = el.draw(view) or {}
+            _ox, _oy = (list(d.get("offset") or [0.0, 0.0]) + [0.0, 0.0])[:2]
+            _items = [float(v) for v in (d.get("items") or [])]
+            _tot = float(d.get("total") or 0.0) or 1.0
+            _rr = 3.0
+            _a0 = -math.pi / 2
+            for _i, _v in enumerate(_items):
+                _a1 = _a0 + (_v / _tot) * 2 * math.pi
+                _x1, _y1 = _ox + _rr * math.cos(_a0), _oy + _rr * math.sin(_a0)
+                _x2, _y2 = _ox + _rr * math.cos(_a1), _oy + _rr * math.sin(_a1)
+                _large = 1 if (_a1 - _a0) > math.pi else 0
+                out.append('    <path d="M ' + str(X(_ox)) + ' ' + str(Y(_oy)) + ' L ' + str(X(_x1)) + ' '
+                           + str(Y(_y1)) + ' A ' + str(_rr * s) + ' ' + str(_rr * s) + ' 0 ' + str(_large)
+                           + ' 0 '   # sweep=0：世界 y 向上、SVG y 向下，画布里的顺时针在 SVG 里是逆时针
+
+                           + str(X(_x2)) + ' ' + str(Y(_y2)) + ' Z" fill="' + PIE_PAL[_i % len(PIE_PAL)]
+                           + '" stroke="#ffffff" stroke-width="1.5"/>')
+                _a0 = _a1
+            out.append('    <circle cx="' + str(X(_ox)) + '" cy="' + str(Y(_oy)) + '" r="' + str(_rr * 0.35 * s)
+                       + '" fill="#ffffff"/>')
+        elif el.kind == "stemplot":
+            # 茎叶图：文字形态（与 charts.js drawStemPlot 一致：白底框 + 等宽字体逐行）
+            d = el.draw(view) or {}
+            _ox, _oy = (list(d.get("offset") or [0.0, 0.0]) + [0.0, 0.0])[:2]
+            _stems, _leaves = d.get("stems") or [], d.get("leaves") or []
+            _rows = ["%s | %s" % (_stems[i], " ".join(str(v) for v in (_leaves[i] or [])))
+                     for i in range(len(_stems))]
+            _lh = 18.0 / s
+            _bw = max(72.0 / s, 7.8 * (max([len(r) for r in _rows] + [4])) / s + 18.0 / s)
+            _bh = max(_lh, len(_rows) * _lh) + 12.0 / s
+            out.append('    <rect x="' + str(X(_ox - 6.0 / s)) + '" y="' + str(Y(_oy)) + '" width="'
+                       + str(_bw * s) + '" height="' + str(_bh * s)
+                       + '" fill="rgba(255,255,255,.94)" stroke="#94a3b8" stroke-width="1"/>')
+            for _i, _row in enumerate(_rows):
+                out.append('    <text x="' + str(X(_ox + 2.0 / s)) + '" y="'
+                           + str(Y(_oy - 6.0 / s - (_i * 18.0 + 9.0) / s)) + '" font-size="13"'
+                           + ' font-family="ui-monospace, Menlo, Consolas, monospace" fill="#0f172a">'
+                           + _esc(_row) + '</text>')
+        elif el.kind in ("linechart", "scatterplot", "dotplot"):
+            # 折线/散点/点图：与 charts.js 同名函数同几何（折线 + 圆点；点图 y 乘 step）
+            d = el.draw(view) or {}
+            _ox, _oy = (list(d.get("offset") or [0.0, 0.0]) + [0.0, 0.0])[:2]
+            if el.kind == "linechart":
+                _xs, _ys = d.get("xs") or [], d.get("ys") or []
+                _seq = [[float(_xs[i]) + _ox, float(_ys[i]) + _oy] for i in range(min(len(_xs), len(_ys)))
+                        if _ys[i] is not None]
+                if len(_seq) >= 2:
+                    out.append('    <path d="' + path_pts(_seq) + '" fill="none" stroke="#2563eb" stroke-width="2"/>')
+                for _q in _seq:
+                    out.append('    <circle cx="' + str(X(_q[0])) + '" cy="' + str(Y(_q[1]))
+                               + '" r="3.2" fill="#1d4ed8"/>')
+            elif el.kind == "scatterplot":
+                for _p in (d.get("pts") or []):
+                    out.append('    <circle cx="' + str(X(float(_p[0]) + _ox)) + '" cy="'
+                               + str(Y(float(_p[1]) + _oy)) + '" r="3.4" fill="#dc2626"/>')
+            else:
+                _step = float(d.get("step") or 1.0)
+                for _s2 in (d.get("stacks") or []):
+                    out.append('    <circle cx="' + str(X(float(_s2[0]) + _ox)) + '" cy="'
+                               + str(Y(float(_s2[1]) * _step + _oy)) + '" r="3.2" fill="#7c3aed"/>')
+        elif el.kind in ("button", "checkbox", "inputbox"):
+            # 交互控件：与 render2d.js 同布局（锚点=左下角；文字宽度按字符数近似，导出无 measureText）
+            d = el.draw(view) or {}
+            _cap = str(d.get("caption") or "")
+            if el.kind == "checkbox":
+                _tgt = cons.elements.get(str(d.get("target") or ""))
+                _on = True if _tgt is None else (getattr(_tgt, "visible", None) is not False)
+                _lab, _wpx, _hpx = ("☑ " if _on else "☐ ") + _cap, None, 24.0
+                _wpx = max(34.0, 7.8 * len(_lab) + 16.0)
+            elif el.kind == "inputbox":
+                _tgt = cons.elements.get(str(d.get("target") or ""))
+                # 与画布一致：目标值取 draw() 的 value（元素对象上不一定有 .value 属性）
+                _val = (_tgt.draw(view) or {}).get("value", "") if _tgt is not None else ""
+                _lab = "%s = %s" % (_cap, _val if _val is not None else "")
+                _wpx = max(96.0, 7.8 * len(_lab) + 18.0)
+                _hpx = 26.0
+            else:
+                _lab = _cap
+                _wpx, _hpx = max(64.0, 7.8 * len(_lab) + 26.0), 28.0
+            _ww, _wh = _wpx / s, _hpx / s
+            _x0, _y0 = float(d.get("x", 0.0)), float(d.get("y", 0.0))
+            _fill = "#2563eb" if el.kind == "button" else "rgba(255,255,255,.95)"
+            _stroke = "#1d4ed8" if el.kind == "button" else "#94a3b8"
+            out.append('    <rect x="' + str(X(_x0)) + '" y="' + str(Y(_y0)) + '" width="' + str(_ww * s)
+                       + '" height="' + str(_wh * s) + '" rx="5" fill="' + _fill + '" stroke="' + _stroke
+                       + '" stroke-width="1"/>')
+            out.append('    <text x="' + str(X(_x0 + (8.0 if el.kind == "checkbox" else 12.0) / s)) + '" y="'
+                       + str(Y(_y0 - _wh / 2.0) + 5) + '" font-size="13" fill="'
+                       + ('#ffffff' if el.kind == "button" else '#0f172a') + '">' + _esc(_lab) + '</text>')
         elif el.kind in ("parametric", "polar"):
             # 参数曲线 / 极坐标曲线：内核 draw() 已给出采样点 pts（曾漏导出 → SVG 里曲线消失 ✗）
             d = el.draw(view) or {}
@@ -289,6 +418,9 @@ def _esc(s: str) -> str:
 # ---------------------------------------------------------------------------
 # 3D 投影导出（P2）：把 3D 场景按固定视角做正交投影，输出矢量图
 # ---------------------------------------------------------------------------
+
+# 饼图配色（与前端 app.js 的 PIE_PAL 保持一致）
+PIE_PAL = ['#ef4444', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899', '#84cc16', '#64748b']
 
 # 3D 导出用的固定光照方向（世界坐标，左上前方）与明暗范围
 _LIGHT = (-0.42, -0.55, 0.72)

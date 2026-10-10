@@ -1447,6 +1447,14 @@ def _exp2(lines):
     return _export_svg(_c, (-20, 20, -20, 20))
 
 
+# 自检：每个用例行必须**构造成功**（否则"没导出"会被误判成导出器的缺口 ✗）
+_bad_ctor2 = []
+for _k, _l in [] or []:
+    pass
+def _ctor2(lines):
+    _c = Construction()
+    _msgs = [_c.process(_l) for _l in lines]
+    return all(_m.startswith("OK") for _m in _msgs), _msgs[-1] if _msgs else ""
 _2D_BASE = _exp2(_2D_PRE)
 _2D_CASES = [
     ("point", "P1=(2,2)"), ("segment", "S1=Segment[A,B]"), ("line", "Ln=Line[A,B]"),
@@ -1458,14 +1466,16 @@ _2D_CASES = [
     ("barchart", "Bc=BarChart[L]"), ("piechart", "Pc=PieChart[L]"), ("boxplot", "Bx=BoxPlot[L]"),
     ("linechart", "Lc=LineChart[L]"), ("scatterplot", "Sc=ScatterPlot[L]"), ("dotplot", "Dp=DotPlot[L]"),
     ("stemplot", "St=StemPlot[L]"), ("inequality", "Iq=x+y>1"),
-    ("button", 'Bu=Button["b","Delete[P1]",(1,-2)]'), ("checkbox", 'Ck=CheckBox["c",Pg,(3,-2)]'),
+    ("button", 'Bu=Button["b","Delete[P1]",(1,-2)]'), ("checkbox", 'Ck=CheckBox["c",A,(3,-2)]'),
     ("inputbox", "Ib=InputBox[N,(5,-2)]"),
 ]
+_ctor_bad2 = [_k for _k, _l in _2D_CASES + [("base", None)] if _l and not _ctor2(_2D_PRE + [_l])[0]]
+check("覆盖用例自身都能构造成功（防把用例问题误判成导出缺口）", not _ctor_bad2, str(_ctor_bad2))
 _missing2 = [_k for _k, _l in _2D_CASES if _exp2(_2D_PRE + [_l]) == _2D_BASE]
 # 已知「画布有、SVG 2D 导出没有」的类型：**必须逐个显式列出**（新类型漏画会直接红 ✗）
 # TODO（待办）：统计图 7 类 + 控件 3 类目前不在 2D SVG 导出范围内（画布专用绘制）
-_KNOWN_NOT_EXPORTED_2D = ["barchart", "piechart", "boxplot", "linechart", "scatterplot", "dotplot",
-                          "stemplot", "button", "checkbox", "inputbox"]
+# 统计图 7 类 + 控件 3 类已补齐（第一百批）；此白名单应保持**空**，新类型漏画会立刻红 ✗
+_KNOWN_NOT_EXPORTED_2D = []
 check("2D 导出：除已知缺口外全部可绘制元素都能导出（%d/%d）" % (len(_2D_CASES) - len(_KNOWN_NOT_EXPORTED_2D), len(_2D_CASES)),
       sorted(_missing2) == sorted(_KNOWN_NOT_EXPORTED_2D), "实际缺口=%s" % _missing2)
 
@@ -1485,6 +1495,16 @@ for _name, _lines in _2D_XML_CASES:
     except Exception as _e:      # noqa: BLE001 —— 检测脚本：解析失败即失败
         _xml_bad2.append((_name, repr(_e)[:60]))
 check("导出的 SVG 是合法 XML（文本里裸写 '<' 曾让整份失效）", not _xml_bad2, str(_xml_bad2))
+# 统计图/控件的**结构断言**（覆盖守卫只保证"有变化"，这里锁住基本形状）
+_chart_svg = _exp2(_2D_PRE + ["Pc=PieChart[{3,5,2,4}]", 'Bu=Button["点我","Delete[P1]",(-6,-2)]'])
+check("饼图导出为 4 个扇形 + 同心白圆",
+      _chart_svg.count("<path") >= 4 and _chart_svg.count('<circle') >= 1, "")
+_bar_svg = _exp2(_2D_PRE + ["Bc=BarChart[L]"])
+check("柱状图导出为柱体矩形（≥4 个）", _bar_svg.count("<rect") >= 4, "rect=%d" % _bar_svg.count("<rect"))
+check("控件导出为圆角矩形 + 说明文字", 'rx="5"' in _chart_svg and "点我" in _chart_svg, "")
+# 已知缺口（显式记录，别让它悄悄存在）：Image 需要内容寻址仓库的图片 ID，
+# 单测里无法直接构造 → 2D SVG 导出**暂不含 image**（画布可显示）。见 CHANGELOG 第一百批附注。
+
 
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
