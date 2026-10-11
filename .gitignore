@@ -45,6 +45,7 @@ memory/
 probe*.js
 restore.js
 screenshots/
+share/*.ggk
 shot3d*.png
 shot_*.png
 test_*.js
