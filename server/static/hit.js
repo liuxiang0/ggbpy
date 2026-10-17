@@ -155,6 +155,21 @@ window.GGB_HIT = (function () {
           var s = ((wx - obj.ox) * obj.dx + (wy - obj.oy) * obj.dy) / (el * el);
           return Math.max(0, Math.min(1, (s * el) / 20));
         }
+        if (obj.kind === 'polyline' && obj.pts && obj.pts.length >= 2) {
+          var bpl = null, bplD = 1e18, bplT = 0, cumpl = 0, totpl = 0;
+          for (var pli2 = 0; pli2 + 1 < obj.pts.length; pli2++) {
+            var ax2 = obj.pts[pli2][0], ay2 = obj.pts[pli2][1];
+            var bx2 = obj.pts[pli2 + 1][0], by2 = obj.pts[pli2 + 1][1];
+            var lx2 = bx2 - ax2, ly2 = by2 - ay2, lpl = Math.hypot(lx2, ly2);
+            var tpl = lpl ? ((wx - ax2) * lx2 + (wy - ay2) * ly2) / (lpl * lpl) : 0;
+            tpl = Math.max(0, Math.min(1, tpl));
+            var qpl = Math.hypot(wx - (ax2 + tpl * lx2), wy - (ay2 + tpl * ly2));
+            if (qpl < bplD) { bplD = qpl; bplT = cumpl + tpl * lpl; }
+            cumpl += lpl;
+            totpl += lpl;
+          }
+          return totpl > 0 ? bplT / totpl : 0;
+        }
         if (obj.kind === 'polygon' && obj.pts && obj.pts.length >= 3) {
           var best = null, bestD = 1e18, bestT = 0, cum = 0, total = 0;
           var segs = [];
@@ -207,6 +222,11 @@ window.GGB_HIT = (function () {
             }
             // 点击多边形内部任意点也可选中（射线法）
             if (pointInPoly(sx, sy, e.pts)) return e.label;
+          } else if (e.kind === 'polyline' && e.pts && e.pts.length >= 2) {
+            for (var qli = 0; qli + 1 < e.pts.length; qli++) {
+              if (distToSeg(sx, sy, sxp(e.pts[qli][0]), syp(e.pts[qli][1]),
+                            sxp(e.pts[qli + 1][0]), syp(e.pts[qli + 1][1])) <= 10) return e.label;
+            }
           } else if (e.kind === 'image' && e.corners && e.corners.length === 4) {
             if (pointInPoly(sx, sy, e.corners)) return e.label;
           } else if (e.kind === 'function' && e.samples) {

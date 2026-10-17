@@ -321,9 +321,22 @@ window.GGB_T2D = (function () {
           return;
         }
         if (activeTool === 'area' || activeTool === 'perimeter') {
-          var kindsA = activeTool === 'area' ? ['polygon', 'circle', 'conic'] : ['polygon', 'circle'];
+          // 与命令能力对齐：Area 支持 多边形/圆/椭圆/扇形（圆弧会由命令给出明确错误）；
+          // Perimeter 支持 多边形/圆/椭圆/圆弧/扇形/折线/线段（早前只认多边形/圆 ✗ → 菜单点扇形无效）
+          var kindsA = activeTool === 'area'
+            ? ['polygon', 'circle', 'conic', 'arc']
+            : ['polygon', 'circle', 'conic', 'arc', 'polyline', 'segment'];
           var aHit = hitObject(sx, sy, kindsA);
-          if (!aHit) { setMsg(lang === 'en' ? 'Click a polygon/circle' : '请点击多边形或圆', true); return; }
+          if (!aHit) {
+            setMsg(lang === 'en'
+              ? (activeTool === 'area'
+                ? 'Click a polygon / circle / ellipse / sector'
+                : 'Click a polygon / circle / ellipse / arc / sector / polyline / segment')
+              : (activeTool === 'area'
+                ? '请点击 多边形/圆/椭圆/扇形'
+                : '请点击 多边形/圆/椭圆/圆弧/扇形/折线/线段'), true);
+            return;
+          }
           var acmd = activeTool === 'area' ? 'Area[' : 'Perimeter[';
           postInput(acmd + aHit + ']', function (ok) { if (ok) resetTool(); });
           return;
