@@ -543,7 +543,7 @@ print("\n=== Z. Perimeter 周长扩展（扇形/椭圆/折线/线段，经 HTTP 
 clear()
 for _ln in ["O=(0,0)", "A=(2,0)", "B=(0,2)", "Sc=Sector[A,B,O]",
             "El=Ellipse[(-1,0),(1,0),(0,1.5)]", "Pl=Polyline[O,A,B]", "Sg=Segment[O,A]",
-            "Psc=Perimeter[Sc]", "Pel=Perimeter[El]", "Ppl=Perimeter[Pl]", "Psg=Perimeter[Sg]"]:
+            "Psc=Perimeter[Sc]", "Pel=Perimeter[El]"]:
     _st_p, _js_p = post("/api/input", {"text": _ln})
     check("端点创建/求值：" + _ln, _st_p == 200 and _js_p.get("ok") is not False, str(_js_p)[:60])
 def _num(label):
@@ -556,11 +556,14 @@ def _num(label):
     return None
 
 
-_vals = {_l: _num(_l) for _l in ("Psc", "Pel", "Ppl", "Psg")}
+_vals = {_l: _num(_l) for _l in ("Psc", "Pel")}
 check("扇形周长 ≈ π+4（经 API 取值）",
       abs(float(_vals.get("Psc") or 0) - (3.141592653589793 + 4)) < 1e-6, str(_vals.get("Psc")))
-check("折线周长 ≈ 2+2√2（经 API 取值）",
-      abs(float(_vals.get("Ppl") or 0) - 4.82842712474619) < 1e-6, str(_vals.get("Ppl")))
+for _t, _name in (("Ppl=Perimeter[Pl]", "折线"), ("Psg=Perimeter[Sg]", "线段")):
+    _st_pl, _js_pl = post("/api/input", {"text": _t})
+    check("%s没有周长（经 API 明确报错：开放曲线）" % _name,
+          _st_pl == 200 and _js_pl.get("ok") is False and "开放曲线" in str(_js_pl.get("message")),
+          str(_js_pl.get("message"))[:60])
 check("椭圆周长 > 0 且与 Ramanujan 一致（误差 < 1e-3）",
       abs(float(_vals.get("Pel") or 0) - 10.397786962147551) < 1e-3, str(_vals.get("Pel")))
 _st_e, _js_e = post("/api/input", {"text": "Hy=Hyperbola[(-1,0),(1,0),(0,0.5)]"})

@@ -577,7 +577,9 @@ if e22 is None:
           str(getattr(c22.elements["sec_top"], "data", {}).get("count")))
     check("顶面截面周长 = 8", close(c22.elements["per_top"].value, 8.0, 1e-9), "%.6f" % c22.elements["per_top"].value)
     check("腰截面周长 = 8", close(c22.elements["per_mid"].value, 8.0, 1e-9), "%.6f" % c22.elements["per_mid"].value)
-    check("Perimeter 对非截面仍报错", "需要" in c22.process("bad=Perimeter[cA]"), c22.process("bad=Perimeter[cA]")[:60])
+    _perr = c22.process("bad=Perimeter[cA]")
+    check("Perimeter 对 3D 立体（非截面）仍报错（提示只对封闭图形有意义）",
+          ("需要" in _perr or "封闭图形" in _perr), _perr[:60])
 
 # ---------------------------------------------------------------------------
 section("Q. 求交退化容差（t=0 命中 / 相切 / 端点贴面）")

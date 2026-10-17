@@ -150,10 +150,11 @@ def _section_perimeter(el) -> float:
     return sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
 
 def _cmd_perimeter(cons, defn, args):
-    """周长：支持 多边形 / 圆 / 椭圆（圆锥曲线）/ 圆弧 / 扇形 / 折线 / 线段 / 3D 截面。
+    """周长：**只对封闭图形有意义** —— 多边形 / 圆 / 椭圆 / 扇形 / 3D 截面。
 
     语义约定：
-    - 扇形 = 弧长 + 两条半径；圆弧 = 弧长（不闭合，不加弦）
+    - 只有**封闭区域**才有"周长"：开放曲线（圆弧、折线、线段）没有周长 → 明确报错并指向 `Length`
+    - 扇形 = 弧长 + 两条半径（它是封闭区域 ✓）
     - 椭圆用 Ramanujan 近似（与 `Circumference` 同一实现，圆退化为精确 2πr）
     - 双曲线/抛物线无有限周长 → 明确报错
     """
@@ -178,20 +179,19 @@ def _cmd_perimeter(cons, defn, args):
         raise GeoError("Perimeter：双曲线/抛物线/一般圆锥曲线无有限周长（只有圆与椭圆有）")
     if kind == "arc":
         if getattr(obj, "sector", False):
+            # 扇形是封闭区域：边界 = 弧 + 两条半径
             return _mk(cons, GeoNumber, "number", defn, [obj],
                        lambda d: {"value": _arc_length(d[0]) + 2.0 * float(d[0].r)})
-        return _mk(cons, GeoNumber, "number", defn, [obj],
-                   lambda d: {"value": _arc_length(d[0])})
+        raise GeoError("Perimeter：圆弧是**开放曲线**，没有周长（弧长请用 Length）")
     if kind == "polyline":
-        return _mk(cons, GeoNumber, "number", defn, [obj],
-                   lambda d: {"value": _polyline_length(d[0])})
+        raise GeoError("Perimeter：折线是**开放曲线**，没有周长（长度请用 Length）")
     if kind == "segment":
-        return _mk(cons, GeoNumber, "number", defn, [obj],
-                   lambda d: {"value": _dist((d[0].x1, d[0].y1), (d[0].x2, d[0].y2))})
+        raise GeoError("Perimeter：线段是**开放曲线**，没有周长（长度请用 Length）")
     if kind == "geo3d" and getattr(obj, "objtype", "") == "section":
         return _mk(cons, GeoNumber, "number", defn, [obj],
                    lambda d: {"value": _section_perimeter(d[0])})
-    raise GeoError("Perimeter 需要 多边形/圆/椭圆/圆弧/扇形/折线/线段 或 3D 截面")
+    raise GeoError("Perimeter 只对**封闭图形**有意义：多边形/圆/椭圆/扇形 或 3D 截面；"
+                   "开放曲线（圆弧/折线/线段）请用 Length")
 
 def _cmd_circumference(cons, defn, args):
     obj = _resolve(cons, args[0], ("circle", "conic"))

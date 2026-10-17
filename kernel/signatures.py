@@ -45,7 +45,7 @@ SIGNATURES: Dict[str, str] = {
     "angle": "Angle[点A, 顶点B, 点C]（有向 0..360°）",
     "slope": "Slope[直线]",
     "area": "Area[多边形或圆]",
-    "perimeter": "Perimeter[多边形/圆/椭圆/圆弧/扇形/折线/线段]",
+    "perimeter": "Perimeter[多边形/圆/椭圆/扇形]（仅封闭图形；开放曲线用 Length）",
     "barchart": "BarChart[{值…}] 或 BarChart[{值…}, {标签…}]",
     "dotplot": "DotPlot[{值…}]",
     "linechart": "LineChart[{值…}]",
