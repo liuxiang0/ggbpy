@@ -1506,6 +1506,63 @@ check("控件导出为圆角矩形 + 说明文字", 'rx="5"' in _chart_svg and "
 # 单测里无法直接构造 → 2D SVG 导出**暂不含 image**（画布可显示）。见 CHANGELOG 第一百批附注。
 
 
+# ---------------------------------------------------------------------------
+section("Z21. Perimeter 周长：多边形/圆/椭圆/圆弧/扇形/折线/线段（第一百零一批扩展）")
+
+_pc, _pe = build(["O=(0,0)", "A=(2,0)", "B=(0,2)", "Pg=Polygon[O,A,B]",
+                  "Ci=Circle[O,2]", "Ar=Arc[A,B,O]", "Sc=Sector[A,B,O]",
+                  "El=Ellipse[(-1,0),(1,0),(0,1.5)]", "Pl=Polyline[O,A,B]", "Sg=Segment[O,A]",
+                  "Rg=RigidPolygon[O,A,B]"])
+check("Perimeter 用例构造", _pe is None, str(_pe))
+if _pe is None:
+    def _pv(line):
+        _c = Construction()
+        for _ln in ["O=(0,0)", "A=(2,0)", "B=(0,2)", "Pg=Polygon[O,A,B]", "Ci=Circle[O,2]",
+                    "Ar=Arc[A,B,O]", "Sc=Sector[A,B,O]", "El=Ellipse[(-1,0),(1,0),(0,1.5)]",
+                    "Pl=Polyline[O,A,B]", "Sg=Segment[O,A]", "Rg=RigidPolygon[O,A,B]", line]:
+            _msg = _c.process(_ln)
+            if not _msg.startswith("OK"):
+                return None, _msg
+        _lab = line.split("=")[0]
+        return _c.elements[_lab].value, ""
+
+    def _close(got, want, tol=1e-9):
+        return got is not None and abs(got - want) <= tol
+
+    check("多边形周长 = 三边之和", _close(_pv("P=Perimeter[Pg]")[0], 2 + 2 + math.hypot(2, 2)), str(_pv("P=Perimeter[Pg]")[0]))
+    check("圆周长 = 2πr", _close(_pv("P=Perimeter[Ci]")[0], 2 * math.pi * 2), "")
+    check("圆弧周长 = 弧长（r=2、90° → π）", _close(_pv("P=Perimeter[Ar]")[0], math.pi), "")
+    check("扇形周长 = 弧长 + 两条半径（π + 4）", _close(_pv("P=Perimeter[Sc]")[0], math.pi + 4), "")
+    _el_got = _pv("P=Perimeter[El]")[0]
+    _a, _b = 1.8027756377319946, 1.5            # 焦点 (∓1,0) 过 (0,1.5) → a=√3.25
+    _h = ((_a - _b) / (_a + _b)) ** 2
+    _want_el = math.pi * (_a + _b) * (1 + 3 * _h / (10 + math.sqrt(4 - 3 * _h)))
+    check("椭圆周长 = Ramanujan 近似（与 Circumference 同一实现）", _close(_el_got, _want_el, 1e-6),
+          "got=%.6f want=%.6f" % (_el_got or -1, _want_el))
+    check("折线周长 = 相邻顶点距离之和（2 + 2√2）", _close(_pv("P=Perimeter[Pl]")[0], 2 + 2 * math.sqrt(2)), "")
+    check("线段周长 = 长度", _close(_pv("P=Perimeter[Sg]")[0], 2.0), "")
+    check("刚性多边形同样支持（kind 仍为 polygon）", _close(_pv("P=Perimeter[Rg]")[0], 2 + 2 + math.hypot(2, 2)), "")
+    # 错误路径要明确
+    _hy = Construction()
+    _hy.process("Hy=Hyperbola[(-1,0),(1,0),(0,0.5)]")
+    _msg_hy = _hy.process("P=Perimeter[Hy]")
+    check("双曲线周长 → 明确报错（无有限周长）",
+          _msg_hy.startswith("错误") and "有限周长" in _msg_hy, _msg_hy[:40])
+    _cu = Construction()
+    _cu.process("Cu=Cube[(0,0,0),(2,0,0)]")
+    _msg_cu = _cu.process("P=Perimeter[Cu]")
+    check("3D 立体（非截面）→ 明确报错（列出支持类型）",
+          _msg_cu.startswith("错误") and "扇形" in _msg_cu and "折线" in _msg_cu, _msg_cu[:40])
+    # 依赖重算：拖动端点后周长跟着变
+    _dc = Construction()
+    for _ln in ["O=(0,0)", "A=(2,0)", "Sg=Segment[O,A]", "P=Perimeter[Sg]"]:
+        _dc.process(_ln)
+    _v1 = _dc.elements["P"].value
+    _dc.process("SetCoords[A,5,0]")
+    check("Perimeter 随依赖重算（A 移到 (5,0) → 2 → 5）",
+          abs(_v1 - 2.0) < 1e-9 and abs(_dc.elements["P"].value - 5.0) < 1e-9,
+          "before=%.4f after=%.4f" % (_v1, _dc.elements["P"].value))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

@@ -149,18 +149,77 @@ def _section_perimeter(el) -> float:
         raise GeoError("截面顶点不足，周长无定义")
     return sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
 
+def _arc_length(el) -> float:
+    """圆弧/扇形的**弧长**（不含半径边）。
+
+    与画布/导出同一语义：span = (ang2 - ang1) mod 2π；`Semicircle` 等价于 a2 = a1 + π。
+    （端点重合的退化弧 → 0，不臆测成整圆）
+    """
+    r = float(getattr(el, "r", 0.0))
+    a1 = float(getattr(el, "ang1", 0.0))
+    a2 = float(getattr(el, "ang2", 0.0))
+    if getattr(el, "semicircle", False):
+        a2 = a1 + math.pi
+    span = (a2 - a1) % (2.0 * math.pi)
+    return r * (0.0 if span < EPSILON else span)
+
+
+def _polyline_length(el) -> float:
+    """折线总长（相邻顶点距离之和，不闭合）。
+
+    注意：顶点存在元素属性 `.xs` / `.ys` 上（`draw()["pts"]` 是渲染时才拼的，且需要 view）；
+    早期实现误读 `el.pts` → 恒为 0 ✗。
+    """
+    xs = [float(v) for v in (getattr(el, "xs", None) or [])]
+    ys = [float(v) for v in (getattr(el, "ys", None) or [])]
+    if len(xs) < 2 or len(xs) != len(ys):
+        return 0.0
+    return sum(math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i]) for i in range(len(xs) - 1))
+
+
 def _cmd_perimeter(cons, defn, args):
+    """周长：支持 多边形 / 圆 / 椭圆（圆锥曲线）/ 圆弧 / 扇形 / 折线 / 线段 / 3D 截面。
+
+    语义约定：
+    - 扇形 = 弧长 + 两条半径；圆弧 = 弧长（不闭合，不加弦）
+    - 椭圆用 Ramanujan 近似（与 `Circumference` 同一实现，圆退化为精确 2πr）
+    - 双曲线/抛物线无有限周长 → 明确报错
+    """
+    if len(args) != 1:
+        raise GeoError("Perimeter 需要 1 个对象")
     obj = _resolve(cons, args[0])
-    if obj.kind == "polygon":
+    kind = obj.kind
+    if kind == "polygon":
         return _mk(cons, GeoNumber, "number", defn, [obj],
                    lambda d: {"value": _polygon_perimeter(d[0])})
-    if obj.kind == "circle":
+    if kind == "circle":
         return _mk(cons, GeoNumber, "number", defn, [obj],
                    lambda d: {"value": 2 * math.pi * d[0].r})
-    if obj.kind == "geo3d" and getattr(obj, "objtype", "") == "section":
+    if kind == "conic":
+        ctype = getattr(obj, "ctype", "")
+        if ctype in ("ellipse", "circle"):
+            def _conic_perim(d):
+                a = float(d[0].semi_a or 0.0)
+                b = float(d[0].semi_b or a)
+                return {"value": _ellipse_circumference(a, b)}
+            return _mk(cons, GeoNumber, "number", defn, [obj], _conic_perim)
+        raise GeoError("Perimeter：双曲线/抛物线/一般圆锥曲线无有限周长（只有圆与椭圆有）")
+    if kind == "arc":
+        if getattr(obj, "sector", False):
+            return _mk(cons, GeoNumber, "number", defn, [obj],
+                       lambda d: {"value": _arc_length(d[0]) + 2.0 * float(d[0].r)})
+        return _mk(cons, GeoNumber, "number", defn, [obj],
+                   lambda d: {"value": _arc_length(d[0])})
+    if kind == "polyline":
+        return _mk(cons, GeoNumber, "number", defn, [obj],
+                   lambda d: {"value": _polyline_length(d[0])})
+    if kind == "segment":
+        return _mk(cons, GeoNumber, "number", defn, [obj],
+                   lambda d: {"value": _dist((d[0].x1, d[0].y1), (d[0].x2, d[0].y2))})
+    if kind == "geo3d" and getattr(obj, "objtype", "") == "section":
         return _mk(cons, GeoNumber, "number", defn, [obj],
                    lambda d: {"value": _section_perimeter(d[0])})
-    raise GeoError("Perimeter 需要 多边形/圆 或 3D 截面")
+    raise GeoError("Perimeter 需要 多边形/圆/椭圆/圆弧/扇形/折线/线段 或 3D 截面")
 
 def _cmd_circumference(cons, defn, args):
     obj = _resolve(cons, args[0], ("circle", "conic"))

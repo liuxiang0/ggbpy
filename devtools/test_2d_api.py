@@ -538,6 +538,36 @@ check("API：签名前缀 == 该命令的显示名（Tab 补全填出的就是�
       "sigs=%d" % len(_cmdj["sigs"]))
 
 print("\n" + "=" * 60)
+# ---------------------------------------------------------------------------
+print("\n=== Z. Perimeter 周长扩展（扇形/椭圆/折线/线段，经 HTTP 端到端）===")
+clear()
+for _ln in ["O=(0,0)", "A=(2,0)", "B=(0,2)", "Sc=Sector[A,B,O]",
+            "El=Ellipse[(-1,0),(1,0),(0,1.5)]", "Pl=Polyline[O,A,B]", "Sg=Segment[O,A]",
+            "Psc=Perimeter[Sc]", "Pel=Perimeter[El]", "Ppl=Perimeter[Pl]", "Psg=Perimeter[Sg]"]:
+    _st_p, _js_p = post("/api/input", {"text": _ln})
+    check("端点创建/求值：" + _ln, _st_p == 200 and _js_p.get("ok") is not False, str(_js_p)[:60])
+def _num(label):
+    """从 state 的显示值（可能是 "= 7.141593" 这种串）里抽数值。"""
+    import re as _re
+    for _e in state():
+        if _e.get("label") == label:
+            _m = _re.search(r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?", str(_e.get("value") or ""))
+            return float(_m.group(0)) if _m else None
+    return None
+
+
+_vals = {_l: _num(_l) for _l in ("Psc", "Pel", "Ppl", "Psg")}
+check("扇形周长 ≈ π+4（经 API 取值）",
+      abs(float(_vals.get("Psc") or 0) - (3.141592653589793 + 4)) < 1e-6, str(_vals.get("Psc")))
+check("折线周长 ≈ 2+2√2（经 API 取值）",
+      abs(float(_vals.get("Ppl") or 0) - 4.82842712474619) < 1e-6, str(_vals.get("Ppl")))
+check("椭圆周长 > 0 且与 Ramanujan 一致（误差 < 1e-3）",
+      abs(float(_vals.get("Pel") or 0) - 10.397786962147551) < 1e-3, str(_vals.get("Pel")))
+_st_e, _js_e = post("/api/input", {"text": "Hy=Hyperbola[(-1,0),(1,0),(0,0.5)]"})
+_st_e2, _js_e2 = post("/api/input", {"text": "Phy=Perimeter[Hy]"})
+check("双曲线周长经 API 返回明确错误（不是静默 0/崩溃）",
+      _st_e2 == 200 and "有限周长" in str(_js_e2.get("message") or _js_e2), str(_js_e2)[:80])
+
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
     for nm in FAILED:
