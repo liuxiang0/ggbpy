@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import base64
 import math
 import re
 from typing import List, Tuple
@@ -230,6 +231,33 @@ def export_svg(cons, view: Tuple[float, float, float, float], width: int = 1000,
         elif el.kind == "text":
             out.append('    <text x="' + str(X(el.x)) + '" y="' + str(Y(el.y)) + '" font-size="15"'
                        + ' fill="#111827">' + _esc(el.content) + '</text>')
+        elif el.kind == "image":
+            # 图片：四角 → 仿射矩阵映射到屏幕，图片数据以 data URI **内嵌**（导出文件自包含）
+            # 说明：corners() 顺序是 [左下, 右下, 右上, 左上]；SVG <image> 的 (0,0) 在左上，
+            # 所以以「左上」为原点、x 沿底边、y 向下到左下 —— 否则图片会上下翻转 ✗
+            try:
+                from . import image_store as _istore
+                _rec = _istore.decode(getattr(el, "imgid", "") or "")
+            except Exception:  # 防御性捕获：仓库异常不应中断整份导出
+                _rec = None
+            _cs = el.corners() if hasattr(el, "corners") else []
+            if _rec and len(_cs) == 4:
+                _mime, _data = _rec
+                _b64 = base64.b64encode(_data).decode("ascii")
+                _p = [(X(c[0]), Y(c[1])) for c in _cs]      # 左下/右下/右上/左上
+                _origin = _p[3]                              # 左上
+                _ex = (_p[1][0] - _p[0][0], _p[1][1] - _p[0][1])   # 底边方向（世界 → 屏幕）
+                _ey = (_p[0][0] - _p[3][0], _p[0][1] - _p[3][1])   # 左上 → 左下
+                out.append('    <image x="0" y="0" width="1" height="1" preserveAspectRatio="none"'
+                           + ' transform="matrix(%.4f,%.4f,%.4f,%.4f,%.2f,%.2f)"'
+                           % (_ex[0], _ex[1], _ey[0], _ey[1], _origin[0], _origin[1])
+                           + ' href="data:' + _mime + ';base64,' + _b64 + '"/>')
+            else:
+                # 图片数据缺失（仓库里查不到）：画占位虚线框，至少让用户看到该元素存在
+                for _a, _b2 in zip(_cs, _cs[1:] + _cs[:1]) if _cs else []:
+                    out.append('    <line x1="' + str(X(_a[0])) + '" y1="' + str(Y(_a[1])) + '" x2="'
+                               + str(X(_b2[0])) + '" y2="' + str(Y(_b2[1]))
+                               + '" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 4"/>')
         elif el.kind in ("barchart", "histogram"):
             # 柱状图/直方图：与 charts.js drawBarChart 同几何（世界单位；基线 y=0，最大柱高 3.0）
             d = el.draw(view) or {}

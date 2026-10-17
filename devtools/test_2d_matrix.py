@@ -1502,8 +1502,8 @@ check("饼图导出为 4 个扇形 + 同心白圆",
 _bar_svg = _exp2(_2D_PRE + ["Bc=BarChart[L]"])
 check("柱状图导出为柱体矩形（≥4 个）", _bar_svg.count("<rect") >= 4, "rect=%d" % _bar_svg.count("<rect"))
 check("控件导出为圆角矩形 + 说明文字", 'rx="5"' in _chart_svg and "点我" in _chart_svg, "")
-# 已知缺口（显式记录，别让它悄悄存在）：Image 需要内容寻址仓库的图片 ID，
-# 单测里无法直接构造 → 2D SVG 导出**暂不含 image**（画布可显示）。见 CHANGELOG 第一百批附注。
+# Image 元素的导出在**API 层**覆盖（需要内容寻址仓库的图片 ID，内核单测构造不了）：
+# 见 test_2d_api.py 的「Image 元素随 2D SVG 导出」断言（第一百零四批补齐，data URI 内嵌）。
 
 
 # ---------------------------------------------------------------------------
