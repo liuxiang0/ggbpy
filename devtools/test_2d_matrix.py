@@ -1609,6 +1609,47 @@ check("Length 随依赖重算（向量端点 3 → 5）",
       abs(_v1 - 3.0) < 1e-9 and abs(_dc2.elements["Lv"].value - 5.0) < 1e-9,
       "before=%.4f after=%.4f" % (_v1, _dc2.elements["Lv"].value))
 
+# ---------------------------------------------------------------------------
+section("Z23. 扇形面积 + 中文嵌套命令 + 弧长别名（第一百零六批）")
+
+def _run1(line, pre=("O=(0,0)", "A=(2,0)", "B=(0,2)", "Sc=Sector[A,B,O]", "Ar=Arc[A,B,O]")):
+    """建前置对象并执行 line，返回 (成功?, 末条消息, 最后一个自动命名 number 的值)。"""
+    _c = Construction()
+    for _ln in pre:
+        _m = _c.process(_ln)
+        if not _m.startswith("OK"):
+            return False, _m, None
+    _m = _c.process(line)
+    if not _m.startswith("OK"):
+        return False, _m, None
+    _nums = [_c.elements[k] for k in _c.order if _c.elements[k].kind == "number"]
+    return True, _m, (_nums[-1].value if _nums else None)
+
+_ok, _msg, _v = _run1("Area[Sc]")
+check("Area[扇形] = ½r²θ（r=2、90° → π）", _ok and abs(_v - math.pi) < 1e-9, "%s / %s" % (_msg[:30], _v))
+_ok2, _msg2, _ = _run1("AX=Area[Ar]")
+check("Area[圆弧] → 明确报错（圆弧无面积，提示用 Sector）",
+      (not _ok2) and "扇形" in _msg2, _msg2[:50])
+# 中文嵌套命令（早期只认 ASCII 命令名 → 报「找不到对象 扇形[…]」✗）
+_ok3, _msg3, _v3 = _run1("面积[扇形[A,B,O]]")
+check("中文嵌套命令：面积[扇形[A,B,O]] = π", _ok3 and abs(_v3 - math.pi) < 1e-9, "%s / %s" % (_msg3[:30], _v3))
+_ok4, _msg4, _v4 = _run1("周长[扇形[A,B,O]]")
+check("中文嵌套命令：周长[扇形[A,B,O]] = π+4", _ok4 and abs(_v4 - (math.pi + 4)) < 1e-9, _msg4[:30])
+_ok5, _msg5, _v5 = _run1("长度[弧[A,B,O]]")
+check("中文嵌套命令：长度[弧[A,B,O]] = π（弧 = Arc 别名）", _ok5 and abs(_v5 - math.pi) < 1e-9, _msg5[:30])
+_ok6, _msg6, _v6 = _run1("弧长[圆弧[A,B,O]]")
+check("弧长别名：弧长[圆弧[…] = π", _ok6 and abs(_v6 - math.pi) < 1e-9, _msg6[:30])
+_ok7, _msg7, _v7 = _run1("Perimeter[Sector[A,B,O]]")
+check("英文嵌套：Perimeter[Sector[…]] = π+4", _ok7 and abs(_v7 - (math.pi + 4)) < 1e-9, _msg7[:30])
+_ok8, _msg8, _v8 = _run1("Area[Ellipse[(-1,0),(1,0),(0,1.5)]]")
+check("Area[椭圆] = πab（嵌套写法）= π·1.802776·1.5", _ok8 and abs(_v8 - math.pi * 1.8027756377319946 * 1.5) < 1e-6,
+      str(_v8))
+# 非中文命令名不应被误判为嵌套调用（保持"找不到对象"语义）
+_c9 = Construction(); _c9.process("O=(0,0)")
+_msg9 = _c9.process("P=Perimeter[未知对象[1]]")
+check("未知命令名仍报「找不到对象/未知命令」（不被中文正则误吞）",
+      _msg9.startswith("错误"), _msg9[:40])
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

@@ -580,6 +580,22 @@ check("圆弧/扇形 Length 都是弧长 π（扇形不含半径）",
       and abs((_lv.get("Psc2") or 0) - 3.141592653589793) < 1e-6, str(_lv))
 check("椭圆 Length ≈ 10.397787", abs((_lv.get("Pel2") or 0) - 10.397786962147551) < 1e-3, str(_lv.get("Pel2")))
 check("列表 Length = 元素个数", abs((_lv.get("Pli") or 0) - 3.0) < 1e-9, str(_lv.get("Pli")))
+# —— 扇形面积 + 中文嵌套命令 + 弧长别名（与内核 Z23 对应）——
+for _ln in ["Am1=Area[Sc]", "Am2=面积[扇形[A,B,O]]", "Pm1=周长[扇形[A,B,O]]",
+            "Lm1=长度[弧[A,B,O]]", "Lm2=弧长[圆弧[A,B,O]]"]:
+    _st_n, _js_n = post("/api/input", {"text": _ln})
+    check("端点创建/求值：" + _ln, _st_n == 200 and _js_n.get("ok") is not False, str(_js_n)[:50])
+_nv = {_l: _num(_l) for _l in ("Am1", "Am2", "Pm1", "Lm1", "Lm2")}
+check("扇形 Area = π（中英两种写法一致）",
+      abs((_nv.get("Am1") or 0) - 3.141592653589793) < 1e-6
+      and abs((_nv.get("Am2") or 0) - 3.141592653589793) < 1e-6, str(_nv))
+check("中文嵌套：周长[扇形[…]] = π+4 且 长度[弧[…]] = π",
+      abs((_nv.get("Pm1") or 0) - 7.141592653589793) < 1e-6
+      and abs((_nv.get("Lm1") or 0) - 3.141592653589793) < 1e-6, str(_nv))
+check("弧长别名 = π", abs((_nv.get("Lm2") or 0) - 3.141592653589793) < 1e-6, str(_nv.get("Lm2")))
+_st_ae, _js_ae = post("/api/input", {"text": "AX=Area[Ar]"})
+check("Area[圆弧] 经 API 明确报错（提示扇形）",
+      "扇形" in str(_js_ae.get("message")), str(_js_ae.get("message"))[:50])
 
 # —— Image 元素随 2D SVG 导出（图片以 data URI 内嵌，导出文件自包含）——
 _PNG_1PX = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/"

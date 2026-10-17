@@ -7,7 +7,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from .cmd_util import _mk, _point_arg, _resolve
-from .geo2d import _linear
+from .geo2d import _arc_length, _linear, _polyline_length
 from .geometry3d import _dist3, _has_z, _z_of
 from .linalg import _vec2_arg, _vec_arg_objs
 from .primitives import _dist
@@ -148,34 +148,6 @@ def _section_perimeter(el) -> float:
     if len(pts) < 2:
         raise GeoError("截面顶点不足，周长无定义")
     return sum(math.dist(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts)))
-
-def _arc_length(el) -> float:
-    """圆弧/扇形的**弧长**（不含半径边）。
-
-    与画布/导出同一语义：span = (ang2 - ang1) mod 2π；`Semicircle` 等价于 a2 = a1 + π。
-    （端点重合的退化弧 → 0，不臆测成整圆）
-    """
-    r = float(getattr(el, "r", 0.0))
-    a1 = float(getattr(el, "ang1", 0.0))
-    a2 = float(getattr(el, "ang2", 0.0))
-    if getattr(el, "semicircle", False):
-        a2 = a1 + math.pi
-    span = (a2 - a1) % (2.0 * math.pi)
-    return r * (0.0 if span < EPSILON else span)
-
-
-def _polyline_length(el) -> float:
-    """折线总长（相邻顶点距离之和，不闭合）。
-
-    注意：顶点存在元素属性 `.xs` / `.ys` 上（`draw()["pts"]` 是渲染时才拼的，且需要 view）；
-    早期实现误读 `el.pts` → 恒为 0 ✗。
-    """
-    xs = [float(v) for v in (getattr(el, "xs", None) or [])]
-    ys = [float(v) for v in (getattr(el, "ys", None) or [])]
-    if len(xs) < 2 or len(xs) != len(ys):
-        return 0.0
-    return sum(math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i]) for i in range(len(xs) - 1))
-
 
 def _cmd_perimeter(cons, defn, args):
     """周长：支持 多边形 / 圆 / 椭圆（圆锥曲线）/ 圆弧 / 扇形 / 折线 / 线段 / 3D 截面。

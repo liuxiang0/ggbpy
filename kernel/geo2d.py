@@ -435,3 +435,30 @@ def _dilated_line(line, k, cxp, cyp):
     p1 = _dilate_pt(p0x, p0y, k, cxp, cyp)
     p2 = _dilate_pt(p0x + dx, p0y + dy, k, cxp, cyp)
     return _line_state(*_line_through(p1[0], p1[1], p2[0], p2[1]))
+
+# ---------------------------------------------------------------------------
+# 弧长 / 折线长度（度量命令共用；放在几何层供 measures 与 3D 命令复用）
+# ---------------------------------------------------------------------------
+def _arc_span(el) -> float:
+    """圆弧/扇形的**圆心角跨度**（弧度，0..2π；Semicircle 等价 a2=a1+π，端点重合取 0）。"""
+    a1 = float(getattr(el, "ang1", 0.0))
+    a2 = float(getattr(el, "ang2", 0.0))
+    if getattr(el, "semicircle", False):
+        a2 = a1 + math.pi
+    span = (a2 - a1) % (2.0 * math.pi)
+    return 0.0 if span < EPSILON else span
+
+
+def _arc_length(el) -> float:
+    """圆弧/扇形的**弧长**（不含半径边；与画布/导出同一套角度语义）。"""
+    return float(getattr(el, "r", 0.0)) * _arc_span(el)
+
+
+def _polyline_length(el) -> float:
+    """折线总长（相邻顶点距离之和，不闭合）。顶点在 `.xs/.ys`（不是 `.pts`）。"""
+    xs = [float(v) for v in (getattr(el, "xs", None) or [])]
+    ys = [float(v) for v in (getattr(el, "ys", None) or [])]
+    if len(xs) < 2 or len(xs) != len(ys):
+        return 0.0
+    return sum(math.hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i]) for i in range(len(xs) - 1))
+

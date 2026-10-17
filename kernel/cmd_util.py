@@ -15,7 +15,9 @@ from .elements import GeoElement, GeoError, GeoList, GeoPoint
 from .parser import eval_number
 
 # 嵌套命令识别（_lookup 遇到 `Cmd[...]` 时走注入的求值钩子）
-_NESTED_CALL_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*\[(.*)\]$", re.S)
+# 命令名可以是英文标识符，也可以是中文命令/别名（如 面积[扇形[…]]）——
+# 早期只认 ASCII，导致中文嵌套命令被当成"对象标签"而报「找不到对象」✗
+_NESTED_CALL_RE = re.compile(r"^([A-Za-z_\u4e00-\u9fff][A-Za-z0-9_\u4e00-\u9fff]*)\s*\[(.*)\]$", re.S)
 _NESTED_MAX_DEPTH = 4
 
 # 表达式依赖助手已拆到 kernel/exprdeps.py（此处 re-export，保持调用方兼容）

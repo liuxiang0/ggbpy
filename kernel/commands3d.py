@@ -270,10 +270,17 @@ def _cmd_area(cons, defn, args):
     if obj.kind == "conic" and obj.ctype in ("ellipse", "circle"):
         return _mk(cons, GeoNumber, "number", defn, [obj],
                    lambda d: {"value": math.pi * d[0].semi_a * (d[0].semi_b or d[0].semi_a)})
+    if obj.kind == "arc":
+        if getattr(obj, "sector", False):
+            # 扇形面积 = ½ r² θ（θ = 圆心角跨度，与 Perimeter/Length 同一套角度语义）
+            from .geo2d import _arc_span
+            return _mk(cons, GeoNumber, "number", defn, [obj],
+                       lambda d: {"value": 0.5 * float(d[0].r) ** 2 * _arc_span(d[0])})
+        raise GeoError("Area：圆弧无面积（扇形才有；请用 Sector 创建扇形）")
     if obj.kind == "geo3d":
         return _mk(cons, GeoNumber, "number", defn, [obj],
                    lambda d: {"value": _solid_area(d[0])})
-    raise GeoError("Area 需要 多边形/圆/椭圆/3D 立体 或 函数+上下限")
+    raise GeoError("Area 需要 多边形/圆/椭圆/扇形/3D 立体 或 函数+上下限")
 
 def _cmd_surfacearea(cons, defn, args):
     """SurfaceArea[立体|曲面] → 表面积。
