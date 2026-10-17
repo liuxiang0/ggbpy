@@ -257,10 +257,41 @@ def _cmd_semiperimeter(cons, defn, args):
                lambda d: {"value": _polygon_perimeter(d[0]) / 2.0})
 
 def _cmd_length(cons, defn, args):
+    """长度/弧长：线段 / 向量 / 折线 / 圆弧（扇形也只取**弧长**）/ 圆 / 椭圆 / 列表（元素个数）。
+
+    与 `Perimeter` 的分工：
+    - `Length` = **曲线自身长度**（扇形=弧长；圆/椭圆=周长）
+    - `Perimeter` = **封闭边界**（扇形 = 弧长 + 两条半径；多边形=闭合边长和）
+    """
+    if len(args) != 1:
+        raise GeoError("Length 需要 1 个对象")
     el = _resolve(cons, args[0])
-    if el.kind == "segment":
+    kind = el.kind
+    if kind == "segment":
         return _mk(cons, GeoNumber, "number", defn, [el],
                    lambda d: {"value": _dist((d[0].x1, d[0].y1), (d[0].x2, d[0].y2))})
-    if el.kind == "list":
+    if kind == "vector":
+        return _mk(cons, GeoNumber, "number", defn, [el],
+                   lambda d: {"value": math.hypot(float(d[0].dx), float(d[0].dy))})
+    if kind == "polyline":
+        return _mk(cons, GeoNumber, "number", defn, [el],
+                   lambda d: {"value": _polyline_length(d[0])})
+    if kind == "arc":
+        # 扇形与圆弧都取弧长（曲线长度；扇形的两条半径属于 Perimeter）
+        return _mk(cons, GeoNumber, "number", defn, [el],
+                   lambda d: {"value": _arc_length(d[0])})
+    if kind == "circle":
+        return _mk(cons, GeoNumber, "number", defn, [el],
+                   lambda d: {"value": 2 * math.pi * d[0].r})
+    if kind == "conic":
+        ctype = getattr(el, "ctype", "")
+        if ctype in ("ellipse", "circle"):
+            def _conic_len(d):
+                a = float(d[0].semi_a or 0.0)
+                b = float(d[0].semi_b or a)
+                return {"value": _ellipse_circumference(a, b)}
+            return _mk(cons, GeoNumber, "number", defn, [el], _conic_len)
+        raise GeoError("Length：双曲线/抛物线/一般圆锥曲线长度无定义")
+    if kind == "list":
         return _mk(cons, GeoNumber, "number", defn, [el], lambda d: {"value": float(len(d[0].items))})
-    raise GeoError("Length 需要线段或列表")
+    raise GeoError("Length 需要 线段/向量/折线/圆弧/扇形/圆/椭圆 或 列表")

@@ -1563,6 +1563,52 @@ if _pe is None:
           abs(_v1 - 2.0) < 1e-9 and abs(_dc.elements["P"].value - 5.0) < 1e-9,
           "before=%.4f after=%.4f" % (_v1, _dc.elements["P"].value))
 
+# ---------------------------------------------------------------------------
+section("Z22. Length 长度：线段/向量/折线/圆弧/扇形/圆/椭圆（第一百零三批扩展）")
+
+def _lv(line):
+    _c = Construction()
+    for _ln in ["O=(0,0)", "A=(2,0)", "B=(0,2)", "Sg=Segment[O,A]", "v=(3,4)",
+                "Pl=Polyline[O,A,B]", "Ar=Arc[A,B,O]", "Sc=Sector[A,B,O]",
+                "Ci=Circle[O,2]", "El=Ellipse[(-1,0),(1,0),(0,1.5)]", "L={1,2,3}", line]:
+        _msg = _c.process(_ln)
+        if not _msg.startswith("OK"):
+            return None, _msg
+    return _c.elements[line.split("=")[0]].value, ""
+
+check("线段长度 = 2", abs(_lv("P=Length[Sg]")[0] - 2.0) < 1e-9, str(_lv("P=Length[Sg]")[0]))
+check("向量长度 = |(3,4)| = 5", abs(_lv("P=Length[v]")[0] - 5.0) < 1e-9, str(_lv("P=Length[v]")[0]))
+check("折线长度 = 2 + 2√2", abs(_lv("P=Length[Pl]")[0] - (2 + 2 * math.sqrt(2))) < 1e-9, "")
+check("圆弧长度 = 弧长 π（r=2、90°）", abs(_lv("P=Length[Ar]")[0] - math.pi) < 1e-9, "")
+check("扇形 Length = **弧长** π（不含半径，与 Perimeter 的 π+4 分工明确）",
+      abs(_lv("P=Length[Sc]")[0] - math.pi) < 1e-6, "")
+check("圆长度 = 2πr = 4π", abs(_lv("P=Length[Ci]")[0] - 4 * math.pi) < 1e-9, "")
+check("椭圆长度 = Ramanujan ≈ 10.397787", abs(_lv("P=Length[El]")[0] - 10.397786962147551) < 1e-6,
+      str(_lv("P=Length[El]")[0]))
+check("列表 Length = 元素个数（3）", abs(_lv("P=Length[L]")[0] - 3.0) < 1e-9, "")
+_lmsg = Construction()
+_lmsg.process("O=(0,0)")
+_lmsg.process("A=(2,0)")
+_lmsg.process("B=(0,2)")
+_lmsg.process("Pg=Polygon[O,A,B]")
+_msg_pg = _lmsg.process("P=Length[Pg]")
+check("多边形 Length → 明确报错（应改用 Perimeter）",
+      _msg_pg.startswith("错误") and "Perimeter" not in _msg_pg and "列表" in _msg_pg, _msg_pg[:50])
+_hy2 = Construction()
+_hy2.process("Hy=Hyperbola[(-1,0),(1,0),(0,0.5)]")
+_msg_hy = _hy2.process("P=Length[Hy]")
+check("双曲线 Length → 明确报错（长度无定义）",
+      _msg_hy.startswith("错误") and "无定义" in _msg_hy, _msg_hy[:40])
+# 依赖重算：向量分量随依赖变化
+_dc2 = Construction()
+for _ln in ["O=(0,0)", "A=(3,0)", "v=Vector[O,A]", "Lv=Length[v]"]:
+    _dc2.process(_ln)
+_v1 = _dc2.elements["Lv"].value
+_dc2.process("SetCoords[A,5,0]")
+check("Length 随依赖重算（向量端点 3 → 5）",
+      abs(_v1 - 3.0) < 1e-9 and abs(_dc2.elements["Lv"].value - 5.0) < 1e-9,
+      "before=%.4f after=%.4f" % (_v1, _dc2.elements["Lv"].value))
+
 print("\n" + "=" * 60)
 print("2D 内核检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:

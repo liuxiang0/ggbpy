@@ -124,7 +124,7 @@ SIGNATURES: Dict[str, str] = {
     "im": "Im[复数]",
     "arg": "Arg[复数]",
     # —— 测量与判定/证明（补登记） ——
-    "length": "Length[线段或列表]",
+    "length": "Length[线段/向量/折线/圆弧/扇形/圆/椭圆 或 列表]",
     "circumference": "Circumference[圆或椭圆]",
     "radius": "Radius[圆或圆弧]",
     "diameter": "Diameter[圆或圆弧]",

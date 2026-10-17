@@ -567,6 +567,19 @@ _st_e, _js_e = post("/api/input", {"text": "Hy=Hyperbola[(-1,0),(1,0),(0,0.5)]"}
 _st_e2, _js_e2 = post("/api/input", {"text": "Phy=Perimeter[Hy]"})
 check("双曲线周长经 API 返回明确错误（不是静默 0/崩溃）",
       _st_e2 == 200 and "有限周长" in str(_js_e2.get("message") or _js_e2), str(_js_e2)[:80])
+# —— Length 扩展（与 Perimeter 同批）：线段/向量/折线/圆弧/扇形/圆/椭圆/列表 ——
+for _ln in ["Ar=Arc[A,B,O]", "Ci=Circle[O,2]", "L={1,2,3}", "v=(3,4)",
+            "Pv=Length[v]", "Par=Length[Ar]", "Psc2=Length[Sc]",
+            "Pci=Length[Ci]", "Pel2=Length[El]", "Pli=Length[L]"]:
+    _st_l, _js_l = post("/api/input", {"text": _ln})
+    check("端点创建/求值：" + _ln, _st_l == 200 and _js_l.get("ok") is not False, str(_js_l)[:50])
+_lv = {_l: _num(_l) for _l in ("Pv", "Par", "Psc2", "Pci", "Pel2", "Pli")}
+check("向量长度经 API = 5", abs((_lv.get("Pv") or 0) - 5.0) < 1e-6, str(_lv.get("Pv")))
+check("圆弧/扇形 Length 都是弧长 π（扇形不含半径）",
+      abs((_lv.get("Par") or 0) - 3.141592653589793) < 1e-6
+      and abs((_lv.get("Psc2") or 0) - 3.141592653589793) < 1e-6, str(_lv))
+check("椭圆 Length ≈ 10.397787", abs((_lv.get("Pel2") or 0) - 10.397786962147551) < 1e-3, str(_lv.get("Pel2")))
+check("列表 Length = 元素个数", abs((_lv.get("Pli") or 0) - 3.0) < 1e-9, str(_lv.get("Pli")))
 
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
