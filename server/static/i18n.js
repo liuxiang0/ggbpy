@@ -5,6 +5,7 @@ window.GGB_I18N = {
     zh: {
       undo: '↶ 撤销', redo: '↷ 重做', snap: '吸附', demo: '示例', grid: '网格', axes: '坐标轴',
       demo_cat: '示例：小猫', demo_house: '示例：小屋与花园',
+      demo_pick_title: '选择示例（拖动 A 观察依赖重算）', demo_cancel: '取消',
       demo_bike: '示例：自行车', demo_scene3d: '示例：3D 小屋与庭院',
       grid_t: '显示/隐藏网格（Ctrl+Shift+G）', axes_t: '显示/隐藏坐标轴（Ctrl+Shift+X）',
       snap_t: '格点吸附开关（Ctrl+Shift+S；关着时按住 Shift 临时吸附）',
@@ -88,6 +89,7 @@ window.GGB_I18N = {
     en: {
       undo: '↶ Undo', redo: '↷ Redo', snap: 'Snap', demo: 'Demo', grid: 'Grid', axes: 'Axes',
       demo_cat: 'Demo: Cat', demo_house: 'Demo: House & Garden',
+      demo_pick_title: 'Choose an example (drag A to see re-computation)', demo_cancel: 'Cancel',
       demo_bike: 'Demo: Bicycle', demo_scene3d: 'Demo: 3D Cottage',
       grid_t: 'Show/hide grid (Ctrl+Shift+G)', axes_t: 'Show/hide axes (Ctrl+Shift+X)',
       snap_t: 'Toggle grid snap (Ctrl+Shift+S; hold Shift for temporary snap)',

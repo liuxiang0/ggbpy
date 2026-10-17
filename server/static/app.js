@@ -2274,10 +2274,45 @@
       }
     });
   }
-  btn('btn-demo', function () { loadDemo(''); });
-  ['cat', 'house', 'bike', 'scene3d'].forEach(function (nm) {
-    btn('btn-demo-' + nm, function () { loadDemo(nm); });
-  });
+  // 示例选择器：菜单保持精简（文件菜单只有一条「示例…」），点击后弹小浮层选具体示例
+  function openDemoPicker() {
+    var old = document.getElementById('demoPicker');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var items = [['', t('demo')], ['cat', t('demo_cat')], ['house', t('demo_house')],
+                 ['bike', t('demo_bike')], ['scene3d', t('demo_scene3d')]];
+    var wrap = document.createElement('div');
+    wrap.id = 'demoPicker';
+    wrap.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(15,23,42,.32);'
+      + 'display:flex;align-items:center;justify-content:center;z-index:9999';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#ffffff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;'
+      + 'padding:14px 16px;min-width:280px;max-width:92vw;box-shadow:0 12px 32px rgba(0,0,0,.28);'
+      + 'font:14px/1.4 system-ui,sans-serif';
+    var title = document.createElement('div');
+    title.textContent = t('demo_pick_title');
+    title.style.cssText = 'font-weight:600;margin-bottom:10px';
+    box.appendChild(title);
+    items.forEach(function (it) {
+      var b = document.createElement('button');
+      b.id = 'demo-pick-' + (it[0] || 'builtin');
+      b.textContent = (it[1] || '').replace(/^示例[:：]\s*/, '');
+      b.style.cssText = 'display:block;width:100%;text-align:left;margin:4px 0;padding:8px 10px;'
+        + 'border:1px solid #cbd5e1;border-radius:7px;background:#f8fafc;cursor:pointer;font:inherit';
+      b.addEventListener('click', function () { wrap.remove(); loadDemo(it[0]); });
+      box.appendChild(b);
+    });
+    var cancel = document.createElement('button');
+    cancel.id = 'demo-pick-cancel';
+    cancel.textContent = t('demo_cancel');
+    cancel.style.cssText = 'display:block;width:100%;margin:10px 0 0;padding:7px 10px;border:0;'
+      + 'border-radius:7px;background:transparent;color:#64748b;cursor:pointer;font:inherit';
+    cancel.addEventListener('click', function () { wrap.remove(); });
+    box.appendChild(cancel);
+    wrap.appendChild(box);
+    wrap.addEventListener('click', function (ev) { if (ev.target === wrap) wrap.remove(); });
+    document.body.appendChild(wrap);
+  }
+  btn('btn-demo', openDemoPicker);
   btn('btn-save', function () {
     var url = '/api/download?xmin=' + view.xmin + '&xmax=' + view.xmax + '&ymin=' + view.ymin + '&ymax=' + view.ymax;
     window.location.href = url;
