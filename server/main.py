@@ -295,10 +295,29 @@ def do_clear():
     return {"ok": True, "message": "已清空", **_state((-10, 10, -10, 10))}
 
 
+DEMO_FIGURES = {"cat": "小猫", "house": "小屋与花园", "bike": "自行车", "scene3d": "3D 小屋与庭院"}
+
+
 @app.post("/api/demo")
-def do_demo():
-    _mut(cons.load_demo)
-    return {"ok": True, "message": "已载入示例（拖动 A 观察依赖重算）", **_state((-10, 10, -10, 10))}
+def do_demo(name: str = ""):
+    """载入示例：不带 name → 内置入门示例；带 name → share/figures/<name>.ggk。
+
+    可用 name：cat / house / bike / scene3d（3D 示例会附带 switch3d 标记，前端据此切到 3D 视图）。
+    """
+    nm = (name or "").strip()
+    if not nm:
+        _mut(cons.load_demo)
+        return {"ok": True, "message": "已载入示例（拖动 A 观察依赖重算）", **_state((-10, 10, -10, 10))}
+    path = ROOT / "share" / "figures" / (nm + ".ggk")
+    if nm not in DEMO_FIGURES or not path.exists():
+        return {"ok": False, "message": "未知示例：%s（可用：%s）" % (nm, " / ".join(DEMO_FIGURES)),
+                **_state((-10, 10, -10, 10))}
+    try:
+        view = _mut(cons.load_json, path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError, TypeError) as e:  # 文件缺失 / JSON 坏数据 / 结构不符：给可读错误
+        return {"ok": False, "message": "示例载入失败: " + str(e), **_state((-10, 10, -10, 10))}
+    return {"ok": True, "message": "已载入示例：%s" % DEMO_FIGURES[nm], "view": view,
+            "switch3d": nm == "scene3d", **_state((-10, 10, -10, 10))}
 
 
 @app.get("/api/export/svg")

@@ -2257,8 +2257,26 @@
     if (!confirm('确定清空所有对象？')) return;
     api('POST', '/api/clear', null, function (d) { setMsg(d.message, !d.ok); if (d.elements) { elements = d.elements; render(); } refresh3dIfNeeded(); });
   });
-  btn('btn-demo', function () {
-    api('POST', '/api/demo', null, function (d) { setMsg(d.message, !d.ok); if (d.elements) { elements = d.elements; render(); } });
+  function loadDemo(name) {
+    api('POST', '/api/demo' + (name ? '?name=' + encodeURIComponent(name) : ''), null, function (d) {
+      setMsg((d && d.message) || '示例载入完成', !(d && d.ok));
+      if (!d) return;
+      if (d.ok && d.view) {
+        view.xmin = d.view[0]; view.xmax = d.view[1];
+        view.ymin = d.view[2]; view.ymax = d.view[3];
+        fitView();
+      }
+      if (d.elements) { elements = d.elements; render(); refresh3dIfNeeded(); }
+      // 3D 示例：自动切到 3D 视图（已经 3D 就不再点，避免切回去）
+      if (d.ok && d.switch3d && !mode3d) {
+        var b3 = document.getElementById('btn-3d');
+        if (b3) b3.click();
+      }
+    });
+  }
+  btn('btn-demo', function () { loadDemo(''); });
+  ['cat', 'house', 'bike', 'scene3d'].forEach(function (nm) {
+    btn('btn-demo-' + nm, function () { loadDemo(nm); });
   });
   btn('btn-save', function () {
     var url = '/api/download?xmin=' + view.xmin + '&xmax=' + view.xmax + '&ymin=' + view.ymin + '&ymax=' + view.ymax;

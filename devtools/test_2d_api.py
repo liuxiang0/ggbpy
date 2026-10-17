@@ -581,6 +581,38 @@ check("圆弧/扇形 Length 都是弧长 π（扇形不含半径）",
 check("椭圆 Length ≈ 10.397787", abs((_lv.get("Pel2") or 0) - 10.397786962147551) < 1e-3, str(_lv.get("Pel2")))
 check("列表 Length = 元素个数", abs((_lv.get("Pli") or 0) - 3.0) < 1e-9, str(_lv.get("Pli")))
 
+# —— Image 元素随 2D SVG 导出（图片以 data URI 内嵌，导出文件自包含）——
+_PNG_1PX = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/"
+            "q842iQAAAABJRU5ErkJggg==")
+_st_img, _js_img = post("/api/image", {"data": "data:image/png;base64," + _PNG_1PX, "w": 1, "h": 1})
+check("图片上传接口返回 id", _st_img == 200 and _js_img.get("ok") is True and _js_img.get("id"),
+      str(_js_img)[:60])
+if _js_img.get("id"):
+    post("/api/input", {"text": "A=(-2,-1)"})
+    post("/api/input", {"text": "B=(2,-1)"})
+    _st_im, _js_im = post("/api/input", {"text": "Im9=Image[A,B,%s]" % _js_img["id"]})
+    check("Image 元素创建成功", _js_im.get("ok") is not False, str(_js_im)[:60])
+    _st_sv, _h_sv, _raw_sv, _js_sv = get("/api/export/svg?xmin=-4&xmax=4&ymin=-3&ymax=3")
+    _svg_im = _raw_sv.decode("utf-8", "replace")
+    check("导出的 SVG 含 <image> 且图片数据以 data URI 内嵌",
+          "<image" in _svg_im and "data:image/png;base64," in _svg_im, "len=%d" % len(_svg_im))
+    check("导出的 SVG 仍是合法 XML（内嵌 base64 不含裸 <）",
+          __import__("xml.etree.ElementTree", fromlist=["ET"]).fromstring(_svg_im) is not None, "")
+
+# ---------------------------------------------------------------------------
+print("\n=== AH. 示例入口 /api/demo（内置示例 + 4 幅示例图）===")
+_st_d0, _js_d0 = post("/api/demo", None)
+check("默认示例仍可用（向后兼容）", _st_d0 == 200 and _js_d0.get("ok") is True, str(_js_d0)[:50])
+_st_db, _js_db = post("/api/demo?name=bike", None)
+check("示例「自行车」载入 79 个元素", _js_db.get("ok") is True and len(_js_db.get("elements") or []) == 79,
+      "n=%d" % len(_js_db.get("elements") or []))
+_st_d3, _js_d3 = post("/api/demo?name=scene3d", None)
+check("3D 示例载入并带 switch3d 标记（前端据此切 3D 视图）",
+      _js_d3.get("ok") is True and _js_d3.get("switch3d") is True, str(_js_d3.get("switch3d")))
+_st_dx, _js_dx = post("/api/demo?name=nope", None)
+check("未知示例名 → 明确错误并列出可用项",
+      _js_dx.get("ok") is False and "未知示例" in str(_js_dx.get("message")), str(_js_dx.get("message"))[:50])
+
 print("2D/平台 API 检测矩阵：%d 项断言，%d 失败" % (PASS + FAIL, FAIL))
 if FAILED:
     for nm in FAILED:
