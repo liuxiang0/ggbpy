@@ -176,6 +176,22 @@ def main() -> int:
           "段长=%d（首=%d 末=%d）" % (len(main), main[0][0], main[-1][0]))
     check("最新批次数不倒退（≥ 92）", main[0][0] >= 92, "最新=%d" % main[0][0])
 
+    # -----------------------------------------------------------------------
+    print("\n=== G. 检测脚本自身的端口透传（防非默认端口下悄悄测错服务） ===")
+    _run_all = (ROOT / "devtools" / "run_all_detection.sh").read_text(encoding="utf-8")
+    _wired = [
+        ("多会话隔离", 'test_sessions.py --base "$BASE"'),
+        ("2D/平台 API", 'test_2d_api.py --base "$BASE"'),
+        ("3D 三层", 'GGBPY_BASE="$BASE" bash devtools/run_3d_detection.sh'),
+        ("2D 前端", 'GGBPY_BASE="$BASE" node devtools/verify_2d_ui_matrix.js'),
+    ]
+    _miss = [n for n, pat in _wired if pat not in _run_all]
+    check("run_all_detection.sh 的 4 个依赖服务的步骤都透传 BASE", not _miss, str(_miss))
+    _sub_ok = ("GGBPY_BASE" in (ROOT / "devtools" / "run_3d_detection.sh").read_text(encoding="utf-8")
+               and "GGBPY_BASE" in (ROOT / "devtools" / "test_3d_api.py").read_text(encoding="utf-8")
+               and "GGBPY_BASE" in (ROOT / "devtools" / "verify_2d_ui_matrix.js").read_text(encoding="utf-8"))
+    check("子脚本确实读取 GGBPY_BASE（不是只写了文档）", _sub_ok, "")
+
     print("\n" + "=" * 56)
     print("代码质量策略检测：%d 项断言，%d 失败" % (ok + fail, fail))
     print("结果: " + ("ALL PASS" if fail == 0 else "FAILED"))

@@ -33,8 +33,8 @@ step "4/11 模块边界检测（内核拆分/前端文案外置）" "$PY" -B dev
 step "5/11 多会话隔离检测" "$PY" -B devtools/test_sessions.py --base "$BASE"
 step "6/11 2D 内核检测矩阵" "$PY" -B devtools/test_2d_matrix.py
 step "7/11 2D/平台 API 检测矩阵" "$PY" -B devtools/test_2d_api.py --base "$BASE"
-step "8/11 3D 三层检测矩阵（内核/API/浏览器）" bash devtools/run_3d_detection.sh
-step "9/11 2D 前端回归矩阵（编辑栏/CAS/分享/图片/导出/工具）" node devtools/verify_2d_ui_matrix.js
+step "8/11 3D 三层检测矩阵（内核/API/浏览器）" env GGBPY_BASE="$BASE" bash devtools/run_3d_detection.sh
+step "9/11 2D 前端回归矩阵（编辑栏/CAS/分享/图片/导出/工具）" env GGBPY_BASE="$BASE" node devtools/verify_2d_ui_matrix.js
 step "10/11 微积分/求根回归" "$PY" -B devtools/test_mixed_smoke.py 2>/dev/null || true
 step "11/11 代码质量策略检测（宽泛捕获说明/预算/收窄抽查/文档批次完整性）" "$PY" -B devtools/test_quality.py
 

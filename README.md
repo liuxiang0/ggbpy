@@ -3,7 +3,7 @@
 > 用 Python 从头实现的「动态几何 + 代数 + CAS + 3D + 定理证明」一体化教学平台
 > （GeoGebra 启发的交互理念，代码完全原创，BSD-3-Clause）。
 
-`Python 3.12` · `FastAPI` · 原生 HTML5 Canvas（零构建）· **190 条命令** · 检测 **11/11 全绿（1843 断言）**
+`Python 3.12` · `FastAPI` · 原生 HTML5 Canvas（零构建）· **190 条命令** · 检测 **11/11 全绿（1845 断言）**
 
 ---
 
@@ -175,11 +175,12 @@ M=Midpoint[A,B]  # 中点
 ## 🧪 检测与质量
 
 ```bash
-bash devtools/run_all_detection.sh      # 全量 11 步（提交前门禁）
+bash devtools/run_all_detection.sh      # 全量 11 步（提交前门禁；服务在 8090）
+bash devtools/run_all_detection.sh http://127.0.0.1:8091   # 非默认端口：4 个依赖服务的步骤都会透传该 BASE
 bash devtools/run_scope.sh quick        # 迭代用：按改动层跑最小范围（见下）
 ```
 
-### 全量检测（11 步 / 1843 断言）
+### 全量检测（11 步 / 1845 断言）
 
 | 步骤 | 脚本 | 断言 | 覆盖 |
 |---|---|---|---|
@@ -193,7 +194,7 @@ bash devtools/run_scope.sh quick        # 迭代用：按改动层跑最小范�
 | 8 3D 三层 | `run_3d_detection.sh` | 503 / 183 / 149 | 3D 内核 / 3D API / 3D 浏览器 |
 | 9 2D 前端回归 | `verify_2d_ui_matrix.js` | 183 | 编辑栏/CAS/工具/滑块/吸附/快捷键/指针捕获 |
 | 10 微积分·求根 smoke | `test_mixed_smoke.py` | — | 2D↔3D 混合冒烟 |
-| 11 代码质量策略 | `test_quality.py` | 26 | 宽泛捕获说明/预算、文档结构、CHANGELOG 批次完整性 |
+| 11 代码质量策略 | `test_quality.py` | 28 | 宽泛捕获说明/预算、文档结构、CHANGELOG 批次完整性 |
 
 ### 分范围检测（迭代时用，避免每次等全量）
 
