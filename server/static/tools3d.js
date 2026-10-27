@@ -149,6 +149,29 @@ window.GGB_T3D = (function () {
 
       function tool3dClick(sx, sy) {
         var lang = env.get('lang'), tool3d = env.get('tool3d');
+        // 3D 测量工具：体积 / 表面积 —— 点立体即可（与 Volume/SurfaceArea 命令能力一致）
+        if (tool3d === 'vol3d' || tool3d === 'sarea3d') {
+          var solid = env.hitObjectForDrag3d ? env.hitObjectForDrag3d(sx, sy) : null;
+          var isSolid = solid && (solid.objtype === 'cube' || solid.objtype === 'polyhedron' || solid.objtype === 'sphere');
+          if (!isSolid) {
+            setMsg(lang === 'en'
+              ? 'Click a solid (cube / polyhedron / sphere / cone / cylinder)'
+              : '请点击立体（立方体/多面体/球/圆锥/圆柱）', true);
+            return;
+          }
+          var c3m = tool3d === 'vol3d' ? 'Volume[' : 'SurfaceArea[';
+          postInput3d(c3m + solid.label + ']', function (d) {
+            if (!d || !d.ok) return;
+            var nums = (d.elements || []).filter(function (e) { return e.kind === 'number'; });
+            var vtxt = nums.length ? String(nums[nums.length - 1].value || '').replace(/^=\s*/, '') : '?';
+            setMsg((tool3d === 'vol3d'
+              ? (lang === 'en' ? 'Volume ' : '体积 ')
+              : (lang === 'en' ? 'Surface area ' : '表面积 ')) + solid.label + ' = ' + vtxt, false);
+            env.set('toolSel3d', []);
+            setToolStatus3d();
+          });
+          return;
+        }
         if (tool3d === 'pt3d') {
           tool3dPointAt(sx, sy, function () {
             // 连续操作：保持工具激活，可继续画下一个点（Esc / 再点按钮退出）

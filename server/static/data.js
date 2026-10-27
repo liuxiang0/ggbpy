@@ -94,7 +94,9 @@ window.GGB_DATA.TOOLS = {
     octa3d: { hints: ['点击中心', '点击半径点', '点击方向点'], en: ['Click center', 'Click radius pt', 'Click direction pt'] },
     hexa3d: { hints: ['点击中心', '点击半径点', '点击方向点'], en: ['Click center', 'Click radius pt', 'Click direction pt'] },
     icosa3d: { hints: ['点击中心', '点击半径点', '点击方向点'], en: ['Click center', 'Click radius pt', 'Click direction pt'] },
-    dodeca3d: { hints: ['点击中心', '点击半径点', '点击方向点'], en: ['Click center', 'Click radius pt', 'Click direction pt'] }
+    dodeca3d: { hints: ['点击中心', '点击半径点', '点击方向点'], en: ['Click center', 'Click radius pt', 'Click direction pt'] },
+    vol3d: { hints: ['点击立体（立方体/多面体/球/圆锥/圆柱）→ 体积'], en: ['Click a solid → volume'] },
+    sarea3d: { hints: ['点击立体 → 表面积'], en: ['Click a solid → surface area'] }
   };;
 
 window.GGB_DATA.TOOL_CATS = [
@@ -112,6 +114,6 @@ window.GGB_DATA.TOOL_CATS = [
               'barchart3d', 'scatterplot3d', 'surfacechart3d', 'stemplot'] },
     { id: 'widgets', zh: '控件', en: 'Widgets', icon: 'sliders.png', def: 'slider',
       tools: ['slider', 'text', 'image', 'button', 'checkbox', 'inputbox'] },
-    { id: 'd3', zh: '3D', en: '3D', icon: 'sliders.png', def: 'pt3d', tools: ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone3d', 'cylinder3d', 'prism3d', 'pyramid3d', 'tetra3d', 'octa3d', 'hexa3d', 'icosa3d', 'dodeca3d'] }
+    { id: 'd3', zh: '3D', en: '3D', icon: 'sliders.png', def: 'pt3d', tools: ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone3d', 'cylinder3d', 'prism3d', 'pyramid3d', 'tetra3d', 'octa3d', 'hexa3d', 'icosa3d', 'dodeca3d', 'vol3d', 'sarea3d'] }
   ];;
 

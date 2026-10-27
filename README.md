@@ -3,7 +3,7 @@
 > 用 Python 从头实现的「动态几何 + 代数 + CAS + 3D + 定理证明」一体化教学平台
 > （GeoGebra 启发的交互理念，代码完全原创，BSD-3-Clause）。
 
-`Python 3.12` · `FastAPI` · 原生 HTML5 Canvas（零构建）· **190 条命令** · 检测 **11/11 全绿（1914 断言）**
+`Python 3.12` · `FastAPI` · 原生 HTML5 Canvas（零构建）· **190 条命令** · 检测 **11/11 全绿（1917 断言）**
 
 ---
 
@@ -125,6 +125,7 @@ M=Midpoint[A,B]  # 中点
 - **渲染**：画家算法排序、hidden-line 遮挡虚线、逐对象线框/实体切换、坐标轴刻度
 - **度量与变换**：`Translate` 的 z 分量参与运算；`Rotate[三维点,…]` 绕「过中心、平行 z 轴」旋转；`Distance`/`Angle` 用真三维量（角度单位仍是度）；`Volume[立体]` 与 `Area[立体]`（球/锥/柱解析，多面体按闭合网格积分）
 - **3D 求交**：面×面、直线/线段×面、平面×立体（**截面多边形**）、球×平面/球×球/球×空间圆、空间圆相关、立体×立体（凸交）、立体/球×直线/线段（多交点用第 3 参数取第 n 个）
+- **3D 测量工具**：工具栏 3D 分类里的 **体积** / **表面积** —— 点一下立体（立方体/多面体/球/圆锥/圆柱）即在状态栏给出 `Volume` / `SurfaceArea` 结果（与命令能力一致；3D 工具白名单从 `TOOL_CATS` 的 3D 分类**自动派生**，新增 3D 工具不再需要改两处硬编码）
 - **对象类型可读化**：`/api/state3d` 为每个 3D 对象附带 `solid` 字段（sphere/plane/cube/cone/cylinder/prism/pyramid/tetrahedron/octahedron/hexahedron/icosahedron/dodecahedron），列表显示「球/圆锥/圆柱/正十二面体」等
 
 ### 定理证明 / 脚本 / 导出 / 协作
@@ -182,7 +183,7 @@ bash devtools/run_all_detection.sh http://127.0.0.1:8091   # 非默认端口：4
 bash devtools/run_scope.sh quick        # 迭代用：按改动层跑最小范围（见下）
 ```
 
-### 全量检测（11 步 / 1914 断言）
+### 全量检测（11 步 / 1917 断言）
 
 | 步骤 | 脚本 | 断言 | 覆盖 |
 |---|---|---|---|
@@ -193,7 +194,7 @@ bash devtools/run_scope.sh quick        # 迭代用：按改动层跑最小范�
 | 5 多会话隔离 | `test_sessions.py` | 24 | `?sid=`/cookie、构造/宏/state3d 独立性、TTL |
 | 6 2D 内核 | `test_2d_matrix.py` | 313 | 对象/命令/圆锥曲线/统计图/命名/`.ggk` 往返/计算记忆 |
 | 7 2D 平台 API | `test_2d_api.py` | 121 | `/api/*`（state/input/drag/load/download/share/cas/image/export…） |
-| 8 3D 三层 | `run_3d_detection.sh` | 503 / 183 / 149 | 3D 内核 / 3D API / 3D 浏览器 |
+| 8 3D 三层 | `run_3d_detection.sh` | 503 / 183 / 152 | 3D 内核 / 3D API / 3D 浏览器 |
 | 9 2D 前端回归 | `verify_2d_ui_matrix.js` | 202 | 编辑栏/CAS/工具/滑块/吸附/快捷键/指针捕获 |
 | 10 微积分·求根 smoke | `test_mixed_smoke.py` | — | 2D↔3D 混合冒烟 |
 | 11 代码质量策略 | `test_quality.py` | 28 | 宽泛捕获说明/预算、文档结构、CHANGELOG 批次完整性 |

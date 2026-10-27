@@ -403,7 +403,7 @@
   function drawMiniAxes3d() { return _axes3d.drawMiniAxes3d.apply(null, arguments); }
 
   // 三维工具点击交互（P2 前端拆分：3D 工具族） 已抽到 static/tools3d.js（P2 前端拆分）；同名薄包装保持调用点不变
-  var _tools3d = window.GGB_T3D.create({ get: _panelStateGet, set: _panelStateSet, api: api, camBasis3: camBasis3, distToSeg: distToSeg, drawAxes3d: drawAxes3d, drawMiniAxes3d: drawMiniAxes3d, fmtW: fmtW, hitPoint3d: hitPoint3d, load3d: load3d, proj3: proj3, render3d: render3d, renderList3d: renderList3d, resetTool3d: resetTool3d, setMsg: setMsg, setToolStatus3d: setToolStatus3d, snapAxis3d: snapAxis3d, unproj3: unproj3, updateToolButtons3d: updateToolButtons3d, updateUndoBtns: updateUndoBtns });
+  var _tools3d = window.GGB_T3D.create({ get: _panelStateGet, set: _panelStateSet, api: api, camBasis3: camBasis3, distToSeg: distToSeg, drawAxes3d: drawAxes3d, drawMiniAxes3d: drawMiniAxes3d, fmtW: fmtW, hitPoint3d: hitPoint3d, hitObjectForDrag3d: hitObjectForDrag3d, load3d: load3d, proj3: proj3, render3d: render3d, renderList3d: renderList3d, resetTool3d: resetTool3d, setMsg: setMsg, setToolStatus3d: setToolStatus3d, snapAxis3d: snapAxis3d, unproj3: unproj3, updateToolButtons3d: updateToolButtons3d, updateUndoBtns: updateUndoBtns });
   function translateMsg() { return _tools3d.translateMsg.apply(null, arguments); }
   function hitObject3dKind() { return _tools3d.hitObject3dKind.apply(null, arguments); }
   function tool3dPointAt() { return _tools3d.tool3dPointAt.apply(null, arguments); }
@@ -1897,7 +1897,7 @@
       var b = ev.target.closest ? ev.target.closest('.tool-btn') : null;
       if (!b || !mode3d) return;
       var name = b.getAttribute('data-tool');
-      if (name && TOOLS[name] && ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone3d', 'cylinder3d', 'prism3d', 'pyramid3d', 'tetra3d', 'octa3d', 'hexa3d', 'icosa3d', 'dodeca3d'].indexOf(name) !== -1) {
+      if (name && TOOLS[name] && TOOLS3D_IDS.indexOf(name) !== -1) {
         if (tool3d === name) { resetTool3d(); return; }
         tool3d = name;
         toolSel3d = [];
@@ -3035,6 +3035,11 @@
   var TOOLS = GGB_DATA.TOOLS || {};
   // 工具分类（按点/线/面/圆/圆锥曲线/变换/视图等分组，用类别图标可视化）
   var TOOL_CATS = GGB_DATA.TOOL_CATS || [];
+  // 3D 工具 id 集合：**从 TOOL_CATS 的 d3 分类派生**（早前两处硬编码数组，新增 3D 工具要改两遍 ✗）
+  var TOOLS3D_IDS = (function () {
+    for (var ci3 = 0; ci3 < TOOL_CATS.length; ci3++) if (TOOL_CATS[ci3].id === 'd3') return TOOL_CATS[ci3].tools.slice();
+    return [];
+  })();
   // ---------- 顶部下拉菜单（文件/导出/导入/视图/工具）----------
   (function initMenus() {
     var menus = document.querySelectorAll('#toolbar .menu');
@@ -3151,7 +3156,7 @@
     if (b) {
       var name = b.getAttribute('data-tool');
       // 3D 模式：3D 工具由 tool3d 系统接管（已在前面 handler 中激活）
-      if (mode3d && ['pt3d', 'seg3d', 'line3d', 'plane3d', 'sphere3d', 'cube3d', 'cone3d', 'cylinder3d', 'prism3d', 'pyramid3d', 'tetra3d', 'octa3d', 'hexa3d', 'icosa3d', 'dodeca3d'].indexOf(name) !== -1) return;
+      if (mode3d && TOOLS3D_IDS.indexOf(name) !== -1) return;
       if (isChartTool(name)) { chartToolPrompt(name); return; }   // 统计图：点按钮即输入数据
       if (activeTool === name) cancelTool();
       else startTool(name);
