@@ -1798,6 +1798,7 @@
         var pxScale3 = Math.min(cssW, cssH) * 0.42 / cam.r;
         var dyPx = ev.offsetY - drag3d.sy;
         var newZ = drag3d.z0 + (-dyPx) / pxScale3;
+        if (snapOn || ev.ctrlKey) { var spz = niceStep(); newZ = Math.round(newZ / spz) * spz; }   // 吸附：开关 or Ctrl 临时
         // 找当前点 x/y
         var cur3d = findEl3d(drag3d.label);
         api('POST', '/api/drag', { label: drag3d.label, x: cur3d ? cur3d.x : 0, y: cur3d ? cur3d.y : 0, z: newZ, push: false, xmin: view.xmin, xmax: view.xmax, ymin: view.ymin, ymax: view.ymax }, function (d) {
@@ -1808,6 +1809,13 @@
       // 自由 3D 点：拖到基准平面上反投影位置（保持 z=planeZ 投影后取平面坐标）
       drag3d.moved = true;
       var w = unproj3(ev.offsetX, ev.offsetY, planeZ);
+      // 3D 拖动吸附：吸附开关 ON，或按住 **Ctrl** 临时吸附
+      //（3D 里 Shift 已绑定「只改高度」，所以临时吸附用 Ctrl；2D 仍是 Shift）
+      if (snapOn || ev.ctrlKey) {
+        var sp3 = niceStep();
+        w[0] = Math.round(w[0] / sp3) * sp3;
+        w[1] = Math.round(w[1] / sp3) * sp3;
+      }
       var CLAMP = 10;
       w[0] = Math.max(-CLAMP, Math.min(CLAMP, w[0]));
       w[1] = Math.max(-CLAMP, Math.min(CLAMP, w[1]));
