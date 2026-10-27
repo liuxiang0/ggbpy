@@ -168,6 +168,23 @@ for name, cmd, nv, nf, ne, mode in poly:
         if mode == "equal":
             L = edge_lens(el.data)
             check(name + " 棱全等", max(L) - min(L) < 1e-9, "min=%.6f max=%.6f" % (min(L), max(L)))
+# 方向点语义（第一百一十二批修）：拖动方向点 C 必须**旋转**立体（旧实现 C 只定平面法向，
+# 水平拖动法向不变 → 立体纹丝不动 ✗）。这里断言：把 C 从 (0,2,0) 移到 (2,2,0) 后五个正多面体顶点都变。
+_dir_cases = [("Tetrahedron", "Tetrahedron[A,B,C]"), ("Octahedron", "Octahedron[A,B,C]"),
+              ("Hexahedron", "Hexahedron[A,B,C]"), ("Icosahedron", "Icosahedron[A,B,C]"),
+              ("Dodecahedron", "Dodecahedron[A,B,C]")]
+_dir_bad = []
+for _nm, _cmd in _dir_cases:
+    _c, _e = build(["A=(0,0,0)", "B=(1,0,0)", "C=(0,1,0)", "S=" + _cmd])
+    if _e is not None:
+        _dir_bad.append(_nm); continue
+    _before = [list(v) for v in _c.elements["S"].data["verts"]]
+    _c.process("SetCoords[C,1,1,0]")   # 水平移动方向点 → 应旋转
+    _after = [list(v) for v in _c.elements["S"].data["verts"]]
+    if _before == _after:
+        _dir_bad.append(_nm)
+check("拖动方向点 C 旋转五个正多面体（顶点都变化）", not _dir_bad, str(_dir_bad))
+
 for bad in [("Tetrahedron", "Tetrahedron[A,A,B]"), ("Prism", "Prism[A,A,B]"), ("Pyramid", "Pyramid[A,A,B]")]:
     c8, e8 = build(["A=(0,0,0)", "B=(1,0,0)", "X=" + bad[1]])
     el = c8.elements.get("X") if e8 is None else None

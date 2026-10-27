@@ -258,6 +258,33 @@ def _ortho_frame(a, b, c):
     v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]]
     return u, v, n
 
+def _direction_frame(a, b, c):
+    """正多面体「中心/半径点/方向点」的正交基 (u, v, n)。
+
+    与 `_ortho_frame`（棱柱/棱锥沿平面法向挤出）不同：这里的**方向点 C 决定立体的朝向**——
+    n 指向 C（局部 +z 朝 C），u 仍沿 A→B（半径方向），v = n×u，u 再正交化为 v×n。
+    这样拖动方向点（哪怕只水平拖动）也会让立体**旋转朝向 C**（旧实现 C 只定平面法向，
+    水平拖动法向不变 → 立体纹丝不动 ✗）。
+    """
+    u = [b.x - a.x, b.y - a.y, (b.z or 0) - (a.z or 0)]
+    lu = math.sqrt(u[0] ** 2 + u[1] ** 2 + u[2] ** 2)
+    if lu < EPSILON:
+        raise GeoError("中心与半径点重合，无法确定立体方向")
+    u = [u[0] / lu, u[1] / lu, u[2] / lu]
+    n = [c.x - a.x, c.y - a.y, (c.z or 0) - (a.z or 0)]
+    ln = math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
+    if ln < EPSILON:
+        n = [0.0, 0.0, 1.0]
+    else:
+        n = [n[0] / ln, n[1] / ln, n[2] / ln]
+    if 1.0 - abs(u[0] * n[0] + u[1] * n[1] + u[2] * n[2]) < EPSILON:
+        # 方向点落在 AB 直线上（退化）：取一个与 u 正交的参考 n
+        n = [0.0, 0.0, 1.0] if abs(u[2]) < 0.9 else [1.0, 0.0, 0.0]
+    v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]]
+    up = [v[1] * n[2] - v[2] * n[1], v[2] * n[0] - v[0] * n[2], v[0] * n[1] - v[1] * n[0]]
+    return up, v, n
+
+
 def _with_analytic(state, **kw):
     """给网格状态附加解析参数，供 Volume/Area 取精确值（锥/柱为旋转体）。"""
     st = dict(state)
@@ -386,7 +413,7 @@ def _pyramid_state(a, b, c):
 
 def _tetrahedron_state(a, b, c):
     """正四面体：AB 为棱，C 决定朝向（C 所在侧）。"""
-    u, v, n = _ortho_frame(a, b, c)
+    u, v, n = _direction_frame(a, b, c)
     L = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
     ax, ay, az = a.x, a.y, a.z or 0
     # 等边底第三点 P = A + L/2·u + √3/2·L·v
@@ -412,7 +439,7 @@ def _regular_polyhedron(center, radius, u, v, n, unit_verts, faces, edges):
     return _poly_state(verts, faces, edges)
 
 def _octahedron_state(a, b, c):
-    u, v, n = _ortho_frame(a, b, c)
+    u, v, n = _direction_frame(a, b, c)
     r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
     unit = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
     faces = [[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4], [0, 3, 5], [3, 1, 5], [1, 2, 5], [2, 0, 5]]
@@ -421,7 +448,7 @@ def _octahedron_state(a, b, c):
 
 def _hexahedron_state(a, b, c):
     """正六面体（立方体）：8 个标准顶点 (±1,±1,±1) 归一化，6 正方形面、12 边。"""
-    u, v, n = _ortho_frame(a, b, c)
+    u, v, n = _direction_frame(a, b, c)
     r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
     unit = [[s1, s2, s3] for s1 in (-1, 1) for s2 in (-1, 1) for s3 in (-1, 1)]
     norm = math.sqrt(3)
@@ -434,7 +461,7 @@ def _hexahedron_state(a, b, c):
 
 def _icosahedron_state(a, b, c):
     """正二十面体：标准 12 顶点（黄金比），面/边由最短邻接自动生成（保证全等边长）。"""
-    u, v, n = _ortho_frame(a, b, c)
+    u, v, n = _direction_frame(a, b, c)
     r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
     ph = _PHI
     unit = [[0, 1, ph], [0, -1, ph], [0, 1, -ph], [0, -1, -ph],
@@ -469,7 +496,7 @@ def _icosahedron_state(a, b, c):
 
 def _dodecahedron_state(a, b, c):
     """正十二面体：作为正二十面体的对偶（面心 → 顶点，顶点周围面环 → 五边形面）。"""
-    u, v, n = _ortho_frame(a, b, c)
+    u, v, n = _direction_frame(a, b, c)
     r = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2 + ((b.z or 0) - (a.z or 0)) ** 2)
     # 正二十面体单位顶点与面（与 _icosahedron_state 一致）
     ph = _PHI
