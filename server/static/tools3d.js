@@ -206,14 +206,14 @@ window.GGB_T3D = (function () {
             if (!lbl) return;
             env.get('toolSel3d').push(lbl);
             if (env.get('toolSel3d').length === 2) {
-              postInput3d('Sphere[' + env.get('toolSel3d').join(',') + ']', function (ok) { if (ok) { env.set('toolSel3d', []); setToolStatus3d(); } });
+              postInput3d('Sphere[' + env.get('toolSel3d').join(',') + ']', function (ok) { if (ok) { resetTool3d(); } });
             } else setToolStatus3d();
           });
           return;
         }
         if (tool3d === 'cube3d') {
           function cubeCreate3(cmd) {
-            postInput3d(cmd, function (ok) { if (ok) { env.set('toolSel3d', []); setToolStatus3d(); } });
+            postInput3d(cmd, function (ok) { if (ok) { resetTool3d(); } });   // 立方体建完自动退出
           }
           // 1) 点优先：点两个空间点 → Cube[A,B]；已选一点则补成第二点
           var ptHit3 = hitPoint3d(sx, sy);
@@ -254,7 +254,7 @@ window.GGB_T3D = (function () {
               if (hTxt === null || hTxt.trim() === '') { resetTool3d(); return; }
               var hv3 = parseFloat(hTxt);
               if (isNaN(hv3) || hv3 <= 0) { setMsg(lang === 'en' ? 'Enter a positive height' : '请输入正数高度', true); return; }
-              postInput3d('Cone[' + circHit3.label + ',' + hv3 + ']', function (ok) { if (ok) { env.set('toolSel3d', []); setToolStatus3d(); } });
+              postInput3d('Cone[' + circHit3.label + ',' + hv3 + ']', function (ok) { if (ok) { resetTool3d(); } });
               return;
             }
             tool3dPointAt(sx, sy, function (lbl) {
@@ -274,7 +274,7 @@ window.GGB_T3D = (function () {
               if (rTxt === null) { env.set('toolSel3d', [apex3, lbl]); setToolStatus3d(); return; }
               var rv3 = parseFloat(rTxt);
               if (isNaN(rv3) || rv3 <= 0) { setMsg(lang === 'en' ? 'Enter a positive radius' : '请输入正数半径', true); return; }
-              postInput3d('Cone[' + apex3 + ',' + lbl + ',' + rv3 + ']', function (ok) { if (ok) { env.set('toolSel3d', []); setToolStatus3d(); } });
+              postInput3d('Cone[' + apex3 + ',' + lbl + ',' + rv3 + ']', function (ok) { if (ok) { resetTool3d(); } });
             });
             return;
           }
@@ -283,7 +283,7 @@ window.GGB_T3D = (function () {
             tool3dPointAt(sx, sy, function (lbl) {
               if (!lbl) return;
               var apex4 = env.get('toolSel3d')[0], base4 = env.get('toolSel3d')[1];
-              postInput3d('Cone[' + base4 + ',' + lbl + ',' + apex4 + ']', function (ok) { if (ok) { env.set('toolSel3d', []); setToolStatus3d(); } });
+              postInput3d('Cone[' + base4 + ',' + lbl + ',' + apex4 + ']', function (ok) { if (ok) { resetTool3d(); } });
             });
             return;
           }
@@ -297,7 +297,7 @@ window.GGB_T3D = (function () {
               if (chTxt === null || chTxt.trim() === '') { resetTool3d(); return; }
               var chv3 = parseFloat(chTxt);
               if (isNaN(chv3) || chv3 <= 0) { setMsg(lang === 'en' ? 'Enter a positive height' : '请输入正数高度', true); return; }
-              postInput3d('Cylinder[' + cycHit3.label + ',' + chv3 + ']', function (ok) { if (ok) { env.set('toolSel3d', []); setToolStatus3d(); } });
+              postInput3d('Cylinder[' + cycHit3.label + ',' + chv3 + ']', function (ok) { if (ok) { resetTool3d(); } });
               return;
             }
             tool3dPointAt(sx, sy, function (lbl) {
@@ -317,7 +317,7 @@ window.GGB_T3D = (function () {
               if (crTxt === null) { env.set('toolSel3d', [cbase3, lbl]); setToolStatus3d(); return; }
               var crv3 = parseFloat(crTxt);
               if (isNaN(crv3) || crv3 <= 0) { setMsg(lang === 'en' ? 'Enter a positive radius' : '请输入正数半径', true); return; }
-              postInput3d('Cylinder[' + cbase3 + ',' + lbl + ',' + crv3 + ']', function (ok) { if (ok) { env.set('toolSel3d', []); setToolStatus3d(); } });
+              postInput3d('Cylinder[' + cbase3 + ',' + lbl + ',' + crv3 + ']', function (ok) { if (ok) { resetTool3d(); } });
             });
             return;
           }
@@ -326,7 +326,7 @@ window.GGB_T3D = (function () {
             tool3dPointAt(sx, sy, function (lbl) {
               if (!lbl) return;
               var cbase5 = env.get('toolSel3d')[0], ctop5 = env.get('toolSel3d')[1];
-              postInput3d('Cylinder[' + cbase5 + ',' + lbl + ',' + ctop5 + ']', function (ok) { if (ok) { env.set('toolSel3d', []); setToolStatus3d(); } });
+              postInput3d('Cylinder[' + cbase5 + ',' + lbl + ',' + ctop5 + ']', function (ok) { if (ok) { resetTool3d(); } });
             });
             return;
           }
@@ -340,7 +340,7 @@ window.GGB_T3D = (function () {
             if (!lbl) return;
             env.get('toolSel3d').push(lbl);
             if (env.get('toolSel3d').length === 3) {
-              postInput3d(SOLID3_CMD[tool3d] + '[' + env.get('toolSel3d').join(',') + ']', function (ok) { if (ok) { env.set('toolSel3d', []); setToolStatus3d(); } });
+              postInput3d(SOLID3_CMD[tool3d] + '[' + env.get('toolSel3d').join(',') + ']', function (ok) { if (ok) { resetTool3d(); } });
             } else setToolStatus3d();
           });
           return;
