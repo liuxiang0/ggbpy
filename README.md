@@ -39,9 +39,9 @@ s=Segment[A,B]  M=Midpoint[A,B]
 - **证明 / 脚本 / 导出**：`AreParallel` 等关系判定 + `Prove`；`Set*` 脚本、自定义宏、`.ggs`；`.ggk` / `.ggb` 保存加载；SVG / PNG / OBJ / STL / glTF 导出与 OBJ / STL / glTF / 图片导入；试卷 HTML、短链接分享。
 - **界面**：中 / EN（各 **228** 条，检测锁定键集合）、明暗主题、移动端、Retina；对象列表行内编辑、虚拟数学键盘。
 
-#### ⚠️ 限制与边界（由检测矩阵锁定）
+## ⚠️ 限制与边界（由检测矩阵锁定）
 
-#### 2D 限制
+### 2D 限制
 
 - **撤销/重做**：快照式，撤销栈上限 `UNDO_LIMIT = 200`；重做走计算记忆。
 - **计算记忆**：按定义式 + 依赖状态签名缓存，≤ 96 条 / 约 60 万坐标；随机类不参与。
@@ -54,7 +54,7 @@ s=Segment[A,B]  M=Midpoint[A,B]
 - **保存/导出**：`.ggk` JSON；`.ggb` 按命令重放并内嵌网格/图片；SVG 的 `Image` 用 data URI，类型覆盖由白名单锁定。
 - **其它**：`Solve` 只返回实根；`SolveODE` 仅通解；`NSolve` 默认区间 [-60,60]；`Implicit` 需含 x、y。
 
-#### 3D 限制
+### 3D 限制
 
 - **求交**：支持面×面、线×面、平面×立体（截面）、球×平面/球×球/球×空间圆、空间圆相关、体×体（凸交）、体/球×线；球面×曲面、体×空间圆尚未支持，明确报错。
 - **曲面/网格**：`ImplicitSurface` 为 marching tetrahedra 近似（粗网格面积误差约 0.1%–8%），`Volume` 无定义；OBJ/STL 只保留几何。
@@ -92,15 +92,6 @@ Prove[AreParallel[g, Line[M,C]]]
 ```
 
 全部 190 条命令、237 个别名见 **`?` 帮助面板**或 `GET /api/commands`；中文别名同样可嵌套。
-
-## 📦 发布到 Gitee
-
-```bash
-git remote add origin https://gitee.com/<用户名>/ggbpy.git
-git push -u origin main
-```
-
-完整步骤（新建空仓库、SSH 免密、常见问题）见 [`GITEE_UPLOAD.md`](GITEE_UPLOAD.md)。
 
 ## 📜 变更历史
 
