@@ -93,8 +93,8 @@ def main() -> int:
     print("\n=== D. 文档职责与结构（README 只写当前状态；历史归 CHANGELOG） ===")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     rl = len(readme.splitlines())
-    # 防误截断（曾有脚本把 README 写成 0 行并提交）；上限防再次膨胀成"变更日志"
-    check("README 规模正常（150–500 行）", 150 <= rl <= 500,
+    # 防误截断（曾有脚本把 README 写成 0 行并提交）；下限只防 0 行/半截，不限制精简；上限防膨胀成"变更日志"
+    check("README 规模正常（100–500 行）", 100 <= rl <= 500,
           "lines=%d bytes=%d" % (rl, len(readme.encode("utf-8"))))
     check("README 含标准章节（简介 / 快速开始 / 功能总览 / 检测 / 许可）",
           all(k in readme for k in ("## ✨ 项目简介", "## 🚀 快速开始", "## 🎯 功能总览",
