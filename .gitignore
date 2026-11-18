@@ -42,6 +42,7 @@ ggbpy-2026*.md
 ggbpy全面检测报告*.md
 logs/
 memory/
+MEMORY.md
 probe*.js
 restore.js
 screenshots/
